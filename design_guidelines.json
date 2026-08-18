@@ -1,0 +1,147 @@
+{
+  "theme": "light",
+  "project_name": "ShiftFlow",
+  "description": "B2B SaaS web MVP for small stand assembly/disassembly agencies and event technical providers.",
+  "colors": {
+    "archetype": "SWISS & HIGH-CONTRAST",
+    "background": {
+      "default": "#F9FAFB",
+      "surface": "#FFFFFF",
+      "surface_alt": "#F3F4F6",
+      "glass": "rgba(255, 255, 255, 0.85)"
+    },
+    "text": {
+      "primary": "#111827",
+      "secondary": "#4B5563",
+      "disabled": "#9CA3AF"
+    },
+    "brand": {
+      "primary": "#2563EB",
+      "primary_hover": "#1D4ED8",
+      "accent": "#F59E0B"
+    },
+    "status": {
+      "confirmed": { "bg": "#DEF7EC", "text": "#03543F", "border": "#31C48D" },
+      "contacted": { "bg": "#E1EFFE", "text": "#1E429F", "border": "#3F83F8" },
+      "waiting": { "bg": "#FDF6B2", "text": "#723B13", "border": "#FACA15" },
+      "refused": { "bg": "#FDE8E8", "text": "#9B1C1C", "border": "#F8B4B4" },
+      "cancelled": { "bg": "#F3F4F6", "text": "#4B5563", "border": "#D1D5DB" }
+    },
+    "borders": {
+      "default": "#E5E7EB",
+      "focus": "#2563EB"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "Cabinet Grotesk, General Sans, sans-serif",
+      "body": "Inter, IBM Plex Sans, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-none font-bold",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight leading-snug font-semibold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold"
+    }
+  },
+  "layouts": {
+    "spacing_system": "Use generous spacing. Tailwind scale: p-4, p-6, p-8, p-12. Containers with borders MUST have internal padding (e.g., p-6 or p-8) to prevent text collision.",
+    "dashboard_grid": "High Density Grid. Base: grid-cols-1 md:grid-cols-3 lg:grid-cols-4, gap-6. Use full height for children.",
+    "landing_bento": "Tetris Grid. grid-cols-1 md:grid-cols-8 lg:grid-cols-12, gap-8. Aggressive asymmetry, overlapping elements.",
+    "alignment": "Mobile-first standard. Optical alignment over geometrical. Left-align dense content/forms. Explicit alignment, avoid center-everything."
+  },
+  "grids": {
+    "bento_grid": "Use for landing page features. Mix 3+ shapes (Hero, Square, Tall, Filler). Never fill 100% perfectly, leave breathing room.",
+    "admin_grid": "Strict grid hierarchy, dense and compact. Use border-collapse style layout for data tables or stacked cards on mobile."
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "sm": "shadow-sm",
+      "default": "shadow-[0_8px_32px_rgba(0,0,0,0.06)]",
+      "hover": "shadow-[0_12px_48px_rgba(0,0,0,0.12)]"
+    },
+    "radii": {
+      "default": "rounded-md",
+      "large": "rounded-xl",
+      "full": "rounded-full"
+    },
+    "surfaces": {
+      "glassmorphism": "backdrop-blur-xl bg-white/85 border border-white/20 shadow-sm",
+      "neumorphism": "Not recommended for this B2B profile. Stick to Flat/Crisp.",
+      "grid_borders": "For Admin tables: border-r border-b border-gray-200."
+    }
+  },
+  "motion": {
+    "hover": "transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-lg",
+    "focus": "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+    "page_transition": "animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out",
+    "list_stagger": "animate-in fade-in slide-in-from-bottom-2 duration-300"
+  },
+  "responsive": {
+    "breakpoint": "Mobile-first. All designs must start with mobile layout in mind (e.g. w-full, flex-col, grid-cols-1).",
+    "layout": "Use stacked cards instead of data tables for mobile screens (<768px). Use bottom tab bars or compact lateral menus. The mobile intervenant confirmation page must be ultra-simple with 100vh layout.",
+    "typography": "Scale down headings on mobile. Base body text remains text-base (16px) to prevent zooming on inputs.",
+    "overflow_guard": "Ensure max-w-full and overflow-x-hidden on root containers to prevent horizontal scroll.",
+    "tap_targets": "Minimum 44x44px for all buttons and interactive elements. Intervenant mobile app needs MASSIVE buttons (e.g. h-20, text-2xl)."
+  },
+  "accessibility": {
+    "contrast": "Maintain WCAG AA minimums (4.5:1 for body text). NEVER use gray-on-gray for vital info.",
+    "aria": "Use aria-hidden='true' on decorative icons. Ensure all buttons have descriptive text or aria-labels.",
+    "focus": "All interactive elements MUST have a visible focus state with higher contrast.",
+    "data_testid": "MANDATORY: All interactive and key informational elements MUST include a `data-testid` attribute (e.g. `data-testid=\"login-submit-button\"`)."
+  },
+  "media": {
+    "icons": "Use `lucide-react` for crisp, consistent UI icons.",
+    "images": "Use realistic, professional photos of event setups, staging, and technical crews."
+  },
+  "image_urls": {
+    "hero_landing": {
+      "url": "https://images.pexels.com/photos/29775304/pexels-photo-29775304.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Technician managing sound and lighting panels during an outdoor event. Use as landing page hero background with a bg-black/40 overlay.",
+      "category": "landing_page"
+    },
+    "feature_stage": {
+      "url": "https://images.unsplash.com/photo-1558970439-add78fc68990?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxzdGFnZSUyMHByb2R1Y3Rpb24lMjBldmVudHxlbnwwfHx8fDE3ODcwNjYzNjF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Stage set with chairs and tables under blue spotlights. Use in 'How it works' or features section.",
+      "category": "landing_page"
+    },
+    "testimonial_worker": {
+      "url": "https://images.unsplash.com/photo-1551825687-f9de1603ed8b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwzfHxwb3J0cmFpdCUyMHdvcmtlciUyMHNtaWxpbmd8ZW58MHx8fHwxNzg3MDY2MzYxfDA&ixlib=rb-4.1.0&q=85",
+      "description": "Smiling man standing behind delivery truck. Use as an avatar for the agency manager testimonial.",
+      "category": "landing_page"
+    }
+  },
+  "component_instructions": {
+    "forms": "Use Shadcn JS form components (Input, Select, Checkbox). Customize with brand colors and 4px radii.",
+    "tables": "For desktop dashboard, use HTML/Tailwind tables or Shadcn Table. For mobile, use flex-col mapped cards.",
+    "buttons": "Shadcn Button. Modify to be crisp and professional. Primary action is Blue, Danger is Red, Success is Green. Mobile confirmation buttons must be extremely large (h-24, w-full, text-3xl font-black).",
+    "drag_drop": "Implement simple drag & drop for the 'priority order' selection of intervenants."
+  },
+  "instructions_to_main_agent": [
+    "You are building ShiftFlow, a B2B SaaS for event technical providers.",
+    "MANDATORY: You have .js files, NOT .tsx files. Use standard JSX/JS syntax. Create all components as .js or .jsx.",
+    "MANDATORY: Build mobile-first. Default to stack layouts (`flex-col`, `grid-cols-1`) and use `md:` or `lg:` for desktop overrides.",
+    "MANDATORY: Implement `data-testid` on EVERY button, input, link, and interactive widget.",
+    "MANDATORY: The mobile intervenant confirmation page (public) MUST be brutally simple. Just the mission details and two MASSIVE buttons ('J'ACCEPTE', 'JE REFUSE') taking up 50% of the screen each. No login required.",
+    "MANDATORY: Never use transparent backgrounds on dropdowns or sticky headers over content. Always use solid white or glassmorphism.",
+    "MANDATORY: Avoid 'AI slop' center-everything designs. Use left alignment for text, clear grids, and professional padding.",
+    "MANDATORY: The boss dashboard should show clear, color-coded statuses (Confirmed, Contacted, Waiting, Refused, Cancelled) using the provided status colors.",
+    "MANDATORY: Do not use placeholder images. Use the exact URLs from the `image_urls` object."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Prioritize reusing components from src/components/ui.",
+    "Do not use generic centered layouts or simplistic gradients.",
+    "Create depth through layered design elements with z-index hierarchy and crisp shadows.",
+    "Use glass-morphism effects carefully with backdrop filters (12-24px blur) only for headers/modals.",
+    "Never apply `transition: all`. Target specific properties like `transition-transform` or `transition-colors`.",
+    "Never center align the main app container globally.",
+    "Always use modern, crisp button styles with interaction animations (hover/focus).",
+    "Never use emoji characters for icons. Use `lucide-react`.",
+    "Use 2-3x more spacing than feels comfortable. Avoid cramped layouts.",
+    "Use `sonner` for toasts. Found in `/app/src/components/ui/sonner.js` (or similar)."
+  ]
+}

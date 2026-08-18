@@ -1,0 +1,33 @@
+{
+  "summary": "ShiftFlow first-finish test pass. Backend auth, multi-tenant isolation, workers CRUD, mission cascade (contact/accept/refuse/cancel), public token endpoints, dashboard summary and mission cancel/delete all verified against the public API. Frontend login->dashboard, greeting 'Bonjour Tanguy', new-mission-btn, workers listing and the mobile /m/{token} public confirm page (accept -> 'Mission confirmée ✅') all working.",
+  "tested_scope": ["backend", "frontend", "auth", "integration"],
+  "passed": [
+    "POST /api/auth/login sets access_token & refresh_token cookies and returns user",
+    "GET /api/auth/me returns admin user Tanguy",
+    "POST /api/auth/logout returns ok",
+    "POST /api/auth/register creates new tenant (tested with random email)",
+    "Multi-tenant isolation: new user B sees empty workers [] and missions [] while admin A has 14 workers",
+    "GET /api/workers with q= and skill= filters work (q=Kevin -> 1, skill=montage -> 11)",
+    "POST /api/workers creates worker (first_name/last_name/phone/skills schema)",
+    "Mission creation with people_needed=2 + cascade_enabled=true",
+    "POST /api/missions/{id}/select-workers with 4 worker_ids: first 2 -> 'contacted', last 2 -> 'pending' (correct)",
+    "GET /api/public/mission/{token} returns mission + slot info",
+    "Public accept on slot0 -> 'confirmed'",
+    "Public refuse on slot1 -> 'refused' AND cascade fires: slot2 -> 'contacted', slot3 stays 'pending' (correct, no over-contact)",
+    "Public accept on slot2 -> mission status becomes 'filled' with confirmed_count=2; slot3 remains 'pending' (never contacted)",
+    "Invalid public token returns 404 'Lien invalide'",
+    "Public cancel-confirmation on slot0 -> slot0 'cancelled', mission back to 'in_progress', slot3 auto-'contacted' by cascade",
+    "GET /api/dashboard/summary returns missions_total, workers_count, pending_confirmations, upcoming/ongoing/past buckets",
+    "POST /api/missions/{id}/cancel and DELETE /api/missions/{id} both return ok",
+    "Frontend: /login redirects to /app/dashboard on valid credentials",
+    "Frontend: Dashboard renders 'Bonjour Tanguy 👋', KPIs (missions_total=2, workers=14, pending=6), new-mission-btn, dashboard-mission-card-{id}",
+    "Frontend: /app/workers lists intervenants with search + skill filter",
+    "Frontend: /m/{token} mobile page shows mission info + public-accept-btn / public-refuse-btn (large h-20), accept flow shows 'Mission confirmée ✅' + 'Je dois finalement annuler' link"
+  ],
+  "failed": [],
+  "action_items": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "retest_needed": false,
+  "full_testing_deferred": true,
+  "notes": "SMS/WhatsApp send, Stripe checkout and AI risk alerts are intentional mocks/placeholders per the review request and were not exercised. Mission create/edit form UI and worker CRUD modals were not exhaustively clicked (dashboard + public flow prioritized) but underlying APIs are green."
+}

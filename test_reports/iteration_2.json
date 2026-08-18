@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 2 — full backend + frontend regression on new Mission→Shifts→Slots schema. Fixed 1 critical backend bug (Mongo ObjectId leak on POST /api/missions causing 500). After fix: 15/15 pytest tests pass and full UI e2e (login → dashboard SMS demo banner → mission create with 2 shifts → per-shift rate & estimate → mission detail with ShiftCards + total cost → per-shift select-workers → public /m/{token} accept) all pass. Twilio in demo mode as expected (TWILIO_PHONE_NUMBER empty).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/missions", "issue": "Was leaking Mongo _id (ObjectId) in response causing 500 InternalServerError. Fixed inline (added _id pop after insert_one on mission and each shift)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MissionCreate", "issue": "React console warning 'Received NaN for the %s attribute' when number inputs are transiently empty. Cosmetic only.", "selector": "[data-testid='mc-shift-0-people']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration_2.xml"
+  ],
+  "action_items": [
+    "(Optional) Guard number inputs in MissionCreate.js so estimate() display never receives NaN (use `s.rate_hourly === '' ? 0 : Number(s.rate_hourly)`)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: POST /api/missions returned the just-inserted dict which still contains Mongo `_id` (ObjectId). Same pattern was OK for other create endpoints (workers pops it) but was missed for mission+shifts. Fixed by popping _id after every insert_one. Recommend adopting a helper `insert_and_clean(coll, doc)` to avoid repeat.",
+    "server.py: CORS block sets allow_credentials=False when CORS_ORIGINS='*' and FRONTEND_URL is empty, which would break cookie-based auth. Currently FRONTEND_URL is set so it works, but the branch is fragile — recommend always specifying explicit origins.",
+    "server.py mission_with_shifts recomputes estimated_cost on every list request. For very large agencies (many missions × many shifts) consider persisting or caching. Not urgent.",
+    "server.py public_accept: computes confirmed_count from the same slots list without re-fetching after status change — race safe here because we read then write on single slot, but under concurrency two accepts could both pass the check. Not a big issue for the current traffic pattern but worth flagging.",
+    "MissionCreate.js: estimate() and Number() conversion of empty string can bubble NaN into JSX display (React warning). Small polish needed."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (POST /api/missions — pop Mongo _id after insert)",
+    "/app/backend/tests/backend_test.py (new pytest suite for iteration 2)"
+  ],
+  "success_rate": {"backend": "100% (15/15 pytest)", "frontend": "100% (all e2e checks passed)"},
+  "test_credentials": "Admin spartanblock4@gmail.com / ShiftFlow2026!",
+  "seed_data_creation": "Seed on startup: 1 admin, 10 demo workers, 1 demo mission 'Montage Salon Nike' with 3 shifts (2026-08-31, 2026-09-01, 2026-09-02) totalling 22 people. Legacy pre-shift missions auto-purged on startup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend uses new Mission→Shift→Slot cascade with select-workers at /api/shifts/{shift_id}/select-workers. Per-shift cascade is isolated (verified with test_cascade_isolated_per_shift). Twilio credentials present but TWILIO_PHONE_NUMBER intentionally empty → /api/config returns twilio_ready=false and Dashboard shows sms-status-banner in demo mode. Public /m/{token} page shows shift-scoped info (date/times/rate/type) and accept/refuse works. All 15 pytest tests are green; run with `pytest /app/backend/tests/backend_test.py -v`.",
+  "rca of the issue": "POST /api/missions returned 500. Root cause: after `db.missions.insert_one(mission)`, motor mutates the dict adding a BSON ObjectId under `_id`. The endpoint then passed `{**mission}` to `mission_with_shifts`, and FastAPI's jsonable_encoder cannot serialize ObjectId → raises TypeError. Fix: pop `_id` from mission and each shift dict after their respective insert_one calls. Reproduction: authenticated POST /api/missions with valid payload → 500. Mitigation: added `mission.pop('_id', None)` and `shift.pop('_id', None)` in server.py create_mission (lines ~498-501)."
+}

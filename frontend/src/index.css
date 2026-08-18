@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --font-heading: 'Bricolage Grotesque', 'Cabinet Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #F9FAFB;
+  color: #111827;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 13% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 10%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 13% 10%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 220 13% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* Status pills */
+.status-confirmed { background:#DEF7EC; color:#03543F; border-color:#31C48D; }
+.status-contacted { background:#E1EFFE; color:#1E429F; border-color:#3F83F8; }
+.status-pending   { background:#F3F4F6; color:#4B5563; border-color:#D1D5DB; }
+.status-waiting   { background:#FDF6B2; color:#723B13; border-color:#FACA15; }
+.status-refused   { background:#FDE8E8; color:#9B1C1C; border-color:#F8B4B4; }
+.status-no_answer { background:#FDF6B2; color:#723B13; border-color:#FACA15; }
+.status-cancelled { background:#F3F4F6; color:#4B5563; border-color:#D1D5DB; }
+
+/* Subtle grid background for landing */
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(17,24,39,0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(17,24,39,0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
