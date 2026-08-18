@@ -196,6 +196,49 @@ async def send_invite_sms(slot: dict, shift: dict, mission: dict, worker: dict, 
     return doc
 
 
+async def send_owner_alert_sms(agency: dict, mission: dict, shift: dict, worker: dict, missing: int) -> dict:
+    """Send a heads-up SMS to the agency owner when a confirmed worker cancels < 24h before start."""
+    body = (f"Alerte ShiftFlow : {worker['first_name']} {worker['last_name']} vient d'annuler la mission "
+            f"« {mission['name']} » du {shift['date']} à {shift['start_time']}. "
+            f"Il manque {missing} personne{'s' if missing > 1 else ''}.")
+    to = normalize_phone(agency.get("phone", ""))
+    channel = "demo"
+    sms_status = "queued_demo"
+    error = None
+    if twilio_ready() and to:
+        try:
+            tw = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+            msg = tw.messages.create(from_=TWILIO_FROM, to=to, body=body)
+            channel = "sms"
+            sms_status = msg.status
+            logger.info(f"Owner alert SMS sent to {to} sid={msg.sid}")
+        except Exception as e:
+            sms_status = "failed"
+            error = str(e)
+            logger.warning(f"Owner alert SMS failed: {error}")
+    else:
+        logger.info(f"[DEMO OWNER ALERT] to={to} body={body}")
+    doc = {
+        "id": new_id(),
+        "mission_id": mission["id"],
+        "shift_id": shift["id"],
+        "slot_id": None,
+        "worker_id": None,
+        "to": to,
+        "body": body,
+        "url": None,
+        "channel": channel,
+        "status": sms_status,
+        "error": error,
+        "kind": "owner_alert",
+        "sent_at": iso(now_utc()),
+    }
+    await db.notifications.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+
 # ---------------- Schemas ----------------
 class RegisterIn(BaseModel):
     email: EmailStr
@@ -686,10 +729,102 @@ async def public_cancel(token: str):
     )
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
+    # Owner alert if <24h before shift
+    try:
+        shift = await db.shifts.find_one({"id": slot["shift_id"]}, {"_id": 0})
+        mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
+        worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
+        if shift and mission and worker:
+            agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+            dt = datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00+00:00")
+            if (dt - now_utc()) <= timedelta(hours=24):
+                slots = await db.mission_workers.find({"shift_id": shift["id"]}, {"_id": 0}).to_list(1000)
+                confirmed = sum(1 for s in slots if s["status"] == "confirmed")
+                missing = max(0, shift["people_needed"] - confirmed)
+                await send_owner_alert_sms(agency, mission, shift, worker, missing)
+    except Exception as e:
+        logger.warning(f"owner alert failed: {e}")
     return {"ok": True}
 
 
-# ---------------- Dashboard ----------------
+# ---------------- Duplication ----------------
+class ShiftDuplicateIn(BaseModel):
+    new_date: str
+
+
+@api.post("/missions/{mission_id}/duplicate")
+async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
+    original = await db.missions.find_one({"id": mission_id, "agency_id": user["id"]}, {"_id": 0})
+    if not original:
+        raise HTTPException(status_code=404, detail="Mission introuvable")
+    new_mission = {
+        "id": new_id(),
+        "agency_id": user["id"],
+        "name": original["name"] + " (copie)",
+        "location": original["location"],
+        "address": original.get("address", ""),
+        "description": original.get("description", ""),
+        "cascade_enabled": original.get("cascade_enabled", True),
+        "followup_hours": original.get("followup_hours", 2),
+        "status": "draft",
+        "created_at": iso(now_utc()),
+    }
+    await db.missions.insert_one(new_mission)
+    new_mission.pop("_id", None)
+    original_shifts = await db.shifts.find({"mission_id": mission_id}, {"_id": 0}).sort("date", 1).to_list(500)
+    for sh in original_shifts:
+        try:
+            base_dt = datetime.fromisoformat(f"{sh['date']}T00:00:00+00:00")
+            new_date = (base_dt + timedelta(days=7)).date().isoformat()
+        except Exception:
+            new_date = sh["date"]
+        clone = {
+            "id": new_id(),
+            "mission_id": new_mission["id"],
+            "agency_id": user["id"],
+            "date": new_date,
+            "start_time": sh["start_time"],
+            "end_time": sh["end_time"],
+            "people_needed": sh["people_needed"],
+            "rate_hourly": sh["rate_hourly"],
+            "mission_type": sh["mission_type"],
+            "skill_required": sh.get("skill_required", ""),
+            "description": sh.get("description", ""),
+            "status": "draft",
+            "confirmed_count": 0,
+            "created_at": iso(now_utc()),
+        }
+        await db.shifts.insert_one(clone)
+    return await mission_with_shifts({**new_mission}, include_slots=True)
+
+
+@api.post("/shifts/{shift_id}/duplicate")
+async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends(get_current_user)):
+    original = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
+    if not original:
+        raise HTTPException(status_code=404, detail="Shift introuvable")
+    clone = {
+        "id": new_id(),
+        "mission_id": original["mission_id"],
+        "agency_id": user["id"],
+        "date": payload.new_date,
+        "start_time": original["start_time"],
+        "end_time": original["end_time"],
+        "people_needed": original["people_needed"],
+        "rate_hourly": original["rate_hourly"],
+        "mission_type": original["mission_type"],
+        "skill_required": original.get("skill_required", ""),
+        "description": original.get("description", ""),
+        "status": "draft",
+        "confirmed_count": 0,
+        "created_at": iso(now_utc()),
+    }
+    await db.shifts.insert_one(clone)
+    clone.pop("_id", None)
+    return clone
+
+
+
 @api.get("/dashboard/summary")
 async def dashboard_summary(user=Depends(get_current_user)):
     missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(2000)

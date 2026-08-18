@@ -1,19 +1,34 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Plus, CalendarClock } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, CalendarClock, Copy } from "lucide-react";
 import { api } from "../lib/api";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
+import { toast, Toaster } from "sonner";
 
 export default function Missions() {
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const nav = useNavigate();
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
     api.get("/missions").then((r) => setMissions(r.data)).finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const duplicate = async (e, id) => {
+    e.preventDefault(); e.stopPropagation();
+    try {
+      const { data } = await api.post(`/missions/${id}/duplicate`);
+      toast.success("Mission dupliquée (dates décalées de +7 jours)");
+      nav(`/app/missions/${data.id}`);
+    } catch (err) { toast.error("Erreur lors de la duplication"); }
+  };
 
   return (
     <div data-testid="missions-page">
+      <Toaster position="top-right" richColors/>
       <div className="flex items-end justify-between">
         <div>
           <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Missions</div>
@@ -42,6 +57,7 @@ export default function Missions() {
                   <th className="px-6 py-3">Shifts</th>
                   <th className="px-6 py-3">Équipe</th>
                   <th className="px-6 py-3">Statut</th>
+                  <th className="px-6 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -62,6 +78,11 @@ export default function Missions() {
                       <span className={`text-xs px-2 py-1 rounded-md border font-medium ${m.status === "filled" ? "status-confirmed" : m.status === "cancelled" ? "status-cancelled" : "status-contacted"}`}>
                         {MISSION_STATUS_LABEL[m.status] || m.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button onClick={(e)=>duplicate(e, m.id)} data-testid={`duplicate-mission-${m.id}`} className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600" title="Dupliquer">
+                        <Copy className="w-3.5 h-3.5"/> Dupliquer
+                      </button>
                     </td>
                   </tr>
                 ))}

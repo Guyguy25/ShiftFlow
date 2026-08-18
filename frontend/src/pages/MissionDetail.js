@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle } from "lucide-react";
+import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
@@ -105,6 +105,16 @@ function ShiftCard({ mission, shift, workers, onReload }) {
     toast.success("Marqué sans réponse. Cascade appliquée.");
     onReload();
   };
+  const duplicateShift = async () => {
+    const suggested = shift.date;
+    const nd = window.prompt("Nouvelle date pour la copie du shift (YYYY-MM-DD) ?", suggested);
+    if (!nd) return;
+    try {
+      await api.post(`/shifts/${shift.id}/duplicate`, { new_date: nd });
+      toast.success("Shift dupliqué");
+      onReload();
+    } catch (e) { toast.error("Erreur de duplication"); }
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid={`shift-card-${shift.id}`}>
@@ -133,6 +143,9 @@ function ShiftCard({ mission, shift, workers, onReload }) {
           ) : (
             <span className={`text-xs px-2 py-1 rounded-md border font-medium ${slotClass(shift.status)}`}>{MISSION_STATUS_LABEL[shift.status] || shift.status}</span>
           )}
+          <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} title="Dupliquer ce shift" className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+            <CopyPlus className="w-4 h-4"/>
+          </button>
         </div>
       </div>
 
@@ -215,6 +228,13 @@ export default function MissionDetail() {
     await api.delete(`/missions/${id}`);
     nav("/app/missions");
   };
+  const duplicateMission = async () => {
+    try {
+      const { data } = await api.post(`/missions/${id}/duplicate`);
+      toast.success("Mission dupliquée (dates +7 jours)");
+      nav(`/app/missions/${data.id}`);
+    } catch (e) { toast.error("Erreur de duplication"); }
+  };
 
   return (
     <div data-testid="mission-detail-page">
@@ -233,6 +253,9 @@ export default function MissionDetail() {
           <span className={`text-xs px-3 py-1.5 rounded-md border font-medium ${m.status === "filled" ? "status-confirmed" : m.status === "cancelled" ? "status-cancelled" : "status-contacted"}`}>
             {MISSION_STATUS_LABEL[m.status] || m.status}
           </span>
+          <button onClick={duplicateMission} data-testid="mission-duplicate-btn" title="Dupliquer la mission" className="p-2 rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-300">
+            <CopyPlus className="w-4 h-4"/>
+          </button>
           {m.status !== "cancelled" && (
             <button onClick={cancelMission} data-testid="mission-cancel-btn" className="p-2 rounded-md border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-300">
               <Ban className="w-4 h-4"/>

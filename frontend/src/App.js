@@ -15,6 +15,7 @@ import MissionDetail from "@/pages/MissionDetail";
 import Workers from "@/pages/Workers";
 import History from "@/pages/History";
 import Settings from "@/pages/Settings";
+import Calendar from "@/pages/Calendar";
 import PublicConfirm from "@/pages/PublicConfirm";
 import { Toaster } from "sonner";
 
@@ -33,6 +34,7 @@ function AppRoutes() {
         <Route path="missions/new" element={<MissionCreate />} />
         <Route path="missions/:id" element={<MissionDetail />} />
         <Route path="workers" element={<Workers />} />
+        <Route path="calendar" element={<Calendar />} />
         <Route path="history" element={<History />} />
         <Route path="settings" element={<Settings />} />
       </Route>

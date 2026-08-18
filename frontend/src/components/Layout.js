@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Users, History, Settings, LogOut, Menu, X, Zap } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, Menu, X, Zap } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const nav = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
   { to: "/app/missions", label: "Missions", icon: CalendarClock, id: "nav-missions" },
+  { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
   { to: "/app/settings", label: "Paramètres", icon: Settings, id: "nav-settings" },
