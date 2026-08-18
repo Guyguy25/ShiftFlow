@@ -400,6 +400,19 @@ async def me(user=Depends(get_current_user)):
     return public_user(user)
 
 
+class UpdateProfileIn(BaseModel):
+    name: str
+    agency_name: str
+    phone: str = ""
+
+
+@api.put("/auth/me")
+async def update_me(payload: UpdateProfileIn, user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": payload.model_dump()})
+    updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return public_user(updated)
+
+
 @api.post("/auth/forgot-password")
 async def forgot(payload: ForgotIn):
     email = payload.email.lower().strip()
@@ -861,6 +874,147 @@ async def dashboard_summary(user=Depends(get_current_user)):
         "missions_total": len(missions),
         "twilio_ready": twilio_ready(),
     }
+
+
+@api.get("/dashboard/sms-stats")
+async def sms_stats(user=Depends(get_current_user)):
+    # Restrict to this agency's notifications
+    missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(5000)
+    mids = [m["id"] for m in missions]
+    if not mids:
+        return {"sent_this_month": 0, "sms_total": 0, "demo_total": 0,
+                "invites_sent": 0, "invites_responded": 0, "response_rate": 0}
+    now = now_utc()
+    month_start = iso(datetime(now.year, now.month, 1, tzinfo=timezone.utc))
+    all_notifs = await db.notifications.find({"mission_id": {"$in": mids}}, {"_id": 0}).to_list(20000)
+    sent_this_month = sum(1 for n in all_notifs if n.get("sent_at", "") >= month_start)
+    sms_total = sum(1 for n in all_notifs if n.get("channel") == "sms")
+    demo_total = sum(1 for n in all_notifs if n.get("channel") == "demo")
+    # response rate: for invite notifications, count how many corresponding slots got responded
+    invite_slot_ids = [n["slot_id"] for n in all_notifs if n.get("kind", "invite") != "owner_alert" and n.get("slot_id")]
+    invites_sent = len(set(invite_slot_ids))
+    responded = 0
+    if invite_slot_ids:
+        slots = await db.mission_workers.find({"id": {"$in": list(set(invite_slot_ids))}}, {"_id": 0}).to_list(5000)
+        responded = sum(1 for s in slots if s["status"] in ("confirmed", "refused"))
+    rate = round((responded / invites_sent) * 100, 1) if invites_sent else 0
+    return {
+        "sent_this_month": sent_this_month,
+        "sms_total": sms_total,
+        "demo_total": demo_total,
+        "invites_sent": invites_sent,
+        "invites_responded": responded,
+        "response_rate": rate,
+    }
+
+
+class TestSmsIn(BaseModel):
+    to: Optional[str] = None  # if omitted, use user's phone
+
+
+@api.post("/notifications/test-sms")
+async def test_sms(payload: TestSmsIn, user=Depends(get_current_user)):
+    target = normalize_phone(payload.to or user.get("phone", ""))
+    if not target:
+        raise HTTPException(status_code=400, detail="Aucun numéro fourni ni renseigné sur votre profil")
+    body = f"[Test ShiftFlow] Bonjour {user.get('name', '')}, la configuration Twilio de {user.get('agency_name', 'votre agence')} fonctionne."
+    channel = "demo"
+    sms_status = "queued_demo"
+    error = None
+    if twilio_ready():
+        try:
+            tw = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+            msg = tw.messages.create(from_=TWILIO_FROM, to=target, body=body)
+            channel = "sms"
+            sms_status = msg.status
+        except Exception as e:
+            sms_status = "failed"
+            error = str(e)
+            logger.warning(f"Test SMS failed: {error}")
+    doc = {
+        "id": new_id(), "mission_id": None, "shift_id": None, "slot_id": None,
+        "worker_id": None, "to": target, "body": body, "url": None,
+        "channel": channel, "status": sms_status, "error": error, "kind": "test",
+        "sent_at": iso(now_utc()),
+    }
+    await db.notifications.insert_one(doc)
+    doc.pop("_id", None)
+    if error:
+        raise HTTPException(status_code=502, detail=f"Envoi Twilio échoué : {error}")
+    return {"ok": True, "channel": channel, "to": target, "status": sms_status}
+
+
+# ---------------- Cron: 24h reminders ----------------
+async def _run_reminders():
+    """Iterate shifts that start in ~24h and send SMS reminders to confirmed workers not yet reminded."""
+    now = now_utc()
+    window_start = now + timedelta(hours=23)
+    window_end = now + timedelta(hours=25)
+    # Fetch shifts with date in the relevant window (today or tomorrow ISO)
+    candidate_dates = {window_start.date().isoformat(), window_end.date().isoformat()}
+    shifts = await db.shifts.find({"date": {"$in": list(candidate_dates)}, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(2000)
+    count_sent = 0
+    for shift in shifts:
+        try:
+            dt = datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00+00:00")
+        except Exception:
+            continue
+        if not (window_start <= dt <= window_end):
+            continue
+        mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
+        if not mission:
+            continue
+        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        if not agency:
+            continue
+        slots = await db.mission_workers.find({"shift_id": shift["id"], "status": "confirmed",
+                                               "reminder_sent": {"$ne": True}}, {"_id": 0}).to_list(500)
+        for slot in slots:
+            worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
+            if not worker:
+                continue
+            url = f"{FRONTEND_URL}/m/{slot['token']}" if FRONTEND_URL else f"/m/{slot['token']}"
+            body = (f"Rappel {agency.get('agency_name','')} : vous êtes confirmé pour « {mission['name']} » "
+                    f"demain {shift['date']} de {shift['start_time']} à {shift['end_time']} à {mission['location']}. "
+                    f"Détails : {url}")
+            to = normalize_phone(worker.get("phone", ""))
+            channel, sms_status, error = "demo", "queued_demo", None
+            if twilio_ready() and to:
+                try:
+                    tw = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+                    msg = tw.messages.create(from_=TWILIO_FROM, to=to, body=body)
+                    channel, sms_status = "sms", msg.status
+                except Exception as e:
+                    sms_status, error = "failed", str(e)
+            await db.notifications.insert_one({
+                "id": new_id(), "mission_id": mission["id"], "shift_id": shift["id"],
+                "slot_id": slot["id"], "worker_id": worker["id"], "to": to, "body": body, "url": url,
+                "channel": channel, "status": sms_status, "error": error, "kind": "reminder",
+                "sent_at": iso(now_utc()),
+            })
+            await db.mission_workers.update_one({"id": slot["id"]}, {"$set": {"reminder_sent": True}})
+            count_sent += 1
+    logger.info(f"Cron reminders: sent {count_sent}")
+    return count_sent
+
+
+import asyncio
+
+
+@api.post("/cron/reminders")
+async def cron_reminders(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    auth = request.headers.get("Authorization", "")
+    expected = os.environ.get("WEBHOOK_CRON_SECRET", "")
+    if not expected or not auth.startswith("Bearer ") or not secrets.compare_digest(auth[7:], expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    run_id = request.headers.get("X-Webhook-Id", new_id())
+    # Idempotency: skip if same run_id already processed
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return {"ok": True, "duplicate": True}
+    await db.cron_runs.insert_one({"run_id": run_id, "kind": "reminders", "at": iso(now_utc())})
+    asyncio.create_task(_run_reminders())
+    return {"ok": True, "queued": True}
 
 
 @api.get("/config")

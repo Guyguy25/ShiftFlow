@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Users, AlertTriangle, CalendarClock, CheckCircle2, Send } from "lucide-react";
+import { Plus, Users, AlertTriangle, CalendarClock, CheckCircle2, Send, MessageSquare, TrendingUp } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
@@ -43,9 +43,11 @@ function MissionCard({ m }) {
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
+  const [smsStats, setSmsStats] = useState(null);
 
   useEffect(() => {
     api.get("/dashboard/summary").then((r) => setData(r.data)).catch(() => {});
+    api.get("/dashboard/sms-stats").then((r) => setSmsStats(r.data)).catch(() => {});
   }, []);
 
   if (!data) return <div className="text-gray-500" data-testid="dashboard-loading">Chargement…</div>;
@@ -100,6 +102,28 @@ export default function Dashboard() {
           <div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><CalendarClock className="w-6 h-6 text-blue-600"/> {data.upcoming.length}</div>
         </div>
       </div>
+
+      {/* SMS stats */}
+      {smsStats && (
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="sms-stats-block">
+          <div className="bg-white border border-gray-200 rounded-xl p-5" data-testid="stat-sent-month">
+            <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">SMS ce mois</div>
+            <div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><MessageSquare className="w-6 h-6 text-blue-600"/> {smsStats.sent_this_month}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-5" data-testid="stat-sms-total">
+            <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">SMS envoyés (total)</div>
+            <div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><Send className="w-6 h-6 text-green-600"/> {smsStats.sms_total}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-5" data-testid="stat-invites">
+            <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Invitations contactées</div>
+            <div className="mt-2 text-3xl font-display font-bold">{smsStats.invites_responded}/{smsStats.invites_sent}</div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-5" data-testid="stat-response-rate">
+            <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Taux de réponse</div>
+            <div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><TrendingUp className="w-6 h-6 text-blue-600"/> {smsStats.response_rate}%</div>
+          </div>
+        </div>
+      )}
 
       <section className="mt-10">
         <div className="flex items-center justify-between mb-4">
