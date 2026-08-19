@@ -930,6 +930,10 @@ async def test_sms(payload: TestSmsIn, user=Depends(get_current_user)):
         except Exception as e:
             sms_status = "failed"
             error = str(e)
+            low = error.lower()
+            if any(k in low for k in ("572006", "21608", "trial", "unverified", "verified recipient", "predefined sms templates")):
+                error = ("Compte Twilio TRIAL : envoi bloqué. Ajoutez le numéro destinataire "
+                         "comme 'Verified Caller ID' dans Twilio Console, ou upgradez le compte.")
             logger.warning(f"Test SMS failed: {error}")
     doc = {
         "id": new_id(), "mission_id": None, "shift_id": None, "slot_id": None,
@@ -939,9 +943,7 @@ async def test_sms(payload: TestSmsIn, user=Depends(get_current_user)):
     }
     await db.notifications.insert_one(doc)
     doc.pop("_id", None)
-    if error:
-        raise HTTPException(status_code=502, detail=f"Envoi Twilio échoué : {error}")
-    return {"ok": True, "channel": channel, "to": target, "status": sms_status}
+    return {"success": error is None, "channel": channel, "to": target, "status": sms_status, "error": error}
 
 
 # ---------------- Cron: 24h reminders ----------------

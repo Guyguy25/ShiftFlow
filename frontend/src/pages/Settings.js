@@ -40,7 +40,11 @@ export default function Settings() {
     setTesting(true);
     try {
       const { data } = await api.post("/notifications/test-sms", testTo ? { to: testTo } : {});
-      toast.success(`Test envoyé (${data.channel}) → ${data.to}`);
+      if (data.success) {
+        toast.success(`SMS envoyé via ${data.channel} → ${data.to}`);
+      } else {
+        toast.error(data.error || `Échec (status ${data.status})`, { duration: 8000 });
+      }
       reloadNotifs();
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || "Erreur d'envoi");
