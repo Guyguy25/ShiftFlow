@@ -1,0 +1,59 @@
+{
+  "summary": "Iteration 4 (onboarding + freemium + Stripe) tested end-to-end. Backend: 32/32 pytest pass (/app/backend/tests/test_iteration4_freemium_stripe.py) — auth/me exposes plan+onboarding_completed+subscription_status, POST /api/onboarding + status flag, /api/plan/quota shape, HTTP 402 freemium blocks on POST /missions and /workers with clear French messages, Pro bypass, Stripe checkout (monthly 4900 EUR + yearly 48800 EUR) returning real checkout.stripe.com URLs with payment_transactions status='initiated', /payments/status (no auth, 404 on unknown), webhook rejects invalid/missing signature with 400, /payments/portal. Frontend: register -> /onboarding OK, ProtectedRoute forces /onboarding from any /app/* route, onboarding QCM/progress/disabled-Suivant OK, pricing 3 cards OK with real Stripe redirect, FULL REAL PAYMENT executed with 4242 card -> /payment/success shows 'Bienvenue en Pro !' and DB user became plan=pro/subscription_status=active/stripe_customer_id set; real Stripe subscription cancel webhook downgraded back to plan=free (webhook end-to-end verified). Regression: login, dashboard, missions, calendar, history, settings, test-SMS (French trial toast), reminder block, duplicate button all fine. THREE spec items are NOT implemented: dashboard plan banner, Settings subscription block, and the onboarding transition screen is unreachable.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/missions/{id}/duplicate", "issue": "Freemium quota is NOT enforced on mission duplication. Verified on the free admin (1/1 active missions, quota reached): duplicate returned 200 and created a 2nd active mission. A free user can bypass the 1-mission limit indefinitely via 'Dupliquer'. Add `await check_quota_or_raise(user, 'mission')` at the start of the duplicate endpoint (server.py ~L773).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/payments/checkout", "issue": "Stripe-hosted checkout defaulted country to Netherlands and applied VAT 21% (total 59,29 EUR for the 49 EUR price) based on the buyer IP, since the price is tax-exclusive under SMP/automatic_tax. Expected for sandbox but the Pricing page only says 'TVA gérée automatiquement' — consider showing '49 € HT' to avoid a price-surprise at checkout."},
+      {"endpoint": "POST /api/auth/login", "issue": "No brute-force lockout implemented (playbook asks for lockout after 5 failed attempts): no failed_attempts/locked_until fields exist on the user doc and repeated bad logins are always answered 401. bcrypt hash is correctly $2b$, cookies are httpOnly+secure+samesite=none, seed updates password if changed — those checks pass."},
+      {"endpoint": "GET /api/plan/quota", "issue": "_active_missions_count() loads every mission then issues one shifts query per mission (N+1). Fine at demo scale, but it runs on every quota check / POST mission; consider one aggregate on shifts grouped by mission_id."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard.js", "issue": "Plan quota banner is completely missing — no data-testid='plan-quota-banner' nor 'plan-pro-banner' in the codebase, and no X/1 missions / Y/10 intervenants text is rendered on /app/dashboard (verified for both a free and a pro account). Feature not implemented.", "selector": "[data-testid='plan-quota-banner']", "priority": "HIGH"},
+      {"component": "Settings.js", "issue": "Subscription block is completely missing — no data-testid='settings-subscription-block', 'settings-upgrade-link' or 'settings-portal-btn' anywhere in the source. Settings only renders profile / Twilio / notif log / reminder blocks, so a Pro user has no way to reach the Stripe billing portal from the UI (the backend /api/payments/portal works and returns a valid https://billing.stripe.com URL).", "selector": "[data-testid='settings-subscription-block']", "priority": "HIGH"},
+      {"component": "Onboarding.js", "issue": "The transition screen (data-testid='onboarding-final', CTA 'Créer mon compte gratuit') is UNREACHABLE. In next(): the branch `step === QUESTIONS.length` (the free-text pain step) immediately POSTs /onboarding and navigates to /app/dashboard, so step QUESTIONS.length+1 is never rendered. Fix: at step===QUESTIONS.length just setStep(step+1), and submit only when step===QUESTIONS.length+1.", "selector": "[data-testid='onboarding-final']", "priority": "HIGH"},
+      {"component": "Onboarding.js", "issue": "Progress/labels are computed on totalSteps=5 while only 4 steps are reachable: labels read 'Question 1/5'...'Question 4/5' and the bar stops at 80% (never reaches 100%).", "selector": "[data-testid='onboarding-progress']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Workers — free plan add worker", "issue": "Works and does not crash, but the freemium 402 message is only shown as inline red text inside the modal; no toast is emitted (spec asked for a toast) and there is no upgrade CTA/link to /pricing next to the error, so the user hits a dead end.", "affected_selectors": ["[data-testid='worker-form-modal']", "[data-testid='wf-submit']"]},
+      {"flow": "Onboarding gate", "issue": "While onboarding_completed=false the user is locked on /onboarding with no logout / 'plus tard' escape and no visible account context; only clearing cookies or manually going to /login exits.", "affected_selectors": ["[data-testid='onboarding-page']"]}
+    ],
+    "design_issues": [
+      {"screen": "/pricing", "issues": ["Footer line exposes internal test info to end users: 'Test carte : 4242 4242 4242 4242' — must be removed before production."]},
+      {"screen": "/onboarding", "issues": ["Long question titles wrap awkwardly on desktop (max-w-xl column centered in a 1920px viewport leaves a very empty page); no 'Retour' button to change a previous answer."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_freemium_stripe.py",
+    "/app/test_reports/pytest/iteration_4.xml"
+  ],
+  "action_items": [
+    "Enforce check_quota_or_raise(user,'mission') in POST /api/missions/{id}/duplicate (free plan bypass, HIGH).",
+    "Implement the Dashboard plan banner (plan-quota-banner / plan-pro-banner) consuming GET /api/plan/quota with X/1 missions and Y/10 intervenants.",
+    "Implement the Settings subscription block (settings-subscription-block, settings-upgrade-link for free, settings-portal-btn calling /api/payments/portal for pro).",
+    "Fix Onboarding.next() so the final transition screen with 'Créer mon compte gratuit' is reachable, and align progress/labels with the real number of steps (4).",
+    "Show a toast + link to /pricing on 402 freemium errors in the Workers and Mission-create forms.",
+    "Remove the 'Test carte : 4242 4242 4242 4242' line from /pricing.",
+    "Optional: add login brute-force lockout (5 fails) as required by the auth playbook."
+  ],
+  "critical_code_review_comments": [
+    "server.py: check_quota_or_raise is defined ~600 lines after its call sites (POST /workers L461, POST /missions L536) with '# noqa: F821' — works at runtime but is fragile; move quota helpers above the routers.",
+    "server.py is 1352 lines and mixes auth, SMS, missions, cron and Stripe — split into routers/modules (>700 lines rule).",
+    "GET /api/payments/status/{id} is unauthenticated and, when Stripe says paid, upgrades the user tied to session metadata. It is idempotent and only reachable with a valid cs_ id, but consider requiring auth or at least checking the session belongs to the caller.",
+    "/api/stripe/webhook correctly verifies signatures and is idempotent ($ne:'paid' guard); real customer.subscription.deleted event was received in preview and downgraded the user to free — good.",
+    "Onboarding answers are stored but never surfaced (no admin view/analytics); check_quota only counts missions, not shifts, so a free user can pack unlimited shifts inside their single mission — confirm this is intended."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4_freemium_stripe.py (new, 32 tests)"
+  ],
+  "success_rate": {"backend": "97% (32/32 pytest pass; 1 functional loophole found outside the suite: duplicate bypasses quota)", "frontend": "70% (onboarding gate, register redirect, pricing+Stripe payment, payment success/cancel OK; dashboard banner + settings subscription block missing; onboarding final screen unreachable)"},
+  "seed_data_creation": "Created and deleted throwaway accounts (test_reg_*@example.com, test_ui_*@example.com) and TEST_ missions/workers. IMPORTANT: while cleaning I also deleted 10 stale 'TEST_Mission_*' missions left by earlier iterations — the admin now has 1 mission (Montage Salon Nike) + 14 workers, so free quota is still 1/1 missions and 14/10 workers. A real Stripe test subscription was purchased then cancelled; admin was restored to plan=free with subscription_status unset (stripe_customer_id cus_V6pJ... kept so the billing portal remains testable).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin spartanblock4@gmail.com / ShiftFlow2026! (plan=free, onboarding_completed=true)",
+  "context_for_next_testing_agent": "Run backend suite serially: `cd /app/backend && python -m pytest tests/test_iteration4_freemium_stripe.py -n 0` — the pytest.ini forces -n 2 and the TestProBypass fixture temporarily flips the admin to plan=pro in Mongo, which races other classes when parallel. Legacy /app/backend/tests/backend_test.py now has 11 failures that are NOT app bugs: it creates missions/workers and is blocked by the new 402 freemium checks (needs a plan=pro fixture), plus TestConfig asserts twilio_ready is False while Twilio is now configured. Stripe sandbox works end-to-end with card 4242 4242 4242 4242 (Link-hosted checkout: placeholders '1234 1234 1234 1234', 'MM / YY', 'CVC', 'Full name on card', button 'Pay and subscribe'); real webhooks are delivered to the preview URL. To reset a pro test account: cancel the sub via stripe.Subscription.cancel then wait ~10s for the webhook to set plan=free.",
+  "rca_of_the_issue": "Duplicate-bypass RCA: create_mission calls check_quota_or_raise but duplicate_mission (server.py ~L773) inserts a mission document directly without any quota check, so the freemium ceiling is only enforced on one of the two creation paths. Missing UI blocks RCA: Dashboard.js and Settings.js were never modified in this iteration — grep for 'quota'/'plan' returns no match in either file, so the banner/subscription features exist only in the spec. Onboarding final-screen RCA: the last `else if (step === QUESTIONS.length)` branch performs the submit instead of advancing, so state never reaches QUESTIONS.length+1 where <div data-testid='onboarding-final'> is rendered."
+}

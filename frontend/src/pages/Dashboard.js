@@ -44,10 +44,12 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [smsStats, setSmsStats] = useState(null);
+  const [quota, setQuota] = useState(null);
 
   useEffect(() => {
     api.get("/dashboard/summary").then((r) => setData(r.data)).catch(() => {});
     api.get("/dashboard/sms-stats").then((r) => setSmsStats(r.data)).catch(() => {});
+    api.get("/plan/quota").then((r) => setQuota(r.data)).catch(() => {});
   }, []);
 
   if (!data) return <div className="text-gray-500" data-testid="dashboard-loading">Chargement…</div>;
@@ -82,6 +84,23 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Plan / quota banner */}
+      {quota && quota.plan === "free" && (
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="plan-quota-banner">
+          <div className="flex-1 text-sm">
+            <strong className="text-blue-900">Plan gratuit</strong> · Missions actives {quota.active_missions}/{quota.mission_limit} · Intervenants {quota.workers}/{quota.worker_limit}
+          </div>
+          <Link to="/pricing" data-testid="dashboard-upgrade-link" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md whitespace-nowrap">
+            Passer au Pro →
+          </Link>
+        </div>
+      )}
+      {quota && quota.plan === "pro" && (
+        <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900 flex items-center gap-2" data-testid="plan-pro-banner">
+          <CheckCircle2 className="w-4 h-4"/> Plan <strong>Pro</strong> actif — missions et intervenants illimités.
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">

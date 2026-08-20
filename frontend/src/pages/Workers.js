@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Search, Trash2, Edit2, X } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, X, Crown } from "lucide-react";
+import { Link } from "react-router-dom";
 import { api, formatApiError } from "../lib/api";
 import { toast, Toaster } from "sonner";
 
@@ -27,7 +28,14 @@ function WorkerForm({ initial, onClose, onSaved }) {
       }
       onSaved();
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || err.message);
+      const status = err.response?.status;
+      const detail = formatApiError(err.response?.data?.detail) || err.message;
+      if (status === 402) {
+        toast.error(detail, { duration: 8000, action: { label: "Voir Pro", onClick: () => (window.location.href = "/pricing") } });
+        setError(detail);
+      } else {
+        setError(detail);
+      }
     } finally { setSaving(false); }
   };
 
@@ -78,7 +86,14 @@ function WorkerForm({ initial, onClose, onSaved }) {
             <input type="checkbox" data-testid="wf-active" checked={form.active} onChange={(e)=>set("active", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
             Actif
           </label>
-          {error && <div className="text-sm text-red-600">{error}</div>}
+          {error && (
+            <div className="text-sm text-red-600" data-testid="wf-error">
+              {error}
+              {error.toLowerCase().includes("limite") && (
+                <a href="/pricing" className="ml-2 underline font-medium text-red-700 hover:text-red-800">Passer au Pro →</a>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button>
             <button type="submit" disabled={saving} data-testid="wf-submit" className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">

@@ -96,6 +96,9 @@ def set_auth_cookies(response: Response, access: str, refresh: str):
 def public_user(u: dict) -> dict:
     return {"id": u["id"], "email": u["email"], "name": u.get("name", ""),
             "agency_name": u.get("agency_name", ""), "phone": u.get("phone", ""),
+            "plan": u.get("plan", "free"),
+            "onboarding_completed": bool(u.get("onboarding_completed")),
+            "subscription_status": u.get("subscription_status"),
             "created_at": u.get("created_at")}
 
 
@@ -455,6 +458,7 @@ async def list_workers(q: Optional[str] = None, skill: Optional[str] = None, use
 
 @api.post("/workers")
 async def create_worker(payload: WorkerIn, user=Depends(get_current_user)):
+    await check_quota_or_raise(user, "worker")  # noqa: F821 (defined later)
     w = {"id": new_id(), "agency_id": user["id"], **payload.model_dump(), "created_at": iso(now_utc())}
     await db.workers.insert_one(w)
     w.pop("_id", None)
@@ -529,6 +533,7 @@ async def list_missions(user=Depends(get_current_user)):
 
 @api.post("/missions")
 async def create_mission(payload: MissionIn, user=Depends(get_current_user)):
+    await check_quota_or_raise(user, "mission")  # noqa: F821 (defined later)
     mission = {
         "id": new_id(),
         "agency_id": user["id"],
@@ -767,6 +772,7 @@ class ShiftDuplicateIn(BaseModel):
 
 @api.post("/missions/{mission_id}/duplicate")
 async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
+    await check_quota_or_raise(user, "mission")  # noqa: F821
     original = await db.missions.find_one({"id": mission_id, "agency_id": user["id"]}, {"_id": 0})
     if not original:
         raise HTTPException(status_code=404, detail="Mission introuvable")
@@ -1128,6 +1134,198 @@ async def on_shutdown():
 @api.get("/")
 async def root():
     return {"service": "shiftflow", "ok": True, "twilio_ready": twilio_ready()}
+
+
+# ---------------- Stripe / Plan / Onboarding ----------------
+import stripe as stripe_lib
+stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY") or "sk_test_emergent"
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+FREE_MISSION_LIMIT = 1
+FREE_WORKER_LIMIT = 10
+
+
+async def _get_plan(user_id: str) -> str:
+    u = await db.users.find_one({"id": user_id}, {"_id": 0})
+    return (u or {}).get("plan", "free")
+
+
+async def _active_missions_count(user_id: str) -> int:
+    today = now_utc().date().isoformat()
+    ms = await db.missions.find({"agency_id": user_id, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(2000)
+    count = 0
+    for m in ms:
+        shifts = await db.shifts.find({"mission_id": m["id"]}, {"_id": 0}).to_list(500)
+        if not shifts:
+            count += 1
+        else:
+            last = max((s["date"] for s in shifts), default=None)
+            if last and last >= today:
+                count += 1
+    return count
+
+
+async def check_quota_or_raise(user, kind: str):
+    if (await _get_plan(user["id"])) == "pro":
+        return
+    if kind == "mission":
+        if (await _active_missions_count(user["id"])) >= FREE_MISSION_LIMIT:
+            raise HTTPException(status_code=402,
+                detail=f"Limite plan gratuit atteinte ({FREE_MISSION_LIMIT} mission active max). Passez au Pro pour créer des missions illimitées.")
+    elif kind == "worker":
+        if (await db.workers.count_documents({"agency_id": user["id"]})) >= FREE_WORKER_LIMIT:
+            raise HTTPException(status_code=402,
+                detail=f"Limite plan gratuit atteinte ({FREE_WORKER_LIMIT} intervenants max). Passez au Pro pour un nombre illimité.")
+
+
+class OnboardingIn(BaseModel):
+    team_size: str
+    monthly_missions: str
+    current_tool: str
+    main_pain: str
+
+
+@api.get("/onboarding/status")
+async def onboarding_status(user=Depends(get_current_user)):
+    return {"completed": bool(user.get("onboarding_completed"))}
+
+
+@api.post("/onboarding")
+async def submit_onboarding(payload: OnboardingIn, user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "onboarding_completed": True,
+        "onboarding_answers": payload.model_dump(),
+        "onboarding_completed_at": iso(now_utc()),
+    }})
+    return {"ok": True}
+
+
+@api.get("/plan/quota")
+async def get_quota(user=Depends(get_current_user)):
+    plan = await _get_plan(user["id"])
+    missions = await _active_missions_count(user["id"])
+    workers = await db.workers.count_documents({"agency_id": user["id"]})
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return {
+        "plan": plan,
+        "active_missions": missions,
+        "mission_limit": None if plan == "pro" else FREE_MISSION_LIMIT,
+        "workers": workers,
+        "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
+        "subscription_status": (u or {}).get("subscription_status"),
+    }
+
+
+class CheckoutIn(BaseModel):
+    lookup_key: str
+    origin_url: str
+
+
+@api.post("/payments/checkout")
+async def create_checkout(payload: CheckoutIn, user=Depends(get_current_user)):
+    prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
+    if not prices:
+        raise HTTPException(status_code=400, detail=f"Prix inconnu: {payload.lookup_key}")
+    price = prices[0]
+    origin = payload.origin_url.rstrip("/")
+    kwargs = dict(
+        line_items=[{"price": price.id, "quantity": 1}],
+        mode="subscription" if price.recurring else "payment",
+        success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{origin}/payment/cancel",
+        customer_email=user.get("email"),
+        metadata={"user_id": user["id"], "lookup_key": payload.lookup_key},
+    )
+    try:
+        session = stripe_lib.checkout.Session.create(**kwargs, managed_payments={"enabled": True})
+    except stripe_lib.error.InvalidRequestError as e:
+        msg = (str(e) or "").lower()
+        if "managed payments" in msg or "ineligible" in msg:
+            session = stripe_lib.checkout.Session.create(
+                **kwargs, automatic_tax={"enabled": True}, billing_address_collection="required",
+            )
+        else:
+            raise
+    await db.payment_transactions.insert_one({
+        "id": new_id(), "session_id": session.id, "user_id": user["id"],
+        "lookup_key": payload.lookup_key, "amount": (price.unit_amount or 0),
+        "currency": price.currency, "status": "initiated", "payment_status": "pending",
+        "created_at": iso(now_utc()), "updated_at": iso(now_utc()),
+    })
+    return {"checkout_url": session.url, "session_id": session.id}
+
+
+@api.get("/payments/status/{session_id}")
+async def payment_status_endpoint(session_id: str):
+    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Transaction inconnue")
+    if record.get("payment_status") != "paid":
+        try:
+            s = stripe_lib.checkout.Session.retrieve(session_id)
+            if s.payment_status == "paid" or s.status == "complete":
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+                    {"$set": {"status": "completed", "payment_status": "paid",
+                              "stripe_subscription_id": s.subscription,
+                              "updated_at": iso(now_utc())}},
+                )
+                if s.metadata and s.metadata.get("user_id"):
+                    await db.users.update_one({"id": s.metadata["user_id"]}, {"$set": {
+                        "plan": "pro", "subscription_status": "active",
+                        "stripe_customer_id": s.customer, "stripe_subscription_id": s.subscription,
+                    }})
+                record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        except stripe_lib.error.StripeError:
+            pass
+    return {"session_id": record["session_id"],
+            "status": record["status"], "payment_status": record["payment_status"]}
+
+
+@api.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe_lib.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    obj = event["data"]["object"]
+    t = event["type"]
+    if t == "checkout.session.completed":
+        await db.payment_transactions.update_one(
+            {"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"status": "completed", "payment_status": obj.get("payment_status", "paid"),
+                      "stripe_subscription_id": obj.get("subscription"),
+                      "updated_at": iso(now_utc())}},
+        )
+        uid = (obj.get("metadata") or {}).get("user_id")
+        if uid:
+            await db.users.update_one({"id": uid}, {"$set": {
+                "plan": "pro", "subscription_status": "active",
+                "stripe_customer_id": obj.get("customer"),
+                "stripe_subscription_id": obj.get("subscription"),
+            }})
+    elif t == "customer.subscription.deleted":
+        await db.users.update_one({"stripe_customer_id": obj.get("customer")}, {"$set": {
+            "plan": "free", "subscription_status": "canceled",
+        }})
+    elif t == "checkout.session.expired":
+        await db.payment_transactions.update_one({"session_id": obj["id"]},
+            {"$set": {"status": "expired", "payment_status": "expired", "updated_at": iso(now_utc())}})
+    return {"status": "ok"}
+
+
+@api.post("/payments/portal")
+async def billing_portal(request: Request, user=Depends(get_current_user)):
+    u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    if not u or not u.get("stripe_customer_id"):
+        raise HTTPException(status_code=400, detail="Aucun abonnement actif")
+    origin = request.headers.get("origin", FRONTEND_URL)
+    session = stripe_lib.billing_portal.Session.create(
+        customer=u["stripe_customer_id"],
+        return_url=f"{origin}/app/settings",
+    )
+    return {"url": session.url}
 
 
 app.include_router(api)

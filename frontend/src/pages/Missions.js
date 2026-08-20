@@ -23,7 +23,18 @@ export default function Missions() {
       const { data } = await api.post(`/missions/${id}/duplicate`);
       toast.success("Mission dupliquée (dates décalées de +7 jours)");
       nav(`/app/missions/${data.id}`);
-    } catch (err) { toast.error("Erreur lors de la duplication"); }
+    } catch (err) {
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail || "Erreur lors de la duplication";
+      if (status === 402) {
+        toast.error(detail, {
+          duration: 8000,
+          action: { label: "Passer au Pro", onClick: () => nav("/pricing") },
+        });
+      } else {
+        toast.error(typeof detail === "string" ? detail : "Erreur lors de la duplication");
+      }
+    }
   };
 
   return (

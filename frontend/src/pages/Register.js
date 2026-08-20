@@ -19,7 +19,7 @@ export default function Register() {
     setLoading(true);
     try {
       await register(form);
-      navigate("/app/dashboard");
+      navigate("/onboarding");
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
     } finally {

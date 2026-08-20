@@ -17,6 +17,9 @@ import History from "@/pages/History";
 import Settings from "@/pages/Settings";
 import Calendar from "@/pages/Calendar";
 import PublicConfirm from "@/pages/PublicConfirm";
+import Onboarding from "@/pages/Onboarding";
+import PaymentSuccess from "@/pages/PaymentSuccess";
+import PaymentCancel from "@/pages/PaymentCancel";
 import { Toaster } from "sonner";
 
 function AppRoutes() {
@@ -27,6 +30,9 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/m/:token" element={<PublicConfirm />} />
+      <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding/></ProtectedRoute>} />
+      <Route path="/payment/success" element={<PaymentSuccess />} />
+      <Route path="/payment/cancel" element={<PaymentCancel />} />
       <Route path="/app" element={<ProtectedRoute><Layout><Outlet/></Layout></ProtectedRoute>}>
         <Route index element={<Navigate to="/app/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />

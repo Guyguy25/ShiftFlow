@@ -61,7 +61,13 @@ export default function MissionCreate() {
       const { data } = await api.post("/missions", payload);
       nav(`/app/missions/${data.id}?step=select`);
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || err.message);
+      const status = err.response?.status;
+      const detail = formatApiError(err.response?.data?.detail) || err.message;
+      if (status === 402) {
+        setError(`${detail} Rendez-vous sur /pricing pour débloquer.`);
+      } else {
+        setError(detail);
+      }
     } finally { setLoading(false); }
   };
 

@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 5 retest of the four iteration-4 fixes. BLOCKER FOUND AND FIXED BY QA: /app/frontend/src/pages/Settings.js contained TWO `export default function Settings()` declarations (new version lines 1-180 + stale old copy lines 182-341) -> webpack SyntaxError 'Identifier Settings has already been declared', the whole React app served the CRA error overlay and NO page could load (this is why iteration 4 appeared to be missing the UI blocks). I truncated the file to the first 180 lines (removed the duplicated stale block) and the app compiles again. After that all 4 fixes verified: (1) POST /api/missions/{id}/duplicate now returns 402 for a free user at quota (no mission created) and 200 for pro; (2) /onboarding reaches data-testid='onboarding-final' with CTA 'Créer mon compte gratuit' and POST /api/onboarding fires only on that last click (verified via request interception: 0 posts before, 1 after); (3) /pricing no longer contains '4242'; (4) Dashboard plan-quota-banner (free: 'Missions actives 1/1 · Intervenants 14/10') and plan-pro-banner (pro) both render; Settings settings-subscription-block renders with settings-upgrade-link (free) and settings-portal-btn (pro) which really redirects to https://billing.stripe.com/p/session. Backend: 62/62 pytest pass (14 new iteration-5 + 48 iteration-3/4 regression). Frontend regression: login, missions list/detail (6 shifts), calendar, historique, intervenants, SMS test (Twilio TRIAL French error toast) all OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Still no brute-force lockout (playbook asks for lockout after 5 failed attempts); no failed_attempts/locked_until fields. bcrypt $2b$, httpOnly cookies, seed password update all OK."},
+      {"endpoint": "GET /api/plan/quota", "issue": "_active_missions_count still N+1 (one shifts query per mission) and runs on every quota check, now also on every duplicate."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Settings.js", "issue": "BUILD BLOCKER (fixed by QA): duplicated stale copy of the whole component after line 181 caused 'Identifier Settings has already been declared' and broke the entire frontend bundle. Main agent must confirm nothing intended was lost in lines 182-341 (the retained 1-180 version contains subscription block + profile + Twilio + notif log + reminder block).", "selector": "[data-testid='settings-subscription-block']", "priority": "CRITICAL"},
+      {"component": "Onboarding.js", "issue": "Cosmetic: the free-text pain step is still labelled 'Question 4/5' although there are only 3 QCM + 1 open field; progress now correctly reaches 100% on the final screen. Also still no 'Retour' button to change a previous answer.", "selector": "[data-testid='onboarding-pain']", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Missions — duplicate on free plan", "issue": "402 is correctly returned and no mission is created, but the UI toast shows a generic 'Erreur lors de la duplication' instead of the backend French quota message, and there is no link to /pricing. Missions.js duplicate() catch should surface err.response.data.detail (402) + upgrade CTA.", "affected_selectors": ["[data-testid^='duplicate-mission-']"]},
+      {"flow": "Workers — add worker on free plan at quota", "issue": "Unchanged from iteration 4: 402 message shown only as inline red text in the modal, no toast and no /pricing CTA.", "affected_selectors": ["[data-testid='wf-submit']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5_duplicate_quota.py",
+    "/app/backend/tests/test_iteration4_freemium_stripe.py",
+    "/app/test_reports/pytest/iteration_5.xml"
+  ],
+  "action_items": [
+    "Review /app/frontend/src/pages/Settings.js: QA removed a duplicated stale component copy (lines 182-341) that made the whole frontend fail to compile. Confirm the retained version is the intended one and check other pages for the same copy-paste accident.",
+    "Missions.js duplicate(): show the backend 402 detail message + a 'Passer au Pro' link instead of the generic error toast (same for Workers modal).",
+    "Optional: relabel the onboarding open question (currently 'Question 4/5').",
+    "Optional: add login brute-force lockout (5 fails) per the auth playbook."
+  ],
+  "critical_code_review_comments": [
+    "A duplicated `export default function` slipped into Settings.js and took the entire SPA down; frontend edits must be verified by loading a page (or checking /var/log/supervisor/frontend.err.log for webpack errors) after each write.",
+    "server.py still 1350+ lines mixing auth/SMS/missions/cron/Stripe; check_quota_or_raise is still defined ~600 lines after its 3 call sites with '# noqa: F821'.",
+    "GET /api/payments/status/{session_id} remains unauthenticated and can upgrade the user tied to the session metadata."
+  ],
+  "updated_files": [
+    "/app/frontend/src/pages/Settings.js (removed duplicated stale component block, lines 182-341; backup at /tmp/Settings.js.bak)",
+    "/app/backend/tests/test_iteration5_duplicate_quota.py (new, 14 tests)"
+  ],
+  "success_rate": {"backend": "100% (62/62 pytest pass)", "frontend": "95% (all 4 fixes verified after unblocking the build; only the 402 toast wording and the onboarding label remain)"},
+  "seed_data_creation": "Registered throwaway UI account test_it5_*@example.com for the onboarding flow and deleted it from Mongo afterwards. Admin plan was temporarily flipped to pro in Mongo to verify plan-pro-banner + settings-portal-btn, then restored to plan=free with subscription_status unset (stripe_customer_id cus_V6pJ... kept). Admin still has 1 mission (Montage Salon Nike) + 14 workers, so free quota is 1/1 missions and 14/10 workers.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin spartanblock4@gmail.com / ShiftFlow2026! (plan=free, onboarding_completed=true)",
+  "context_for_next_testing_agent": "Login testids are login-email-input / login-password-input / login-submit-btn (not login-email/login-submit). Run backend tests serially: `cd /app/backend && python -m pytest tests/test_iteration5_duplicate_quota.py tests/test_iteration4_freemium_stripe.py -n 0` (pytest.ini forces -n 2, and plan-flipping fixtures race in parallel). test_iteration5 has an autouse teardown that resets the admin to plan=free. Legacy /app/backend/tests/backend_test.py still has ~11 failures that are NOT app bugs (needs pro fixture / twilio_ready expectation). If a page shows a red 'Compiled with problems' overlay, check for duplicated component declarations in the edited file.",
+  "rca_of_the_issue": "Iteration-4 'missing UI blocks' RCA: the blocks WERE implemented, but Settings.js was written with the new component appended in front of the old one, leaving two `export default function Settings()` declarations. Babel raised 'Identifier Settings has already been declared (182:24)', webpack served the CRA error overlay for every route, so login itself was impossible and no testid could be found. Removing the stale duplicate restored the build and all blocks render correctly. Duplicate-quota fix confirmed at server.py L775 (`await check_quota_or_raise(user, 'mission')` before the 404 lookup) — note the quota check runs before the mission-exists check, so duplicating an unknown id as a free user at quota returns 402 instead of 404 (acceptable, but worth knowing)."
+}
