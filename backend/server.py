@@ -1227,24 +1227,18 @@ async def create_checkout(payload: CheckoutIn, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail=f"Prix inconnu: {payload.lookup_key}")
     price = prices[0]
     origin = payload.origin_url.rstrip("/")
-    kwargs = dict(
+    # French micro-entrepreneur franchise en base de TVA (art. 293 B du CGI): no VAT applied.
+    session = stripe_lib.checkout.Session.create(
         line_items=[{"price": price.id, "quantity": 1}],
         mode="subscription" if price.recurring else "payment",
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
         customer_email=user.get("email"),
         metadata={"user_id": user["id"], "lookup_key": payload.lookup_key},
+        custom_text={
+            "submit": {"message": "TVA non applicable, art. 293 B du CGI"},
+        },
     )
-    try:
-        session = stripe_lib.checkout.Session.create(**kwargs, managed_payments={"enabled": True})
-    except stripe_lib.error.InvalidRequestError as e:
-        msg = (str(e) or "").lower()
-        if "managed payments" in msg or "ineligible" in msg:
-            session = stripe_lib.checkout.Session.create(
-                **kwargs, automatic_tax={"enabled": True}, billing_address_collection="required",
-            )
-        else:
-            raise
     await db.payment_transactions.insert_one({
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
         "lookup_key": payload.lookup_key, "amount": (price.unit_amount or 0),

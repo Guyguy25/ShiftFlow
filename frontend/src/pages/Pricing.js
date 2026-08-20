@@ -21,23 +21,12 @@ const PLANS = [
     name: "Pro Mensuel",
     price: "49 €",
     period: "/mois",
+    subtitle: "TVA non applicable, art. 293 B du CGI",
     lookup: "shiftflow_pro_monthly",
     features: ["Missions illimitées", "Intervenants illimités", "Cascade & relances", "Rappels 24h SMS", "Historique complet", "Support prioritaire"],
     cta: "Passer au Pro",
     highlighted: true,
     testid: "pricing-monthly-cta",
-  },
-  {
-    key: "yearly",
-    name: "Pro Annuel",
-    price: "488 €",
-    period: "/an",
-    subtitle: "≈ 40,66 €/mois · –17%",
-    lookup: "shiftflow_pro_yearly",
-    features: ["Tout Pro Mensuel", "2 mois offerts", "Économie 100 €/an"],
-    cta: "Passer au Pro annuel",
-    highlighted: false,
-    testid: "pricing-yearly-cta",
   },
 ];
 
@@ -90,7 +79,7 @@ export default function Pricing() {
 
         {error && <div className="mt-6 text-sm text-red-600 text-center" data-testid="pricing-error">{error}</div>}
 
-        <div className="mt-12 grid md:grid-cols-3 gap-5">
+        <div className="mt-12 grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
           {PLANS.map((p) => (
             <div key={p.key}
               className={`rounded-2xl p-7 border transition-shadow flex flex-col ${
@@ -99,7 +88,6 @@ export default function Pricing() {
               <div className="flex items-baseline justify-between">
                 <h3 className="text-lg font-display font-bold">{p.name}</h3>
                 {p.highlighted && <span className="text-[10px] uppercase tracking-widest bg-blue-500 text-white px-2 py-1 rounded-md font-bold">Populaire</span>}
-                {p.key === "yearly" && <span className="text-[10px] uppercase tracking-widest bg-amber-100 text-amber-800 px-2 py-1 rounded-md font-bold">–17%</span>}
               </div>
               <div className="mt-4 flex items-baseline gap-1">
                 <span className="text-4xl font-display font-bold">{p.price}</span>
