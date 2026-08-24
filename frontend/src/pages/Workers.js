@@ -68,7 +68,7 @@ function WorkerForm({ initial, onClose, onSaved, onQuota }) {
           <h3 className="font-display font-bold text-xl">{initial ? "Modifier l'intervenant" : "Nouvel intervenant"}</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5"/></button>
         </div>
-        <form onSubmit={submit} className="mt-4 space-y-4">
+        <form onSubmit={submit} noValidate className="mt-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium">Prénom *</label>
@@ -88,7 +88,7 @@ function WorkerForm({ initial, onClose, onSaved, onQuota }) {
           </div>
           <div>
             <label className="text-sm font-medium">Email <span className="text-gray-400 text-xs">(facultatif)</span></label>
-            <input type="email" data-testid="wf-email" className={inputCls(errors.email)} value={form.email} onChange={(e)=>set("email", e.target.value)}/>
+            <input type="text" inputMode="email" data-testid="wf-email" className={inputCls(errors.email)} value={form.email} onChange={(e)=>set("email", e.target.value)}/>
             {errors.email && <div className="text-xs text-red-600 mt-1" data-testid="wf-err-email">{errors.email}</div>}
           </div>
           <div>

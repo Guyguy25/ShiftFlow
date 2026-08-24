@@ -730,7 +730,7 @@ async def mark_no_answer(slot_id: str, user=Depends(get_current_user)):
 @api.get("/public/mission/{token}")
 async def public_get(token: str):
     slot = await db.mission_workers.find_one({"token": token}, {"_id": 0})
-    if not slot:
+    if not slot or not slot.get("shift_id") or not slot.get("mission_id"):
         raise HTTPException(status_code=404, detail="Lien invalide")
     shift = await db.shifts.find_one({"id": slot["shift_id"]}, {"_id": 0})
     mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
@@ -1380,10 +1380,26 @@ async def billing_portal(request: Request, user=Depends(get_current_user)):
     if not u or not u.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Aucun abonnement actif")
     origin = request.headers.get("origin", FRONTEND_URL)
-    session = stripe_lib.billing_portal.Session.create(
-        customer=u["stripe_customer_id"],
-        return_url=f"{origin}/app/settings",
-    )
+    try:
+        session = stripe_lib.billing_portal.Session.create(
+            customer=u["stripe_customer_id"],
+            return_url=f"{origin}/app/settings",
+        )
+    except stripe_lib.error.InvalidRequestError as e:
+        # Stale customer id (e.g. from a previous Stripe account) — clear it and ask user to re-subscribe.
+        msg = str(e) or ""
+        if "No such customer" in msg or "no such customer" in msg.lower():
+            await db.users.update_one({"id": user["id"]}, {"$set": {
+                "stripe_customer_id": None,
+                "stripe_subscription_id": None,
+                "subscription_status": None,
+                "plan": "free",
+            }})
+            raise HTTPException(status_code=409,
+                detail="Votre client Stripe n'est plus valide (compte Stripe changé). Passez à nouveau au Pro depuis /pricing.")
+        raise HTTPException(status_code=502, detail=f"Stripe: {msg}")
+    except stripe_lib.error.StripeError as e:
+        raise HTTPException(status_code=502, detail=f"Stripe: {e}")
     return {"url": session.url}
 
 

@@ -38,7 +38,6 @@ export default function Missions() {
 
   return (
     <div data-testid="missions-page">
-      <Toaster position="top-right" richColors/>
       <UpgradeModal open={!!upgrade} onClose={()=>setUpgrade(null)} message={upgrade}/>
       <Toaster position="top-right" richColors/>
       <div className="flex items-end justify-between">

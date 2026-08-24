@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 7 retest of the 4 fixes from iteration_6.json + full regression. BACKEND: new suite /app/backend/tests/test_iteration7_portal_public.py (23 tests, 22 pass / 1 skip-by-design) + all 100 previous tests (iterations 3-6) re-run serially = 122/122 pass. The HIGH portal bug is FIXED and fully verified: free user without stripe_customer_id -> 400 'Aucun abonnement actif'; stale customer cus_V6pJBuEk7xFA69 -> 409 'Votre client Stripe n'est plus valide (compte Stripe changé)...' AND the DB row is unset (stripe_customer_id=None, plan=free) verified directly in Mongo; a freshly created real Stripe test customer -> 200 with a https://billing.stripe.com/... url; unauthenticated -> 401. The MINOR public-mission bug is FIXED: legacy token _IYTBBCfmq1H2y4PpVsLY1lYESTVm1E- returns 404 'Lien invalide' (was 500), and a sweep over all 60 mission_worker tokens in the DB produced zero 5xx. FRONTEND: Workers.js WorkerForm now has noValidate, email input is type=text inputMode=email, and all FOUR French inline errors render with an invalid email 'not-an-email' (wf-err-first / wf-err-last / wf-err-phone / wf-err-email) - screenshot confirmed. Regression all green: login (httpOnly cookie, $2b$ hash), dashboard KPIs + quota banner (free) / pro banner (pro), missions row click -> detail with 3 shifts, duplicate mission -> 402 -> UpgradeModal (CTA /pricing, close works), worker add at quota -> 402 -> UpgradeModal, bulk import (3-line paste -> preview '3 lignes / 2 valides' with the invalid row flagged -> submit -> quota_hit modal '0 ajoutés, 2 ignorés'), calendar page, historique page, settings (GRATUIT badge + upgrade-link when free, PRO ACTIF + portal btn when pro), test SMS (Twilio TRIAL blocked message), public /m/{valid token} renders the full shift card, /m/{legacy token} shows 'Lien invalide'. ONE REAL BUG REMAINS: the duplicate-<Toaster> fix was incomplete - App.js already renders a global <Toaster/> and Missions.js / Workers.js / MissionDetail.js / Settings.js each still render their own, so 2 sonner containers are mounted on those pages and EVERY toast is displayed TWICE (measured: 2 sonner toaster containers on /app/missions, /app/workers, /app/settings vs 1 on /app/dashboard; the portal 409 toast and the test-SMS toast both rendered as 2 identical copies).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/payments/status/{session_id}", "issue": "Carry-over, still unfixed: unauthenticated and still upgrades the user referenced in the session metadata."},
+      {"endpoint": "POST /api/auth/login", "issue": "Carry-over, still unfixed: no brute-force lockout after 5 failed attempts (auth playbook item)."},
+      {"endpoint": "POST /api/payments/checkout", "issue": "Carry-over: lookup_key 'shiftflow_pro_yearly' does not exist on the new product -> 400 'Prix inconnu'. No user impact (only monthly is offered)."},
+      {"endpoint": "POST /api/payments/portal", "issue": "Only 'No such customer' InvalidRequestError is mapped to 409; other InvalidRequestError cases (e.g. billing portal not configured in the Stripe dashboard, 'default configuration has not been created') fall through to a 502 with a raw English Stripe message shown to the user in a toast."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "App.js + Missions.js / Workers.js / MissionDetail.js / Settings.js", "issue": "DUPLICATE TOASTER NOT FULLY FIXED. Missions.js now has only one local <Toaster/>, but App.js (line 61) already mounts a GLOBAL <Toaster position=\"top-right\" richColors/>. Result: 2 sonner containers on /app/missions, /app/workers, /app/settings, /app/missions/{id} (vs 1 on /app/dashboard), and every toast renders twice - verified: the portal 409 message and the Twilio TRIAL test-SMS message each appeared as 2 identical toasts. Fix: delete the local <Toaster/> + the Toaster import from Missions.js, Workers.js, MissionDetail.js and Settings.js and keep only the one in App.js.", "selector": "[data-sonner-toaster]", "priority": "MEDIUM"},
+      {"component": "Settings.js openPortal", "issue": "After the 409 stale-customer response the backend downgrades the user to plan=free, but the UI does not call refresh(): the subscription card keeps showing 'PRO ACTIF' + 'Gérer mon abonnement' until a manual reload, so clicking again just re-triggers 400/409. Call await refresh() in the catch branch when status===409.", "selector": "[data-testid='settings-plan-badge']", "priority": "MEDIUM"},
+      {"component": "Workers.js BulkImportModal", "issue": "The parser only accepts comma/semicolon/tab separators and silently DROPS any line with <3 parts. Pasting the space-separated format users actually get from WhatsApp ('Alphonse Bulkone 0655110011') shows no preview at all, no error, and a disabled Import button - the hint text explicitly promises WhatsApp/Google Contacts pastes. Add a fallback space split or an explicit 'X lignes ignorées (format attendu : Prénom, Nom, Téléphone)' message.", "selector": "[data-testid='bulk-preview']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Stripe Checkout page", "issues": ["Carry-over: merchant name still displayed as 'Guyguy' + Sandbox badge instead of 'ShiftFlow' (Stripe dashboard setting, not code)."]},
+      {"screen": "Public page /m/{token}", "issues": ["The top-right header shows the raw agency_name of the mission owner ('Prompting' for the sampled token) with no label - looks like a stray word next to the ShiftFlow logo; consider prefixing it (e.g. 'Agence : Prompting') or styling it as a caption."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_portal_public.py",
+    "/app/test_reports/pytest/iteration_7.xml",
+    "/app/test_reports/pytest/iteration_7_regression.xml"
+  ],
+  "action_items": [
+    "Remove the local <Toaster/> (and the Toaster import) from Missions.js, Workers.js, MissionDetail.js and Settings.js - App.js already mounts a global one, so all toasts are currently duplicated.",
+    "Settings.js: call refresh() (or reload the quota) when POST /api/payments/portal returns 409, so the card stops showing 'PRO ACTIF' after the server-side downgrade.",
+    "Optional: broaden the portal error mapping so any Stripe InvalidRequestError yields a French message instead of a raw 502 Stripe string.",
+    "Optional (LOW): bulk import - accept space-separated lines or tell the user how many lines were ignored and why.",
+    "Carry-over: authenticate GET /api/payments/status/{session_id}; add login brute-force lockout."
+  ],
+  "critical_code_review_comments": [
+    "server.py /api/payments/portal: the 409 branch matches on the English substring 'No such customer' from the Stripe message; prefer e.code == 'resource_missing' (stable) instead of string matching, otherwise a Stripe wording change silently reverts to 502.",
+    "The stale-customer cleanup sets stripe_customer_id to None instead of $unset - iteration_6 asked for an UNSET. Functionally equivalent for the code paths checked (all use truthiness), but the field remains present in the document.",
+    "Toaster duplication is a structural issue: a page-level provider duplicated across 4 pages on top of the App-level one. Keep exactly one provider at the app root.",
+    "server.py is still 1428 lines mixing auth/SMS/missions/cron/Stripe; check_quota_or_raise and _get_plan are still forward-referenced with '# noqa: F821'.",
+    "Validation regexes remain duplicated verbatim between server.py (WorkerIn) and Workers.js - extract to a shared constant/doc so they cannot drift."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration7_portal_public.py"],
+  "success_rate": {"backend": "100% (122/122 pytest pass: 22 new + 100 regression; 1 test skipped by design because the admin is at the free worker quota)", "frontend": "92% (all 4 targeted fixes verified except the Toaster fix which is incomplete; every regression flow works)"},
+  "seed_data_creation": "No permanent data created. Temporarily attached a real Stripe test customer and a stale customer id to the admin during the portal tests; both reverted (admin restored to plan=free, stripe_customer_id=None, subscription_status=None). All worker/mission create attempts were blocked by the free quota (402) so nothing was persisted; verified 0 leftover TEST workers in Mongo.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin: spartanblock4@gmail.com / ShiftFlow2026! (plan=free, no stripe_customer_id, 1 mission / 14 workers = both quotas exceeded so 402 paths trigger immediately). Fresh free account: test_it6_ui_1787585374@example.com / Passw0rd!",
+  "context_for_next_testing_agent": "Run backend serially: `cd /app/backend && python -m pytest tests/ -n 0` (pytest.ini forces -n 2 and the plan-flipping fixtures race; the legacy tests/backend_test.py is stale, exclude it). New file tests/test_iteration7_portal_public.py covers the portal 400/409/200 matrix (it mutates the admin's stripe_customer_id in Mongo and restores it in a finally block, and creates+deletes a real Stripe test customer) and the public-mission token sweep. To retest the portal 409 from the UI: set stripe_customer_id='cus_V6pJBuEk7xFA69' and plan='pro' on the admin in Mongo, then /app/settings -> settings-portal-btn. To count duplicated toasts use document.querySelectorAll('[data-sonner-toaster]').length (2 = bug, 1 = fixed). Bulk import textarea requires COMMA/semicolon/tab separated lines. Worker names must be letters only.",
+  "rca_of_the_issue": "Portal 500 root cause (stripe_customer_id created on the previous Stripe sandbox) is now handled: stripe_lib.error.InvalidRequestError is caught, 'No such customer' maps to 409 + DB cleanup, other StripeErrors map to 502 - verified end to end against the live Stripe test account. Public-mission 500 root cause (legacy mission_worker doc without shift_id) is now guarded by slot.get('shift_id') at server.py L733 -> 404 'Lien invalide'. Remaining Toaster duplication root cause: the fix only de-duplicated the two Toasters inside Missions.js and missed that App.js already renders a global one, so 4 pages still mount a second provider and sonner renders every toast once per provider."
+}

@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 6 full retest (backend + frontend). Backend: 100 pytest tests run, 99 pass / 1 fail (billing portal 500). New suite /app/backend/tests/test_iteration6_stripe_wizard_bulk.py (39 tests) covers Stripe reconnect, checkout without tax, signed-webhook upgrade/downgrade, register-wizard payload, strict Pydantic validations and POST /api/workers/bulk. Verified the Stripe keys belong to acct_1NfUSOEElIPXa4JR (standard, FR, charges_enabled), lookup_key shiftflow_pro_monthly -> price 4900 EUR/month under prod_V6sLUSy2g9m7Ga, checkout session has automatic_tax disabled, amount_tax=0 and custom_text.submit='TVA non applicable, art. 293 B du CGI' (visible on the real Checkout page, NO 'Unclaimed' badge). Frontend: register wizard works end-to-end on a brand new account (3 QCM + pain + form, Next disabled until answered, exactly ONE POST /api/auth/register with onboarding_answers, straight redirect to /app/dashboard, onboarding_completed=true, no /onboarding hop). UpgradeModal verified on all four 402 paths (mission create, mission duplicate, worker add, bulk quota) with CTA href=/pricing and working close. nav-upgrade-cta visible for free / absent for pro. Mission rows clickable with duplicate stopPropagation OK. Bulk import preview + creation OK (3 valid rows -> 3 created; 8 rows at free limit -> 6 created / 2 skipped -> quota_hit modal). Regression OK: login (httpOnly cookie, $2b$ hash), dashboard banners, calendrier, historique, settings (subscription block, upgrade link free / portal btn pro -> billing.stripe.com), test SMS (Twilio TRIAL blocked message), public /m/{token}, multi-shift mission creation, /payment/success 'Bienvenue en Pro !'.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/payments/portal", "issue": "500 Internal Server Error (unhandled stripe.InvalidRequestError: \"No such customer: 'cus_V6pJBuEk7xFA69'\"). The admin still carries a stripe_customer_id created on the PREVIOUS Stripe sandbox; after the account switch that customer does not exist on acct_1NfUSOEElIPXa4JR. Two fixes needed: (a) wrap billing_portal.Session.create in try/except stripe error -> 400/409 with a French message, (b) clear/migrate stale stripe_customer_id values. Verified the endpoint works (redirects to https://billing.stripe.com/p/session) once the user has a customer that exists on the new account.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/public/mission/{token}", "issue": "500 KeyError: 'shift_id' for legacy mission_worker docs that predate the shifts schema (1 such doc in DB, token _IYTBBCfmq1H2y4PpVsLY1lYESTVm1E-). server.py L735 uses slot['shift_id'] directly; use slot.get('shift_id') so it falls into the existing 404 'Mission introuvable'. The worker sees 'Lien invalide' only by accident (frontend catch-all)."},
+      {"endpoint": "POST /api/payments/checkout", "issue": "lookup_key 'shiftflow_pro_yearly' no longer exists on the new product -> 400 'Prix inconnu'. No user impact today (/pricing only offers monthly) but create the yearly price if the annual plan is still planned."},
+      {"endpoint": "GET /api/payments/status/{session_id}", "issue": "Still unauthenticated and still upgrades the user referenced in the session metadata (carried over from iteration 5, unfixed)."},
+      {"endpoint": "POST /api/auth/login", "issue": "Still no brute-force lockout after 5 failed attempts (auth playbook item, unfixed)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Workers.js / WorkerForm", "issue": "data-testid=wf-err-email is UNREACHABLE. The email field is <input type=\"email\"> and the other fields are required, so the browser's native constraint validation fires on submit (English tooltip \"Please include an '@' in the email address\") and preventDefault-blocks the handler, so validateWorker() never runs and no French inline error is shown. With a syntactically valid email the custom errors (wf-err-first / wf-err-last / wf-err-phone) do render correctly. Fix: add noValidate to the <form> (and/or type=\"text\" inputMode=\"email\") so the custom French validation always wins.", "selector": "[data-testid='wf-err-email']", "priority": "MEDIUM"},
+      {"component": "Missions.js", "issue": "<Toaster /> is rendered twice (lines 41 and 43) -> risk of duplicated toasts. Remove one.", "selector": "[data-testid='missions-page']", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Stripe checkout E2E with card 4242", "issue": "NOT verifiable by automation: Stripe Checkout serves an anti-bot challenge to Playwright (page body contains 'I am an AI agent acting on behalf of someone else') and the 'Card' payment-method radio never becomes clickable, so the payment cannot be submitted headlessly. Covered indirectly: a real session was created, and a HMAC-signed checkout.session.completed webhook (real whsec_ secret) was accepted (200) and produced plan=pro / subscription_status=active / stripe_customer_id set / tx payment_status=paid, and customer.subscription.deleted downgraded back to free/canceled. A HUMAN must do one manual 4242 payment to confirm the transaction lands in the acct_1NfUSOEElIPXa4JR test dashboard.", "affected_selectors": ["[data-testid='pricing-monthly-cta']"]}
+    ],
+    "design_issues": [
+      {"screen": "Stripe Checkout page", "issues": ["Merchant name displayed is 'Guyguy' with a 'Sandbox' badge instead of 'ShiftFlow' — set the public business/display name in Stripe settings (the previous 'Unclaimed sandbox' badge is gone, and price/TVA notice render correctly)."]},
+      {"screen": "/register final step", "issues": ["Progress bar renders ~84% instead of 100% on the 'Finalisation' step at the moment it mounts (CSS transition timing); header correctly reads 'Étape 5/5'. Cosmetic only."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_stripe_wizard_bulk.py",
+    "/app/backend/tests/test_iteration5_duplicate_quota.py",
+    "/app/backend/tests/test_iteration4_freemium_stripe.py",
+    "/app/test_reports/pytest/iteration_6.xml"
+  ],
+  "action_items": [
+    "Fix POST /api/payments/portal: catch stripe errors -> 400/409 French message, and clear the stale stripe_customer_id left over from the old Stripe sandbox (admin spartanblock4@gmail.com has cus_V6pJBuEk7xFA69 which does not exist on acct_1NfUSOEElIPXa4JR).",
+    "server.py L735: use slot.get('shift_id') in GET /api/public/mission/{token} so legacy slots return 404 instead of 500.",
+    "Workers.js: add noValidate to the WorkerForm <form> so the French inline errors (incl. wf-err-email) show instead of the browser's native English tooltip.",
+    "Missions.js: remove the duplicated <Toaster /> (rendered twice).",
+    "Set the Stripe public business/display name to 'ShiftFlow' (checkout currently shows 'Guyguy' + Sandbox badge).",
+    "Create the shiftflow_pro_yearly price under prod_V6sLUSy2g9m7Ga if an annual plan is still on the roadmap.",
+    "Carry-over: authenticate GET /api/payments/status/{session_id} and add login brute-force lockout."
+  ],
+  "critical_code_review_comments": [
+    "Every stripe_lib call in server.py except payment_status_endpoint is unguarded; create_checkout and billing_portal will 500 on any StripeError. Wrap them and return 4xx with the Stripe message.",
+    "POST /api/workers/bulk silently drops duplicate-phone rows: they are counted neither in created nor in skipped_quota, so the UI toast ('N ajoutés') under-reports without explaining why. Return a skipped_duplicate count.",
+    "Validation regexes (NAME_RE / PHONE_DIGITS_RE / EMAIL_RE) are duplicated verbatim in server.py WorkerIn and Workers.js — acceptable but they must be kept in sync; note the name regex rejects digits AND underscores (broke older tests using 'TEST_Free').",
+    "server.py is still 1412 lines mixing auth/SMS/missions/cron/Stripe; check_quota_or_raise and _get_plan are still forward-referenced with '# noqa: F821'.",
+    "Most user docs have no 'plan' field at all (only 3/8 do); _get_plan defaults to free so behaviour is fine, but a backfill would make quota debugging deterministic."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_stripe_wizard_bulk.py (new, 39 tests)",
+    "/app/backend/tests/test_iteration4_freemium_stripe.py (test-data only: 'TEST_Free' -> 'TESTFree' because the new name regex rejects underscores; removed the shiftflow_pro_yearly param that no longer exists on the new Stripe product)"
+  ],
+  "success_rate": {"backend": "99% (99/100 pytest pass; only POST /api/payments/portal fails with 500)", "frontend": "95% (all 7 iteration-6 features verified; only the unreachable wf-err-email inline error and the duplicate Toaster remain, plus the Stripe card E2E that automation cannot complete)"},
+  "seed_data_creation": "Created a brand-new account via the /register wizard for the end-to-end test: test_it6_ui_1787585374@example.com / Passw0rd! (plan=free, onboarding_completed=true, 1 mission 'TEST_IT6 Mission A' with 2 shifts, 10 workers => exactly at both free quotas, stripe_customer_id=cus_V8GR7wujDu9m3U which is a REAL customer on the new Stripe account, so the billing portal can be retested). Admin spartanblock4@gmail.com untouched: plan=free, 1 mission, 14 workers. Temporary pro flips during pytest are reverted by autouse teardown. All pytest-created users/workers are deleted by teardown.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin: spartanblock4@gmail.com / ShiftFlow2026! (free, stale Stripe customer -> portal 500). Fresh free account at quota: test_it6_ui_1787585374@example.com / Passw0rd! (valid Stripe customer cus_V8GR7wujDu9m3U).",
+  "context_for_next_testing_agent": "Run backend serially: `cd /app/backend && python -m pytest tests/test_iteration6_stripe_wizard_bulk.py tests/test_iteration5_duplicate_quota.py tests/test_iteration4_freemium_stripe.py tests/test_iteration3_sms_cron.py -n 0` (pytest.ini forces -n 2 and the plan-flipping fixtures race). Legacy tests/backend_test.py is stale, do not trust it. Login testids: login-email-input / login-password-input / login-submit-btn. Stripe Checkout CANNOT be paid from Playwright (anti-bot challenge blocks the Card radio); instead use TestWebhookUpgrade in the iteration-6 file, which HMAC-signs events with STRIPE_WEBHOOK_SECRET and posts them to /api/stripe/webhook. Worker names must be letters only (no digits/underscores) or the new regex rejects them (422 backend / red preview rows in bulk import). test_it6_ui_1787585374@example.com is intentionally left at both free quotas (1 mission / 10 workers) so 402 + UpgradeModal paths can be retested without setup.",
+  "rca_of_the_issue": "Portal 500: switching the Stripe keys to acct_1NfUSOEElIPXa4JR invalidated every stripe_customer_id previously stored in Mongo (they belonged to the old sandbox). billing_portal.Session.create raises stripe.InvalidRequestError 'No such customer', which is not caught, so FastAPI returns 500 (backend.err.log lines ~1655-1795). Repro: login as admin -> /app/settings -> flip plan to pro -> click settings-portal-btn. Mitigation: catch StripeError -> 400 'Aucun abonnement actif' + unset the stale customer id (or re-resolve it by email via stripe.Customer.list). Public-mission 500: the token belongs to a mission_worker document created before the shifts refactor, so slot['shift_id'] raises KeyError instead of falling through to the 404 branch."
+}
