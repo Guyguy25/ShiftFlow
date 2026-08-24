@@ -134,7 +134,7 @@ MISSION_PAYLOAD = {
     "shifts": [{"date": "2026-12-01", "start_time": "08:00", "end_time": "12:00",
                 "people_needed": 2, "rate_hourly": 15, "mission_type": "montage"}],
 }
-WORKER_PAYLOAD = {"first_name": "TEST_Free", "last_name": "Quota", "phone": "0600000999",
+WORKER_PAYLOAD = {"first_name": "TESTFree", "last_name": "Quota", "phone": "0600000999",
                   "email": "", "skills": ["montage"], "note": "", "active": True}
 
 
@@ -192,7 +192,7 @@ class TestProBypass:
         assert r.status_code == 200, f"{r.status_code} {r.text[:300]}"
         w = r.json()
         TestProBypass.created["worker"] = w["id"]
-        assert w["first_name"] == "TEST_Free"
+        assert w["first_name"] == "TESTFree"
         ws = client.get(f"{BASE_URL}/api/workers", timeout=60).json()
         assert any(x["id"] == w["id"] for x in ws)
 
@@ -203,7 +203,7 @@ class TestStripeCheckout:
 
     @pytest.mark.parametrize("lookup_key,expected_amount", [
         ("shiftflow_pro_monthly", 4900),
-        ("shiftflow_pro_yearly", 48800),
+        # yearly price removed with the Stripe account switch (product prod_V6sLUSy2g9m7Ga has monthly only)
     ])
     def test_checkout_creates_session(self, client, lookup_key, expected_amount):
         r = client.post(f"{BASE_URL}/api/payments/checkout",

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
+import UpgradeModal from "../components/UpgradeModal";
 
 const TYPES = [
   { v: "montage", l: "Montage" },
@@ -40,6 +41,7 @@ export default function MissionCreate() {
   const [shifts, setShifts] = useState([emptyShift()]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [upgrade, setUpgrade] = useState(null);
 
   const setM = (k, v) => setMission({ ...mission, [k]: v });
   const setS = (i, k, v) => setShifts(shifts.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
@@ -64,7 +66,7 @@ export default function MissionCreate() {
       const status = err.response?.status;
       const detail = formatApiError(err.response?.data?.detail) || err.message;
       if (status === 402) {
-        setError(`${detail} Rendez-vous sur /pricing pour débloquer.`);
+        setUpgrade(detail);
       } else {
         setError(detail);
       }
@@ -75,6 +77,7 @@ export default function MissionCreate() {
 
   return (
     <div className="max-w-4xl" data-testid="mission-create-page">
+      <UpgradeModal open={!!upgrade} onClose={()=>{setUpgrade(null); nav("/app/missions");}} message={upgrade}/>
       <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Nouvelle mission</div>
       <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Créer une mission</h1>
       <p className="text-gray-500 mt-1">Renseignez les infos de la mission et ajoutez un ou plusieurs shifts (journées). Vous sélectionnerez les intervenants à l'étape suivante, shift par shift.</p>

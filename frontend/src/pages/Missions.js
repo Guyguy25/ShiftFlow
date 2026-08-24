@@ -4,10 +4,12 @@ import { Plus, CalendarClock, Copy } from "lucide-react";
 import { api } from "../lib/api";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
+import UpgradeModal from "../components/UpgradeModal";
 
 export default function Missions() {
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [upgrade, setUpgrade] = useState(null);
   const nav = useNavigate();
 
   const load = () => {
@@ -27,10 +29,7 @@ export default function Missions() {
       const status = err.response?.status;
       const detail = err.response?.data?.detail || "Erreur lors de la duplication";
       if (status === 402) {
-        toast.error(detail, {
-          duration: 8000,
-          action: { label: "Passer au Pro", onClick: () => nav("/pricing") },
-        });
+        setUpgrade(typeof detail === "string" ? detail : "Limite atteinte");
       } else {
         toast.error(typeof detail === "string" ? detail : "Erreur lors de la duplication");
       }
@@ -39,6 +38,8 @@ export default function Missions() {
 
   return (
     <div data-testid="missions-page">
+      <Toaster position="top-right" richColors/>
+      <UpgradeModal open={!!upgrade} onClose={()=>setUpgrade(null)} message={upgrade}/>
       <Toaster position="top-right" richColors/>
       <div className="flex items-end justify-between">
         <div>
@@ -73,11 +74,10 @@ export default function Missions() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {missions.map((m) => (
-                  <tr key={m.id} className="hover:bg-gray-50">
+                  <tr key={m.id} onClick={()=>nav(`/app/missions/${m.id}`)} data-testid={`mission-row-${m.id}`}
+                    className="hover:bg-gray-50 cursor-pointer transition-colors">
                     <td className="px-6 py-4">
-                      <Link to={`/app/missions/${m.id}`} data-testid={`mission-row-${m.id}`} className="font-medium text-gray-900 hover:text-blue-600">
-                        {m.name}
-                      </Link>
+                      <span className="font-medium text-gray-900">{m.name}</span>
                     </td>
                     <td className="px-6 py-4 hidden sm:table-cell text-gray-600">
                       <div className="flex items-center gap-2"><CalendarClock className="w-4 h-4 text-gray-400"/>{m.first_date || "—"}{m.last_date && m.last_date !== m.first_date ? ` → ${m.last_date}` : ""}</div>

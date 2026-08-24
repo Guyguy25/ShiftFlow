@@ -16,7 +16,7 @@ import jwt
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # Twilio (optional — fallback to demo if not configured)
 try:
@@ -249,6 +249,7 @@ class RegisterIn(BaseModel):
     name: str
     agency_name: str
     phone: str = ""
+    onboarding_answers: Optional[dict] = None
 
 
 class LoginIn(BaseModel):
@@ -266,13 +267,42 @@ class ResetIn(BaseModel):
 
 
 class WorkerIn(BaseModel):
-    first_name: str
-    last_name: str
+    first_name: str = Field(min_length=2, max_length=40)
+    last_name: str = Field(min_length=2, max_length=40)
     phone: str
     email: Optional[str] = ""
     skills: List[str] = []
-    note: Optional[str] = ""
+    note: Optional[str] = Field(default="", max_length=500)
     active: bool = True
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def _name_valid(cls, v: str) -> str:
+        v = v.strip()
+        import re
+        if not re.match(r"^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'\-]{1,39}$", v):
+            raise ValueError("Le nom/prénom doit contenir 2 à 40 lettres (accents, espaces, apostrophes ou tirets autorisés).")
+        return v
+
+    @field_validator("phone")
+    @classmethod
+    def _phone_valid(cls, v: str) -> str:
+        import re
+        v = v.strip()
+        digits = re.sub(r"[\s\.\-\(\)]", "", v)
+        if not re.match(r"^\+?\d{8,15}$", digits):
+            raise ValueError("Numéro de téléphone invalide (8 à 15 chiffres, format international +33... ou national 06...).")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _email_valid(cls, v: Optional[str]) -> str:
+        if not v:
+            return ""
+        import re
+        if not re.match(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$", v.strip()):
+            raise ValueError("Email invalide.")
+        return v.strip().lower()
 
 
 class ShiftIn(BaseModel):
@@ -371,7 +401,10 @@ async def register(payload: RegisterIn, response: Response):
         raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
     user = {"id": new_id(), "email": email, "password_hash": hash_password(payload.password),
             "name": payload.name, "agency_name": payload.agency_name, "phone": payload.phone,
-            "role": "admin", "created_at": iso(now_utc())}
+            "role": "admin", "created_at": iso(now_utc()),
+            "onboarding_completed": bool(payload.onboarding_answers),
+            "onboarding_answers": payload.onboarding_answers or None,
+            "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None}
     await db.users.insert_one(user)
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
@@ -463,6 +496,38 @@ async def create_worker(payload: WorkerIn, user=Depends(get_current_user)):
     await db.workers.insert_one(w)
     w.pop("_id", None)
     return w
+
+
+class BulkWorkersIn(BaseModel):
+    workers: List[WorkerIn]
+
+
+@api.post("/workers/bulk")
+async def create_workers_bulk(payload: BulkWorkersIn, user=Depends(get_current_user)):
+    """Bulk import — respects freemium quota. Returns per-row result."""
+    if not payload.workers:
+        raise HTTPException(status_code=400, detail="Liste vide")
+    plan = await _get_plan(user["id"])  # noqa: F821
+    current = await db.workers.count_documents({"agency_id": user["id"]})
+    limit = None if plan == "pro" else FREE_WORKER_LIMIT  # noqa: F821
+    created = []
+    skipped_quota = 0
+    for w_in in payload.workers:
+        if limit is not None and current >= limit:
+            skipped_quota += 1
+            continue
+        # duplicate phone guard (per agency)
+        digits = "".join(ch for ch in w_in.phone if ch.isdigit())
+        if digits and await db.workers.find_one({"agency_id": user["id"], "phone": w_in.phone}):
+            continue
+        doc = {"id": new_id(), "agency_id": user["id"], **w_in.model_dump(), "created_at": iso(now_utc())}
+        await db.workers.insert_one(doc)
+        doc.pop("_id", None)
+        created.append(doc)
+        current += 1
+    return {"created": len(created), "skipped_quota": skipped_quota, "workers": created,
+            "quota_hit": skipped_quota > 0,
+            "limit": limit}
 
 
 @api.put("/workers/{worker_id}")
