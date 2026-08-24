@@ -1,192 +1,152 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
-import { api, formatApiError } from "../lib/api";
-import UpgradeModal from "../components/UpgradeModal";
+import { Link, useNavigate } from "react-router-dom";
+import { Zap, ArrowRight, ArrowLeft, Check } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { formatApiError } from "../lib/api";
 
-const TYPES = [
-  { v: "montage", l: "Montage" },
-  { v: "demontage", l: "Démontage" },
-  { v: "montage_demontage", l: "Montage + Démontage" },
-  { v: "technique", l: "Technique / régie" },
-  { v: "autre", l: "Autre" },
+const QUESTIONS = [
+  { key: "team_size", q: "Combien de personnes travaillent en moyenne sur vos missions ?",
+    options: ["1-5", "6-15", "16-30", "30+"] },
+  { key: "monthly_missions", q: "Combien de missions gérez-vous par mois environ ?",
+    options: ["1-3", "4-10", "11-20", "20+"] },
+  { key: "current_tool", q: "Comment gérez-vous actuellement les confirmations d'équipe ?",
+    options: ["WhatsApp / SMS manuel", "Appels téléphoniques", "Tableur Excel", "Autre outil"] },
 ];
 
-const emptyShift = () => ({
-  date: "", start_time: "", end_time: "",
-  people_needed: 4, rate_hourly: 15,
-  mission_type: "montage", skill_required: "", description: "",
-});
-
-function estimate(sh) {
-  try {
-    if (!sh.start_time || !sh.end_time) return 0;
-    const [sh1, sm1] = sh.start_time.split(":").map(Number);
-    const [sh2, sm2] = sh.end_time.split(":").map(Number);
-    if (isNaN(sh1) || isNaN(sh2)) return 0;
-    let hours = (sh2 + sm2/60) - (sh1 + sm1/60);
-    if (hours <= 0) hours += 24;
-    const rate = Number(sh.rate_hourly) || 0;
-    const people = Number(sh.people_needed) || 0;
-    return Math.round(hours * rate * people * 100) / 100;
-  } catch { return 0; }
-}
-
-export default function MissionCreate() {
+export default function Register() {
   const nav = useNavigate();
-  const [mission, setMission] = useState({
-    name: "", location: "", address: "", description: "",
-    cascade_enabled: true, followup_hours: 2,
-  });
-  const [shifts, setShifts] = useState([emptyShift()]);
+  const { register } = useAuth();
+  const [step, setStep] = useState(0); // 0..3 = onboarding, 4 = signup form
+  const [answers, setAnswers] = useState({ team_size: "", monthly_missions: "", current_tool: "", main_pain: "" });
+  const [form, setForm] = useState({ name: "", agency_name: "", email: "", phone: "", password: "" });
   const [error, setError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [upgrade, setUpgrade] = useState(null);
 
-  const setM = (k, v) => setMission({ ...mission, [k]: v });
-  const setS = (i, k, v) => setShifts(shifts.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
-  const addShift = () => setShifts([...shifts, emptyShift()]);
-  const removeShift = (i) => setShifts(shifts.length > 1 ? shifts.filter((_, idx) => idx !== i) : shifts);
+  const setA = (k, v) => setAnswers({ ...answers, [k]: v });
+  const setF = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const PHONE_RE = /^\+?\d{8,15}$/;
+  const validatePhone = (raw) => {
+    const digits = (raw || "").replace(/[\s.\-()]/g, "");
+    if (!digits) return ""; // facultatif
+    return PHONE_RE.test(digits) ? "" : "Téléphone invalide (ex : +33612345678 ou 0612345678).";
+  };
+  const totalSteps = QUESTIONS.length + 2; // 3 QCM + 1 pain + 1 signup
+  const progress = Math.round(((step + 1) / totalSteps) * 100);
+
+  const canProceed = () => {
+    if (step < QUESTIONS.length) return !!answers[QUESTIONS[step].key];
+    if (step === QUESTIONS.length) return answers.main_pain.trim().length > 0;
+    return false;
+  };
 
   const submit = async (e) => {
-    e.preventDefault(); setError(""); setLoading(true);
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const pErr = validatePhone(form.phone);
+    setPhoneError(pErr);
+    if (pErr) { setLoading(false); return; }
     try {
-      const payload = {
-        ...mission,
-        followup_hours: Number(mission.followup_hours),
-        shifts: shifts.map(s => ({
-          ...s,
-          people_needed: Number(s.people_needed),
-          rate_hourly: Number(s.rate_hourly),
-        })),
-      };
-      const { data } = await api.post("/missions", payload);
-      nav(`/app/missions/${data.id}?step=select`);
+      await register({ ...form, onboarding_answers: answers });
+      nav("/app/dashboard");
     } catch (err) {
-      const status = err.response?.status;
-      const detail = formatApiError(err.response?.data?.detail) || err.message;
-      if (status === 402) {
-        setUpgrade(detail);
-      } else {
-        setError(detail);
-      }
+      setError(formatApiError(err.response?.data?.detail) || err.message);
     } finally { setLoading(false); }
   };
 
-  const inputCls = "mt-1 w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white";
+  const inputCls = "mt-1 w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const currentQ = step < QUESTIONS.length ? QUESTIONS[step] : null;
 
   return (
-    <div className="max-w-4xl" data-testid="mission-create-page">
-      <UpgradeModal open={!!upgrade} onClose={()=>{setUpgrade(null); nav("/app/missions");}} message={upgrade}/>
-      <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Nouvelle mission</div>
-      <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Créer une mission</h1>
-      <p className="text-gray-500 mt-1">Renseignez les infos de la mission et ajoutez un ou plusieurs shifts (journées). Vous sélectionnerez les intervenants à l'étape suivante, shift par shift.</p>
+    <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2" data-testid="register-logo">
+          <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-4 h-4 text-white"/></div>
+          <span className="font-display font-bold">ShiftFlow</span>
+        </Link>
+        <span className="ml-auto text-xs text-gray-500">Étape {Math.min(step + 1, totalSteps)}/{totalSteps}</span>
+      </header>
 
-      <form onSubmit={submit} className="mt-8 space-y-6">
-        {/* Mission block */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-5">
-          <h2 className="font-display font-bold text-lg">Mission</h2>
-          <div>
-            <label className="text-sm font-medium text-gray-700">Nom de la mission *</label>
-            <input required data-testid="mc-name" className={inputCls} value={mission.name} onChange={(e)=>setM("name", e.target.value)} placeholder="Montage Salon Nike"/>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Lieu *</label>
-              <input required data-testid="mc-location" className={inputCls} value={mission.location} onChange={(e)=>setM("location", e.target.value)} placeholder="Lille Grand Palais"/>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-700">Adresse</label>
-              <input data-testid="mc-address" className={inputCls} value={mission.address} onChange={(e)=>setM("address", e.target.value)} placeholder="1 Bd des Cités Unies, Lille"/>
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700">Description</label>
-            <textarea data-testid="mc-desc" rows={2} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={mission.description} onChange={(e)=>setM("description", e.target.value)} placeholder="Détails généraux, contact sur place…"/>
-          </div>
-          <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-md px-4 py-3">
-            <input type="checkbox" data-testid="mc-cascade" checked={mission.cascade_enabled} onChange={(e)=>setM("cascade_enabled", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
-            <div>
-              <div className="text-sm font-medium text-gray-900">Cascade automatique</div>
-              <div className="text-xs text-gray-600">En cas de refus ou absence, contacter automatiquement le prochain intervenant pour chaque shift.</div>
-            </div>
-          </label>
+      <main className="flex-1 max-w-xl w-full mx-auto px-6 py-10" data-testid="register-page">
+        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-8" data-testid="register-progress">
+          <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
         </div>
 
-        {/* Shifts */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display font-bold text-lg">Shifts / Journées</h2>
-            <button type="button" onClick={addShift} data-testid="mc-add-shift" className="inline-flex items-center gap-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 px-3 py-2 rounded-md">
-              <Plus className="w-4 h-4"/> Ajouter un shift
-            </button>
-          </div>
-          {shifts.map((s, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-200 p-6 space-y-4" data-testid={`mc-shift-${i}`}>
-              <div className="flex items-center justify-between">
-                <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Shift {i + 1}</div>
-                {shifts.length > 1 && (
-                  <button type="button" onClick={()=>removeShift(i)} data-testid={`mc-remove-shift-${i}`} className="p-1.5 rounded hover:bg-red-50 text-red-600">
-                    <Trash2 className="w-4 h-4"/>
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Date *</label>
-                  <input type="date" required data-testid={`mc-shift-${i}-date`} className={inputCls} value={s.date} onChange={(e)=>setS(i, "date", e.target.value)}/>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Début *</label>
-                  <input type="time" required data-testid={`mc-shift-${i}-start`} className={inputCls} value={s.start_time} onChange={(e)=>setS(i, "start_time", e.target.value)}/>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Fin *</label>
-                  <input type="time" required data-testid={`mc-shift-${i}-end`} className={inputCls} value={s.end_time} onChange={(e)=>setS(i, "end_time", e.target.value)}/>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Personnes *</label>
-                  <input type="number" min="1" required data-testid={`mc-shift-${i}-people`} className={inputCls} value={s.people_needed} onChange={(e)=>setS(i, "people_needed", e.target.value)}/>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Tarif horaire (€/h) *</label>
-                  <input type="number" min="0" step="0.5" required data-testid={`mc-shift-${i}-rate`} className={inputCls} value={s.rate_hourly} onChange={(e)=>setS(i, "rate_hourly", e.target.value)}/>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Type</label>
-                  <select data-testid={`mc-shift-${i}-type`} className={inputCls} value={s.mission_type} onChange={(e)=>setS(i, "mission_type", e.target.value)}>
-                    {TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Compétence requise</label>
-                  <input data-testid={`mc-shift-${i}-skill`} className={inputCls} value={s.skill_required} onChange={(e)=>setS(i, "skill_required", e.target.value)} placeholder="ex: technique"/>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700">Consignes du shift</label>
-                  <input data-testid={`mc-shift-${i}-desc`} className={inputCls} value={s.description} onChange={(e)=>setS(i, "description", e.target.value)} placeholder="Point de RDV, tenue, etc."/>
-                </div>
-              </div>
-              <div className="text-xs text-gray-500 border-t border-gray-100 pt-3" data-testid={`mc-shift-${i}-estimate`}>
-                Estimation coût brut : <span className="font-semibold text-gray-900">{estimate(s)} €</span>
-                <span className="text-gray-400"> ({s.people_needed} pers. × {s.rate_hourly}€/h)</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {error && <div className="text-sm text-red-600" data-testid="mc-error">{error}</div>}
-        <div className="flex justify-end gap-3">
-          <button type="button" onClick={()=>nav("/app/missions")} className="px-4 py-2.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">Annuler</button>
-          <button type="submit" disabled={loading} data-testid="mc-submit" className="px-5 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60">
-            {loading ? "Création…" : "Créer la mission"}
+        {step > 0 && step <= QUESTIONS.length && (
+          <button onClick={()=>setStep(step-1)} data-testid="register-back-btn" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
+            <ArrowLeft className="w-4 h-4"/> Retour
           </button>
-        </div>
-      </form>
+        )}
+
+        {currentQ && (
+          <div data-testid={`register-step-${step}`}>
+            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Question {step + 1}/{QUESTIONS.length + 1}</div>
+            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">{currentQ.q}</h1>
+            <div className="mt-8 space-y-3">
+              {currentQ.options.map((opt) => (
+                <button key={opt} onClick={()=>setA(currentQ.key, opt)}
+                  data-testid={`register-opt-${currentQ.key}-${opt}`}
+                  className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-colors ${
+                    answers[currentQ.key] === opt ? "border-blue-600 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"
+                  }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{opt}</span>
+                    {answers[currentQ.key] === opt && <Check className="w-5 h-5 text-blue-600"/>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === QUESTIONS.length && (
+          <div data-testid="register-pain">
+            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Question {step + 1}/{QUESTIONS.length + 1}</div>
+            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Quel est votre plus gros problème avec la gestion d'équipe actuellement ?</h1>
+            <textarea rows={4} data-testid="register-input-pain" value={answers.main_pain}
+              onChange={(e)=>setA("main_pain", e.target.value)}
+              placeholder="Un mot ou deux phrases suffisent…"
+              className="mt-6 w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:border-blue-600 bg-white"/>
+          </div>
+        )}
+
+        {step === QUESTIONS.length + 1 && (
+          <form onSubmit={submit} data-testid="register-form">
+            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Finalisation</div>
+            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Créez votre compte gratuit</h1>
+            <p className="mt-2 text-gray-600 text-sm">Pas de carte bancaire requise. Compte gratuit permanent.</p>
+            <div className="mt-6 space-y-4">
+              <div><label className="text-sm font-medium">Nom de l'agence *</label>
+                <input required data-testid="register-agency-input" className={inputCls} value={form.agency_name} onChange={setF("agency_name")} placeholder="Mon Agence Event"/></div>
+              <div><label className="text-sm font-medium">Votre nom *</label>
+                <input required data-testid="register-name-input" className={inputCls} value={form.name} onChange={setF("name")} placeholder="Tanguy Dupont"/></div>
+              <div><label className="text-sm font-medium">Email *</label>
+                <input type="email" required data-testid="register-email-input" className={inputCls} value={form.email} onChange={setF("email")} placeholder="vous@agence.com"/></div>
+              <div><label className="text-sm font-medium">Téléphone</label>
+                <input data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
+                {phoneError && <div className="text-xs text-red-600 mt-1" data-testid="register-phone-error">{phoneError}</div>}
+              </div>
+              <div><label className="text-sm font-medium">Mot de passe *</label>
+                <input type="password" required minLength={6} data-testid="register-password-input" className={inputCls} value={form.password} onChange={setF("password")} placeholder="Minimum 6 caractères"/></div>
+            </div>
+            {error && <div className="mt-4 text-sm text-red-600" data-testid="register-error">{error}</div>}
+            <button type="submit" disabled={loading} data-testid="register-submit-btn"
+              className="mt-6 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60 inline-flex items-center justify-center gap-2">
+              {loading ? "Création…" : "Créer mon compte gratuit"} <ArrowRight className="w-4 h-4"/>
+            </button>
+            <div className="mt-4 text-center text-sm text-gray-500">
+              Déjà un compte ? <Link to="/login" data-testid="register-login-link" className="text-blue-600 font-medium hover:text-blue-700">Se connecter</Link>
+            </div>
+          </form>
+        )}
+
+        {step <= QUESTIONS.length && (
+          <button onClick={()=>setStep(step+1)} disabled={!canProceed()} data-testid="register-next-btn"
+            className="mt-8 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors">
+            Suivant <ArrowRight className="w-4 h-4"/>
+          </button>
+        )}
+      </main>
     </div>
   );
 }

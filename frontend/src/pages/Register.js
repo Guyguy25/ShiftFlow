@@ -20,10 +20,17 @@ export default function Register() {
   const [answers, setAnswers] = useState({ team_size: "", monthly_missions: "", current_tool: "", main_pain: "" });
   const [form, setForm] = useState({ name: "", agency_name: "", email: "", phone: "", password: "" });
   const [error, setError] = useState("");
+  const [phoneError, setPhoneError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const setA = (k, v) => setAnswers({ ...answers, [k]: v });
   const setF = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const PHONE_RE = /^\+?\d{8,15}$/;
+  const validatePhone = (raw) => {
+    const digits = (raw || "").replace(/[\s.\-()]/g, "");
+    if (!digits) return ""; // facultatif
+    return PHONE_RE.test(digits) ? "" : "Téléphone invalide (ex : +33612345678 ou 0612345678).";
+  };
   const totalSteps = QUESTIONS.length + 2; // 3 QCM + 1 pain + 1 signup
   const progress = Math.round(((step + 1) / totalSteps) * 100);
 
@@ -36,6 +43,9 @@ export default function Register() {
   const submit = async (e) => {
     e.preventDefault();
     setError(""); setLoading(true);
+    const pErr = validatePhone(form.phone);
+    setPhoneError(pErr);
+    if (pErr) { setLoading(false); return; }
     try {
       await register({ ...form, onboarding_answers: answers });
       nav("/app/dashboard");
@@ -113,7 +123,9 @@ export default function Register() {
               <div><label className="text-sm font-medium">Email *</label>
                 <input type="email" required data-testid="register-email-input" className={inputCls} value={form.email} onChange={setF("email")} placeholder="vous@agence.com"/></div>
               <div><label className="text-sm font-medium">Téléphone</label>
-                <input data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/></div>
+                <input data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
+                {phoneError && <div className="text-xs text-red-600 mt-1" data-testid="register-phone-error">{phoneError}</div>}
+              </div>
               <div><label className="text-sm font-medium">Mot de passe *</label>
                 <input type="password" required minLength={6} data-testid="register-password-input" className={inputCls} value={form.password} onChange={setF("password")} placeholder="Minimum 6 caractères"/></div>
             </div>

@@ -251,6 +251,18 @@ class RegisterIn(BaseModel):
     phone: str = ""
     onboarding_answers: Optional[dict] = None
 
+    @field_validator("phone")
+    @classmethod
+    def _phone_valid(cls, v: str) -> str:
+        import re
+        v = (v or "").strip()
+        if not v:
+            return v
+        digits = re.sub(r"[\s\.\-\(\)]", "", v)
+        if not re.match(r"^\+?\d{8,15}$", digits):
+            raise ValueError("Numéro de téléphone invalide (8 à 15 chiffres, format international +33... ou national 06...).")
+        return v
+
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -314,6 +326,17 @@ class ShiftIn(BaseModel):
     mission_type: Literal["montage", "demontage", "montage_demontage", "technique", "autre"] = "montage"
     skill_required: Optional[str] = ""
     description: Optional[str] = ""
+
+    @field_validator("date")
+    @classmethod
+    def _date_not_past(cls, v: str) -> str:
+        try:
+            shift_date = datetime.strptime(v, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError("Date invalide (format attendu : YYYY-MM-DD).")
+        if shift_date < datetime.now(timezone.utc).date():
+            raise ValueError("Impossible de créer un shift à une date déjà passée.")
+        return v
 
 
 class MissionIn(BaseModel):
