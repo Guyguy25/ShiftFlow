@@ -259,8 +259,15 @@ class RegisterIn(BaseModel):
         if not v:
             return v
         digits = re.sub(r"[\s\.\-\(\)]", "", v)
-        if not re.match(r"^\+?\d{8,15}$", digits):
-            raise ValueError("Numéro de téléphone invalide (8 à 15 chiffres, format international +33... ou national 06...).")
+        ok = False
+        if digits.startswith("+33"):
+            ok = bool(re.match(r"^\+33[1-9]\d{8}$", digits))
+        elif digits.startswith("0"):
+            ok = bool(re.match(r"^0[1-9]\d{8}$", digits))
+        elif digits.startswith("+"):
+            ok = bool(re.match(r"^\+\d{10,15}$", digits))
+        if not ok:
+            raise ValueError("Numéro de téléphone invalide (format national 06... ou international +33...).")
         return v
 
 
@@ -302,8 +309,15 @@ class WorkerIn(BaseModel):
         import re
         v = v.strip()
         digits = re.sub(r"[\s\.\-\(\)]", "", v)
-        if not re.match(r"^\+?\d{8,15}$", digits):
-            raise ValueError("Numéro de téléphone invalide (8 à 15 chiffres, format international +33... ou national 06...).")
+        ok = False
+        if digits.startswith("+33"):
+            ok = bool(re.match(r"^\+33[1-9]\d{8}$", digits))
+        elif digits.startswith("0"):
+            ok = bool(re.match(r"^0[1-9]\d{8}$", digits))
+        elif digits.startswith("+"):
+            ok = bool(re.match(r"^\+\d{10,15}$", digits))
+        if not ok:
+            raise ValueError("Numéro de téléphone invalide (format national 06... ou international +33...).")
         return v
 
     @field_validator("email")

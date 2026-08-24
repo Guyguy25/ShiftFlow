@@ -8,8 +8,16 @@ const SKILLS = ["montage", "demontage", "technique", "electricite", "manutention
 
 // ---------- Validation helpers ----------
 const NAME_RE = /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'\-]{1,39}$/;
-const PHONE_DIGITS_RE = /^\+?\d{8,15}$/;
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+function isPhoneValid(raw) {
+  const digits = (raw || "").replace(/[\s.\-()]/g, "");
+  if (!digits) return false;
+  if (digits.startsWith("+33")) return /^\+33[1-9]\d{8}$/.test(digits);
+  if (digits.startsWith("0")) return /^0[1-9]\d{8}$/.test(digits);
+  if (digits.startsWith("+")) return /^\+\d{10,15}$/.test(digits);
+  return false;
+}
 
 function validateWorker(f) {
   const errs = {};
@@ -17,8 +25,7 @@ function validateWorker(f) {
     errs.first_name = "Prénom : 2 à 40 lettres (accents, tirets, apostrophes OK).";
   if (!NAME_RE.test((f.last_name || "").trim()))
     errs.last_name = "Nom : 2 à 40 lettres.";
-  const digits = (f.phone || "").replace(/[\s.\-()]/g, "");
-  if (!PHONE_DIGITS_RE.test(digits))
+  if (!isPhoneValid(f.phone))
     errs.phone = "Téléphone invalide (ex : +33612345678 ou 0612345678).";
   if (f.email && !EMAIL_RE.test(f.email.trim()))
     errs.email = "Email invalide.";

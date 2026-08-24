@@ -25,11 +25,17 @@ export default function Register() {
 
   const setA = (k, v) => setAnswers({ ...answers, [k]: v });
   const setF = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const PHONE_RE = /^\+?\d{8,15}$/;
-  const validatePhone = (raw) => {
+  const isPhoneValid = (raw) => {
     const digits = (raw || "").replace(/[\s.\-()]/g, "");
-    if (!digits) return ""; // facultatif
-    return PHONE_RE.test(digits) ? "" : "Téléphone invalide (ex : +33612345678 ou 0612345678).";
+    if (!digits) return true; // facultatif
+    if (digits.startsWith("+33")) return /^\+33[1-9]\d{8}$/.test(digits);
+    if (digits.startsWith("0")) return /^0[1-9]\d{8}$/.test(digits);
+    if (digits.startsWith("+")) return /^\+\d{10,15}$/.test(digits);
+    return false;
+  };
+  const validatePhone = (raw) => {
+    if (isPhoneValid(raw)) return "";
+    return "Téléphone invalide (ex : +33612345678 ou 0612345678).";
   };
   const totalSteps = QUESTIONS.length + 2; // 3 QCM + 1 pain + 1 signup
   const progress = Math.round(((step + 1) / totalSteps) * 100);
