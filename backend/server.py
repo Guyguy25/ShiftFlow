@@ -1440,6 +1440,12 @@ async def billing_portal(request: Request, user=Depends(get_current_user)):
     return {"url": session.url}
 
 
+# WhatsApp routes
+# Importées ici, après la définition de toutes les fonctions utilisées par
+# whatsapp_routes.py, afin d'éviter une importation circulaire.
+from whatsapp_routes import router as whatsapp_router
+api.include_router(whatsapp_router)
+
 app.include_router(api)
 
 # CORS

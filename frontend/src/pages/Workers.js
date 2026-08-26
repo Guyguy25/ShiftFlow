@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Search, Trash2, Edit2, X, Upload, Info, MessageCircle } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, X, Upload, Info, MessageCircle, Smartphone, Check, RefreshCw, } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { toast, Toaster } from "sonner";
 import UpgradeModal from "../components/UpgradeModal";
@@ -232,6 +232,381 @@ function BulkImportModal({ onClose, onDone, onQuota }) {
   );
 }
 
+function WhatsAppImportModal({ onClose, onDone, onQuota }) {
+  const [status, setStatus] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [contactsReady, setContactsReady] = useState(false);
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
+
+  const loadStatus = async () => {
+    try {
+      const { data } = await api.get("/whatsapp/status");
+
+      setStatus(data);
+
+      // WhatsApp n'est pas encore connecté
+      if (!data.connected) {
+        setContactsReady(false);
+        return;
+      }
+
+      // WhatsApp connecté : on récupère les contacts
+      const contactsResponse =
+        await api.get("/whatsapp/contacts");
+
+      const loadedContacts = contactsResponse.data || [];
+
+      // Tant qu'il n'y a aucun contact, on considère que
+      // WhatsApp est encore en train de synchroniser.
+      if (loadedContacts.length > 0) {
+        setContacts(loadedContacts);
+        setContactsReady(true);
+        setLoading(false);
+      } else {
+        setContactsReady(false);
+      }
+
+    } catch (err) {
+      // Ne pas faire disparaître l'écran de chargement
+      // pendant que WhatsApp synchronise.
+      if (err.response?.status !== 400) {
+        toast.error(
+          formatApiError(err.response?.data?.detail) ||
+          "Impossible de contacter WhatsApp."
+        );
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadStatus();
+
+    const interval = setInterval(() => {
+      loadStatus();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Timer précis pendant la récupération des contacts
+  useEffect(() => {
+    if (!status?.connected || contactsReady) {
+      setLoadingSeconds(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setLoadingSeconds((previous) => previous + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [status?.connected, contactsReady]);
+
+  const toggle = (id) => {
+    setSelected((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
+      return next;
+    });
+  };
+
+  const importContacts = async () => {
+    if (selected.size === 0) {
+      toast.error(
+        "Sélectionnez au moins un contact."
+      );
+      return;
+    }
+
+    setImporting(true);
+
+    try {
+      const { data } = await api.post(
+        "/whatsapp/import",
+        {
+          contacts: Array.from(selected),
+        }
+      );
+
+      if (data.quota_hit) {
+        onQuota(
+          `${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`
+        );
+      } else {
+        toast.success(
+          `${data.created} intervenant(s) ajouté(s).`
+        );
+      }
+
+      onDone();
+      onClose();
+
+    } catch (err) {
+      const statusCode =
+        err.response?.status;
+
+      const detail =
+        formatApiError(
+          err.response?.data?.detail
+        ) ||
+        "Erreur pendant l'import WhatsApp.";
+
+      if (statusCode === 402) {
+        onQuota(detail);
+        onClose();
+      } else {
+        toast.error(detail);
+      }
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const filteredContacts =
+    contacts.filter((contact) => {
+      const value =
+        `${contact.name} ${contact.number}`
+          .toLowerCase();
+
+      return value.includes(
+        search.toLowerCase()
+      );
+    });
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-display font-bold text-xl">
+              Importer depuis WhatsApp
+            </h3>
+
+            <p className="text-sm text-gray-500 mt-1">
+              Sélectionnez les contacts à ajouter à vos intervenants.
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-100 rounded"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* CONNEXION */}
+        {!status?.connected && (
+          <div className="mt-6">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
+              {status?.hasQR && status?.qr ? (
+                <>
+                  <Smartphone className="w-8 h-8 mx-auto mb-3 text-gray-700" />
+
+                  <h4 className="font-semibold text-lg">
+                    Connectez votre WhatsApp
+                  </h4>
+
+                  <p className="text-sm text-gray-500 mt-2">
+                    WhatsApp → Paramètres → Appareils connectés → Connecter un appareil
+                  </p>
+
+                  <div className="mt-5 flex justify-center">
+                    <img
+                      src={status.qr}
+                      alt="QR code WhatsApp"
+                      className="w-64 h-64 border rounded-lg"
+                    />
+                  </div>
+
+                  <p className="text-xs text-gray-400 mt-4">
+                    Le QR code se met automatiquement à jour.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" />
+
+                  <h4 className="font-semibold">
+                    Connexion à WhatsApp...
+                  </h4>
+
+                  <p className="text-sm text-gray-500 mt-2">
+                    Préparation du QR code.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* RÉCUPÉRATION DES CONTACTS */}
+        {status?.connected && !contactsReady && (
+          <div className="mt-6">
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-10 text-center">
+
+              <RefreshCw className="w-10 h-10 mx-auto mb-4 text-blue-600 animate-spin" />
+
+              <h4 className="font-semibold text-lg">
+                WhatsApp récupère vos contacts...
+              </h4>
+
+              <p className="text-sm text-gray-500 mt-2">
+                Synchronisation de vos contacts WhatsApp en cours.
+              </p>
+
+              <div className="mt-4 text-sm font-medium text-gray-700">
+                Temps écoulé : {loadingSeconds}s
+              </div>
+
+              <div className="mt-4 text-xs text-gray-400">
+                Ne fermez pas cette fenêtre.
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* CONTACTS */}
+        {status?.connected && contactsReady && (
+          <div className="mt-6">
+
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 text-green-700 font-medium">
+                  <Check className="w-4 h-4" />
+                  WhatsApp connecté
+                </div>
+
+                <p className="text-sm text-gray-500 mt-1">
+                  {contacts.length} contacts disponibles
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadStatus}
+                className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Actualiser
+              </button>
+            </div>
+
+            <input
+              value={search}
+              onChange={(e) =>
+                setSearch(e.target.value)
+              }
+              placeholder="Rechercher un contact..."
+              className="w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
+            <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+              <div className="max-h-[400px] overflow-y-auto">
+
+                {filteredContacts.length === 0 && (
+                  <div className="p-8 text-center text-gray-500">
+                    Aucun contact trouvé.
+                  </div>
+                )}
+
+                {filteredContacts.map((contact) => {
+                  const checked =
+                    selected.has(contact.id);
+
+                  return (
+                    <label
+                      key={contact.id}
+                      className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
+                        checked
+                          ? "bg-blue-50"
+                          : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          toggle(contact.id)
+                        }
+                        className="w-4 h-4 accent-blue-600"
+                      />
+
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">
+                        {(contact.name || "?")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">
+                          {contact.name}
+                        </div>
+
+                        <div className="text-sm text-gray-500">
+                          +{contact.number}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between">
+              <div className="text-sm text-gray-500">
+                {selected.size} sélectionné(s)
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-md border border-gray-300"
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="button"
+                  onClick={importContacts}
+                  disabled={
+                    importing ||
+                    selected.size === 0
+                  }
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {importing
+                    ? "Import..."
+                    : `Importer ${selected.size} contact(s)`}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Workers() {
   const [workers, setWorkers] = useState([]);
   const [q, setQ] = useState("");
@@ -240,6 +615,7 @@ export default function Workers() {
   const [creating, setCreating] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [upgrade, setUpgrade] = useState(null);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
 
   const load = async () => {
     const params = {};
@@ -271,6 +647,15 @@ export default function Workers() {
           <button onClick={()=>setBulkOpen(true)} data-testid="bulk-import-btn"
             className="hidden sm:inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 px-4 py-2.5 rounded-md font-medium">
             <Upload className="w-4 h-4"/> Import rapide
+          </button>
+          <button
+            type="button"
+            onClick={() => setWhatsappOpen(true)}
+            className="px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2"
+            data-testid="whatsapp-import-button"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Importer depuis WhatsApp
           </button>
           <button onClick={()=>setCreating(true)} data-testid="add-worker-btn"
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-md font-medium">
@@ -334,6 +719,13 @@ export default function Workers() {
       {creating && <WorkerForm onClose={()=>setCreating(false)} onSaved={()=>{setCreating(false); load();}} onQuota={(m)=>setUpgrade(m)}/>}
       {editing && <WorkerForm initial={editing} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null); load();}} onQuota={(m)=>setUpgrade(m)}/>}
       {bulkOpen && <BulkImportModal onClose={()=>setBulkOpen(false)} onDone={()=>{setBulkOpen(false); load();}} onQuota={(m)=>setUpgrade(m)}/>}
+      {whatsappOpen && (
+        <WhatsAppImportModal
+          onClose={() => setWhatsappOpen(false)}
+          onDone={load}
+          onQuota={(message) => setUpgrade(message)}
+        />
+      )}
     </div>
   );
 }
