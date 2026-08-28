@@ -176,7 +176,7 @@ function createClient() {
 
             headless: true,
 
-            protocolTimeout: 120000,
+            protocolTimeout: 300000,
 
             args: [
 
