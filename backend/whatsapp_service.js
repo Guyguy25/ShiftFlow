@@ -1,813 +1,1422 @@
-const { Client, LocalAuth } = require("whatsapp-web.js");
 const express = require("express");
 const QRCode = require("qrcode");
+const qrcode = require("qrcode-terminal");
+
+const makeWASocket = require("@whiskeysockets/baileys").default;
+
+const {
+    DisconnectReason,
+    useMultiFileAuthState,
+} = require("@whiskeysockets/baileys");
+
+const { Boom } = require("@hapi/boom");
+
 const path = require("path");
 const fs = require("fs");
-
-const app = express();
-
-const PORT = process.env.WHATSAPP_PORT || 3001;
-
-app.use(express.json());
 
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 
+const app = express();
+
+const PORT = Number(
+    process.env.WHATSAPP_PORT || 3001
+);
+
 const SESSION_ROOT = path.join(
+    __dirname,
+    "whatsapp-sessions"
+);
+
+const LEGACY_SESSION_ROOT = path.join(
     __dirname,
     "whatsapp-session"
 );
 
-const MAX_INIT_RETRIES = 3;
+const DEFAULT_SESSION_ID =
+    process.env.WHATSAPP_SESSION_ID ||
+    "default";
 
-const CONTACT_SYNC_TIMEOUT = 45000;
-const CONTACT_STABLE_CHECKS = 2;
-const CONTACT_STABLE_INTERVAL = 1200;
 
-const LID_BATCH_SIZE = 20;
+// ============================================================
+// MIDDLEWARE
+// ============================================================
+
+app.use(
+    express.json()
+);
 
 
 // ============================================================
 // ÉTAT GLOBAL
 // ============================================================
 
-let client = null;
+const sessions = new Map();
 
-let whatsappReady = false;
-let currentQR = null;
-
-let contacts = [];
-
-let contactsLoading = false;
-let contactsLoadedForSession = false;
-
-let initializing = false;
-let reconnecting = false;
-
-let generation = 0;
-
-let currentClientGeneration = 0;
+let shuttingDown = false;
 
 
 // ============================================================
-// GESTION DES ERREURS PUPPETEER / WHATSAPP-WEB.JS
+// UTILITAIRES
 // ============================================================
-//
-// whatsapp-web.js 1.34.7 peut produire une erreur non interceptée
-// pendant un LOGOUT manuel.
-//
-// Exemple :
-//   Attempted to use detached Frame
-//   Protocol error (Runtime.callFunctionOn)
-//
-// Cette erreur arrive parce que whatsapp-web.js continue une
-// opération Puppeteer alors que WhatsApp vient de détruire le frame.
-//
-// On intercepte UNIQUEMENT ces erreurs connues afin d'éviter
-// que Node.js entier ne crash.
-//
 
-process.on("uncaughtException", (error) => {
-
-    const message =
-        error?.message ||
-        String(error);
-
-
-    const isWhatsAppLifecycleError =
-        message.includes("Attempted to use detached Frame") ||
-        message.includes("Execution context was destroyed") ||
-        message.includes("Protocol error") ||
-        message.includes("Session closed") ||
-        message.includes("Target closed");
-
-
-    if (!isWhatsAppLifecycleError) {
-
-        console.error(
-            "❌ Exception non gérée :",
-            error
-        );
-
-        return;
-    }
-
-
-    console.log(
-        "⚠️ Erreur Chromium/WhatsApp pendant une transition de session."
+function sleep(ms) {
+    return new Promise(
+        (resolve) => setTimeout(resolve, ms)
     );
-
-    console.log(
-        `   ${message}`
-    );
+}
 
 
-    // Si une reconnexion n'est pas déjà en cours,
-    // on laisse la librairie terminer sa séquence puis
-    // on reconstruit le client.
-    if (!reconnecting) {
+function safeSessionId(value) {
 
-        console.log(
-            "🔄 Récupération automatique du client..."
+    const raw =
+        String(
+            value ||
+            DEFAULT_SESSION_ID
+        ).trim();
+
+
+    const safe =
+        raw.replace(
+            /[^a-zA-Z0-9_-]/g,
+            "_"
         );
 
 
-        setTimeout(() => {
-
-            recoverAfterLogout()
-                .catch((recoveryError) => {
-
-                    console.error(
-                        "❌ Échec récupération WhatsApp :",
-                        recoveryError
-                    );
-
-                });
-
-        }, 2000);
-    }
-
-});
-
-
-// ============================================================
-// LOGS
-// ============================================================
-
-console.log("🚀 Initialisation de WhatsApp...");
-console.log("────────────────────────────────────");
-
-console.log(
-    `📁 Session WhatsApp : ${SESSION_ROOT}`
-);
-
-console.log(
-    `📁 Session existe : ${fs.existsSync(SESSION_ROOT)}`
-);
-
-console.log("────────────────────────────────────");
-
-
-// ============================================================
-// CRÉATION CLIENT
-// ============================================================
-
-function createClient() {
-
-    console.log(
-        "🚀 Création du client WhatsApp..."
+    return (
+        safe ||
+        "default"
     );
 
-
-    const newClient = new Client({
-
-        authStrategy: new LocalAuth({
-
-            dataPath: SESSION_ROOT,
-
-            rmMaxRetries: 10,
-
-        }),
+}
 
 
-        puppeteer: {
+function sessionPath(sessionId) {
 
-            headless: true,
-
-            protocolTimeout: 300000,
-
-            args: [
-
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-
-                "--disable-dev-shm-usage",
-
-                "--disable-gpu",
-
-                "--disable-extensions",
-
-                "--disable-background-networking",
-
-                "--disable-background-timer-throttling",
-
-                "--disable-renderer-backgrounding",
-
-                "--disable-features=Translate,BackForwardCache",
-
-            ],
-
-        },
-
-    });
-
-
-    const thisGeneration =
-        ++generation;
-
-
-    currentClientGeneration =
-        thisGeneration;
-
-
-    // ========================================================
-    // QR
-    // ========================================================
-
-    newClient.on(
-        "qr",
-        async (qr) => {
-
-            // Ignore les anciens clients.
-
-            if (
-                thisGeneration !== generation
-            ) {
-                return;
-            }
-
-
-            try {
-
-                currentQR =
-                    await QRCode.toDataURL(qr);
-
-
-                whatsappReady = false;
-
-                contacts = [];
-
-                contactsLoadedForSession = false;
-
-                contactsLoading = false;
-
-
-                console.log(
-                    "📱 Nouveau QR WhatsApp disponible"
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "❌ Erreur génération QR :",
-                    error
-                );
-
-
-                currentQR = null;
-
-            }
-
-        }
+    return path.join(
+        SESSION_ROOT,
+        safeSessionId(sessionId)
     );
 
-
-    // ========================================================
-    // AUTHENTIFICATION
-    // ========================================================
-
-    newClient.on(
-        "authenticated",
-        () => {
-
-            if (
-                thisGeneration !== generation
-            ) {
-                return;
-            }
-
-
-            console.log(
-                "🔐 WhatsApp authentifié"
-            );
-
-        }
-    );
-
-
-    // ========================================================
-    // AUTH FAILURE
-    // ========================================================
-
-    newClient.on(
-        "auth_failure",
-        (message) => {
-
-            if (
-                thisGeneration !== generation
-            ) {
-                return;
-            }
-
-
-            console.error(
-                "❌ Échec authentification WhatsApp :",
-                message
-            );
-
-
-            whatsappReady = false;
-
-            currentQR = null;
-
-            contacts = [];
-
-            contactsLoadedForSession = false;
-
-            contactsLoading = false;
-
-        }
-    );
-
-
-    // ========================================================
-    // READY
-    // ========================================================
-
-    newClient.on(
-        "ready",
-        async () => {
-
-            // ------------------------------------------------
-            // IGNORER LES ANCIENS CLIENTS
-            // ------------------------------------------------
-
-            if (
-                thisGeneration !== generation
-            ) {
-
-                console.log(
-                    "ℹ️ READY provenant d'un ancien client ignoré."
-                );
-
-                return;
-            }
-
-
-            // ------------------------------------------------
-            // EMPÊCHER DOUBLE READY
-            // ------------------------------------------------
-
-            if (
-                whatsappReady &&
-                contactsLoading
-            ) {
-
-                console.log(
-                    "ℹ️ READY déjà en cours, événement ignoré."
-                );
-
-                return;
-            }
-
-
-            console.log(
-                "✅ WhatsApp connecté"
-            );
-
-
-            whatsappReady = true;
-
-            currentQR = null;
-
-
-            // On ne recharge pas inutilement les contacts
-            // si cette session les possède déjà.
-
-            if (
-                contactsLoadedForSession
-            ) {
-
-                console.log(
-                    "ℹ️ Contacts déjà chargés pour cette session."
-                );
-
-                return;
-            }
-
-
-            if (
-                contactsLoading
-            ) {
-
-                return;
-            }
-
-
-            contactsLoading = true;
-
-
-            try {
-
-                console.log(
-                    "⏳ Synchronisation des contacts..."
-                );
-
-
-                // ------------------------------------------------
-                // ATTENTE SYNCHRONISATION
-                // ------------------------------------------------
-
-                await waitForContactSync(
-                    newClient,
-                    thisGeneration
-                );
-
-
-                if (
-                    !whatsappReady ||
-                    thisGeneration !== generation
-                ) {
-
-                    throw new Error(
-                        "WhatsApp déconnecté pendant la synchronisation"
-                    );
-                }
-
-
-                // ------------------------------------------------
-                // RÉCUPÉRATION
-                // ------------------------------------------------
-
-                console.log(
-                    "⏳ Récupération des contacts..."
-                );
-
-
-                await loadContacts(
-                    newClient,
-                    thisGeneration
-                );
-
-
-                if (
-                    !whatsappReady ||
-                    thisGeneration !== generation
-                ) {
-
-                    throw new Error(
-                        "WhatsApp déconnecté pendant la récupération"
-                    );
-                }
-
-
-                contactsLoadedForSession =
-                    true;
-
-
-                console.log(
-                    `✅ Synchronisation terminée : ${contacts.length} contacts`
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "❌ Erreur récupération contacts :",
-                    error
-                );
-
-
-            } finally {
-
-                if (
-                    thisGeneration === generation
-                ) {
-
-                    contactsLoading = false;
-
-                }
-
-            }
-
-        }
-    );
-
-
-    // ========================================================
-    // DISCONNECTED
-    // ========================================================
-
-    newClient.on(
-        "disconnected",
-        (reason) => {
-
-            console.log(
-                "❌ WhatsApp déconnecté :",
-                reason
-            );
-
-
-            whatsappReady = false;
-
-            currentQR = null;
-
-            contacts = [];
-
-            contactsLoadedForSession = false;
-
-            contactsLoading = false;
-
-
-            // ------------------------------------------------
-            // LOGOUT MANUEL
-            // ------------------------------------------------
-
-            if (
-                String(reason).toUpperCase() === "LOGOUT"
-            ) {
-
-                console.log(
-                    "🔄 Déconnexion manuelle détectée."
-                );
-
-
-                if (
-                    !reconnecting
-                ) {
-
-                    reconnecting = true;
-
-
-                    // IMPORTANT :
-                    //
-                    // NE PAS fermer Chromium ici.
-                    //
-                    // whatsapp-web.js est encore en train
-                    // de gérer son propre LOGOUT.
-                    //
-                    // On attend qu'il termine sa transition.
-
-                    setTimeout(() => {
-
-                        recoverAfterLogout()
-                            .catch((error) => {
-
-                                console.error(
-                                    "❌ Erreur reconnexion après logout :",
-                                    error
-                                );
-
-                            })
-                            .finally(() => {
-
-                                reconnecting =
-                                    false;
-
-                            });
-
-                    }, 3500);
-
-                }
-
-
-                return;
-            }
-
-
-            // ------------------------------------------------
-            // AUTRE DÉCONNEXION
-            // ------------------------------------------------
-
-            console.log(
-                "⚠️ Déconnexion non-LOGOUT."
-            );
-
-        }
-    );
-
-
-    // ========================================================
-    // ERREUR
-    // ========================================================
-
-    newClient.on(
-        "error",
-        (error) => {
-
-            console.error(
-                "❌ Erreur WhatsApp :",
-                error
-            );
-
-        }
-    );
-
-
-    return newClient;
 }
 
 
 // ============================================================
-// INITIALISATION
+// CRÉATION D'UNE SESSION
 // ============================================================
 
-async function initializeWhatsApp() {
+function createSessionState(sessionId) {
 
-    if (
-        initializing
-    ) {
+    return {
 
-        console.log(
-            "ℹ️ Initialisation déjà en cours."
+        id:
+            safeSessionId(
+                sessionId
+            ),
+
+        sock:
+            null,
+
+        connected:
+            false,
+
+        qr:
+            null,
+
+        qrText:
+            null,
+
+        contacts:
+            new Map(),
+
+        contactsLoading:
+            false,
+
+        initialSyncDone:
+            false,
+
+        starting:
+            false,
+
+        reconnectTimer:
+            null,
+
+        refreshPromise:
+            null,
+
+        generation:
+            0,
+
+        lastConnectionError:
+            null,
+
+    };
+
+}
+
+
+// ============================================================
+// RÉCUPÉRER UNE SESSION
+// ============================================================
+
+function getSession(sessionId) {
+
+    const id =
+        safeSessionId(
+            sessionId
         );
 
-        return;
+
+    let state =
+        sessions.get(id);
+
+
+    if (!state) {
+
+        state =
+            createSessionState(
+                id
+            );
+
+
+        sessions.set(
+            id,
+            state
+        );
+
     }
 
 
-    initializing = true;
+    return state;
+
+}
+
+
+// ============================================================
+// NORMALISER NUMÉRO
+// ============================================================
+
+function normalizeNumber(value) {
+
+    return String(
+        value || ""
+    )
+        .replace(
+            /@s\.whatsapp\.net/g,
+            ""
+        )
+        .replace(
+            /@c\.us/g,
+            ""
+        )
+        .replace(
+            /@lid/g,
+            ""
+        )
+        .replace(
+            /\D/g,
+            ""
+        );
+
+}
+
+
+// ============================================================
+// VÉRIFIER JID PERSONNE
+// ============================================================
+
+function isPersonJid(jid) {
+
+    const value =
+        String(
+            jid || ""
+        );
+
+
+    return (
+
+        value.endsWith(
+            "@s.whatsapp.net"
+        )
+
+        ||
+
+        value.endsWith(
+            "@lid"
+        )
+
+    );
+
+}
+
+
+// ============================================================
+// NOM CONTACT
+// ============================================================
+
+function contactName(contact) {
+
+    return String(
+
+        contact?.name ||
+
+        contact?.shortName ||
+
+        ""
+
+    ).trim();
+
+}
+
+
+// ============================================================
+// NORMALISER CONTACT
+// ============================================================
+
+function normalizeContact(contact) {
+
+    if (!contact) {
+
+        return null;
+
+    }
+
+
+    const id =
+        String(
+            contact.id ||
+            contact.jid ||
+            ""
+        );
+
+
+    if (!id) {
+
+        return null;
+
+    }
+
+
+    if (!isPersonJid(id)) {
+
+        return null;
+
+    }
+
+
+    const number =
+        normalizeNumber(
+
+            contact.number ||
+
+            contact.phoneNumber ||
+
+            id.split("@")[0]
+
+        );
+
+
+    const name =
+        contactName(
+            contact
+        );
+
+
+    if (!number) {
+
+        return null;
+
+    }
+
+
+    if (!name) {
+
+        return null;
+
+    }
+
+
+    return {
+
+        id,
+
+        name,
+
+        number,
+
+    };
+
+}
+
+
+// ============================================================
+// AJOUT / UPDATE CONTACTS
+// ============================================================
+
+function upsertContacts(
+    state,
+    list
+) {
+
+    if (!Array.isArray(list)) {
+
+        return 0;
+
+    }
+
+
+    let changed = 0;
 
 
     for (
-        let attempt = 1;
-        attempt <= MAX_INIT_RETRIES;
-        attempt++
+        const raw of list
     ) {
 
-        try {
-
-            console.log(
-                `🔄 Tentative d'initialisation ${attempt}/${MAX_INIT_RETRIES}`
+        const contact =
+            normalizeContact(
+                raw
             );
 
 
-            client =
-                createClient();
+        if (!contact) {
+
+            continue;
+
+        }
 
 
-            await client.initialize();
-
-
-            console.log(
-                "✅ Initialisation WhatsApp terminée"
+        const existing =
+            state.contacts.get(
+                contact.number
             );
 
 
-            initializing =
-                false;
+        if (
 
+            !existing
 
-            return;
+            ||
 
+            existing.id !==
+                contact.id
 
-        } catch (error) {
+            ||
 
-            console.error(
-                `❌ Échec initialisation ${attempt}/${MAX_INIT_RETRIES} :`,
-                error
+            existing.name !==
+                contact.name
+
+        ) {
+
+            state.contacts.set(
+                contact.number,
+                contact
             );
 
 
-            whatsappReady = false;
-
-            currentQR = null;
-
-            contacts = [];
-
-
-            const failedClient =
-                client;
-
-
-            client = null;
-
-
-            await safeDestroyClient(
-                failedClient
-            );
-
-
-            if (
-                attempt < MAX_INIT_RETRIES
-            ) {
-
-                console.log(
-                    "⏳ Nouvelle tentative dans 2 secondes..."
-                );
-
-
-                await sleep(2000);
-
-            }
+            changed++;
 
         }
 
     }
 
 
-    initializing =
-        false;
+    return changed;
+
+}
 
 
-    console.error(
-        "❌ Impossible d'initialiser WhatsApp après plusieurs tentatives."
+// ============================================================
+// CONTACTS TRIÉS
+// ============================================================
+
+function sortedContacts(state) {
+
+    return Array.from(
+        state.contacts.values()
+    ).sort(
+
+        (a, b) =>
+
+            a.name.localeCompare(
+                b.name,
+                "fr",
+                {
+                    sensitivity:
+                        "base",
+                }
+            )
+
     );
 
 }
 
 
 // ============================================================
-// RÉCUPÉRATION APRÈS LOGOUT
+// FICHIER CONTACTS
 // ============================================================
 
-async function recoverAfterLogout() {
+function contactsFile(state) {
 
-    if (
-        initializing
-    ) {
+    return path.join(
+        sessionPath(
+            state.id
+        ),
+        "contacts.json"
+    );
 
-        console.log(
-            "ℹ️ Initialisation déjà en cours, récupération ignorée."
+}
+
+
+// ============================================================
+// CHARGER CACHE CONTACTS
+// ============================================================
+
+async function loadContactsCache(
+    state
+) {
+
+    const file =
+        contactsFile(
+            state
         );
 
-        return;
+
+    try {
+
+        if (
+            !fs.existsSync(file)
+        ) {
+
+            return;
+
+        }
+
+
+        const data =
+            JSON.parse(
+
+                await fs.promises.readFile(
+                    file,
+                    "utf8"
+                )
+
+            );
+
+
+        if (
+            Array.isArray(data)
+        ) {
+
+            upsertContacts(
+                state,
+                data
+            );
+
+        }
+
+
+        console.log(
+            `📂 ${state.contacts.size} contacts cache chargés [${state.id}]`
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            `❌ Cache contacts illisible [${state.id}] :`,
+            error.message
+        );
+
+    }
+
+}
+
+
+// ============================================================
+// SAUVEGARDER CACHE CONTACTS
+// ============================================================
+
+async function saveContactsCache(
+    state
+) {
+
+    try {
+
+        await fs.promises.mkdir(
+            sessionPath(
+                state.id
+            ),
+            {
+                recursive:
+                    true,
+            }
+        );
+
+
+        await fs.promises.writeFile(
+
+            contactsFile(
+                state
+            ),
+
+            JSON.stringify(
+                sortedContacts(
+                    state
+                ),
+                null,
+                2
+            ),
+
+            "utf8"
+
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            `❌ Sauvegarde contacts impossible [${state.id}] :`,
+            error.message
+        );
+
+    }
+
+}
+
+
+// ============================================================
+// GÉNÉRATION QR
+// ============================================================
+
+async function generateQR(
+    state,
+    qr
+) {
+
+    state.qrText =
+        qr;
+
+
+    try {
+
+        state.qr =
+            await QRCode.toDataURL(
+                qr
+            );
+
+
+    } catch (error) {
+
+        console.error(
+            `❌ Erreur génération QR [${state.id}] :`,
+            error.message
+        );
+
+
+        state.qr =
+            null;
+
     }
 
 
-    if (
-        !reconnecting
-    ) {
+    console.log("");
+    console.log(
+        `📱 NOUVEAU QR CODE [${state.id}]`
+    );
+    console.log(
+        "────────────────────────────────────"
+    );
 
-        reconnecting =
-            true;
+
+    try {
+
+        qrcode.generate(
+            qr,
+            {
+                small:
+                    true,
+            }
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "❌ Impossible d'afficher le QR dans le terminal :",
+            error.message
+        );
 
     }
 
 
     console.log(
-        "🔄 Redémarrage automatique du client WhatsApp..."
+        "────────────────────────────────────"
     );
 
-
-    whatsappReady =
-        false;
-
-    currentQR =
-        null;
-
-    contacts =
-        [];
-
-    contactsLoadedForSession =
-        false;
-
-    contactsLoading =
-        false;
+}
 
 
-    // Invalide les opérations de l'ancien client.
+// ============================================================
+// CODE DE DÉCONNEXION
+// ============================================================
 
-    generation++;
-
-
-    const oldClient =
-        client;
-
-
-    client =
-        null;
-
-
-    // --------------------------------------------------------
-    // IMPORTANT
-    // --------------------------------------------------------
-    //
-    // On attend d'abord la fin de la séquence interne
-    // de whatsapp-web.js.
-    //
-    // Puis seulement on détruit le navigateur.
-    //
-
-    await sleep(1500);
-
-
-    await safeDestroyClient(
-        oldClient
-    );
-
-
-    // --------------------------------------------------------
-    // SESSION
-    // --------------------------------------------------------
-
-    await removeSessionFolder();
-
-
-    // --------------------------------------------------------
-    // NOUVEAU CLIENT
-    // --------------------------------------------------------
+function statusCodeFrom(
+    error
+) {
 
     try {
 
-        await initializeWhatsApp();
+        return new Boom(
+            error
+        )?.output?.statusCode;
+
+
+    } catch (_) {
+
+        return undefined;
+
+    }
+
+}
+
+
+// ============================================================
+// DÉTRUIRE SOCKET
+// ============================================================
+
+async function destroySocket(
+    state
+) {
+
+    const old =
+        state.sock;
+
+
+    state.sock =
+        null;
+
+
+    if (!old) {
+
+        return;
+
+    }
+
+
+    try {
+
+        if (
+            typeof old.end ===
+            "function"
+        ) {
+
+            old.end(
+                undefined
+            );
+
+        }
+
+    } catch (_) {}
+
+
+    await sleep(
+        250
+    );
+
+}
+
+
+// ============================================================
+// SUPPRIMER AUTH SESSION
+// ============================================================
+
+async function clearAuth(
+    state
+) {
+
+    const dir =
+        sessionPath(
+            state.id
+        );
+
+
+    try {
+
+        await fs.promises.rm(
+            dir,
+            {
+                recursive:
+                    true,
+
+                force:
+                    true,
+
+                maxRetries:
+                    5,
+
+                retryDelay:
+                    250,
+            }
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            `❌ Suppression session impossible [${state.id}] :`,
+            error.message
+        );
+
+    }
+
+
+    await fs.promises.mkdir(
+        dir,
+        {
+            recursive:
+                true,
+        }
+    );
+
+}
+
+
+// ============================================================
+// DÉMARRER SESSION
+// ============================================================
+
+async function startSession(
+    state
+) {
+
+    if (
+        shuttingDown
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        state.starting
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        state.sock
+    ) {
+
+        return;
+
+    }
+
+
+    state.starting =
+        true;
+
+
+    state.generation +=
+        1;
+
+
+    const generation =
+        state.generation;
+
+
+    try {
+
+        console.log(
+            `🔄 Initialisation Baileys [${state.id}]...`
+        );
+
+
+        const dir =
+            sessionPath(
+                state.id
+            );
+
+
+        await fs.promises.mkdir(
+            dir,
+            {
+                recursive:
+                    true,
+            }
+        );
+
+
+        const {
+            state:
+                authState,
+
+            saveCreds,
+
+        } =
+            await useMultiFileAuthState(
+                dir
+            );
+
+
+        const sock =
+            makeWASocket({
+
+                auth:
+                    authState,
+
+                printQRInTerminal:
+                    false,
+
+                browser: [
+                    "ShiftFlow",
+                    "Chrome",
+                    "1.0.0",
+                ],
+
+                markOnlineOnConnect:
+                    false,
+
+                syncFullHistory:
+                    false,
+
+                connectTimeoutMs:
+                    60000,
+
+                defaultQueryTimeoutMs:
+                    60000,
+
+                keepAliveIntervalMs:
+                    30000,
+
+            });
+
+
+        state.sock =
+            sock;
+
+
+        state.lastConnectionError =
+            null;
+
+
+        sock.ev.on(
+            "creds.update",
+            saveCreds
+        );
+
+
+        // ====================================================
+        // CONNECTION UPDATE
+        // ====================================================
+
+        sock.ev.on(
+            "connection.update",
+            async (
+                update
+            ) => {
+
+                if (
+                    generation !==
+                    state.generation
+                ) {
+
+                    return;
+
+                }
+
+
+                const {
+                    connection,
+                    qr,
+                    lastDisconnect,
+                } =
+                    update;
+
+
+                // --------------------------------------------
+                // QR
+                // --------------------------------------------
+
+                if (qr) {
+
+                    state.connected =
+                        false;
+
+                    state.initialSyncDone =
+                        false;
+
+                    await generateQR(
+                        state,
+                        qr
+                    );
+
+                }
+
+
+                // --------------------------------------------
+                // OUVERTURE
+                // --------------------------------------------
+
+                if (
+                    connection ===
+                    "open"
+                ) {
+
+                    state.connected =
+                        true;
+
+                    state.qr =
+                        null;
+
+                    state.qrText =
+                        null;
+
+                    state.initialSyncDone =
+                        true;
+
+                    state.lastConnectionError =
+                        null;
+
+
+                    console.log("");
+
+                    console.log(
+                        "────────────────────────────────────"
+                    );
+
+                    console.log(
+                        `✅ WHATSAPP CONNECTÉ [${state.id}]`
+                    );
+
+                    console.log(
+                        "────────────────────────────────────"
+                    );
+
+                    console.log(
+                        `📱 ${state.contacts.size} contacts actuellement en mémoire`
+                    );
+
+                }
+
+
+                // --------------------------------------------
+                // FERMETURE
+                // --------------------------------------------
+
+                if (
+                    connection ===
+                    "close"
+                ) {
+
+                    state.connected =
+                        false;
+
+
+                    const code =
+                        statusCodeFrom(
+                            lastDisconnect?.error
+                        );
+
+
+                    state.lastConnectionError =
+                        code ??
+                        null;
+
+
+                    console.log("");
+
+                    console.log(
+                        `❌ CONNEXION WHATSAPP FERMÉE [${state.id}]`
+                    );
+
+                    console.log(
+                        `📋 Code : ${code ?? "inconnu"}`
+                    );
+
+
+                    // ========================================
+                    // LOGOUT MANUEL WHATSAPP
+                    // ========================================
+
+                    if (
+                        code ===
+                        DisconnectReason.loggedOut
+                    ) {
+
+                        console.log(
+                            `🚪 Session WhatsApp retirée [${state.id}]`
+                        );
+
+                        console.log(
+                            "🧹 Cette session uniquement va être réinitialisée."
+                        );
+
+                        console.log(
+                            "📱 Un nouveau QR code va être généré."
+                        );
+
+
+                        state.connected =
+                            false;
+
+                        state.qr =
+                            null;
+
+                        state.qrText =
+                            null;
+
+                        state.initialSyncDone =
+                            false;
+
+
+                        await destroySocket(
+                            state
+                        );
+
+
+                        await clearAuth(
+                            state
+                        );
+
+
+                        if (
+                            !shuttingDown
+                        ) {
+
+                            await sleep(
+                                500
+                            );
+
+
+                            startSession(
+                                state
+                            ).catch(
+                                (error) => {
+
+                                    console.error(
+                                        `❌ Redémarrage après logout [${state.id}] :`,
+                                        error
+                                    );
+
+                                }
+                            );
+
+                        }
+
+
+                        return;
+
+                    }
+
+
+                    // ========================================
+                    // AUTRE DÉCONNEXION
+                    // ========================================
+
+                    if (
+                        !shuttingDown
+                        &&
+                        generation ===
+                            state.generation
+                    ) {
+
+                        if (
+                            state.reconnectTimer
+                        ) {
+
+                            clearTimeout(
+                                state.reconnectTimer
+                            );
+
+                        }
+
+
+                        state.reconnectTimer =
+                            setTimeout(
+                                async () => {
+
+                                    state.reconnectTimer =
+                                        null;
+
+
+                                    await destroySocket(
+                                        state
+                                    );
+
+
+                                    if (
+                                        !shuttingDown
+                                    ) {
+
+                                        startSession(
+                                            state
+                                        ).catch(
+                                            (error) => {
+
+                                                console.error(
+                                                    `❌ Reconnexion [${state.id}] :`,
+                                                    error
+                                                );
+
+                                            }
+                                        );
+
+                                    }
+
+                                },
+                                3000
+                            );
+
+
+                        console.log(
+                            `🔄 Reconnexion automatique dans 3 secondes... [${state.id}]`
+                        );
+
+                    }
+
+                }
+
+            }
+        );
+
+
+        // ====================================================
+        // CONTACTS.SET
+        // ====================================================
+
+        sock.ev.on(
+            "contacts.set",
+            async (
+                event
+            ) => {
+
+                const list =
+                    event?.contacts ||
+                    [];
+
+
+                const changed =
+                    upsertContacts(
+                        state,
+                        list
+                    );
+
+
+                console.log(
+                    `📱 contacts.set [${state.id}] : ${list.length} reçus → ${state.contacts.size} contacts`
+                );
+
+
+                if (
+                    changed > 0
+                ) {
+
+                    await saveContactsCache(
+                        state
+                    );
+
+                }
+
+            }
+        );
+
+
+        // ====================================================
+        // CONTACTS.UPSERT
+        // ====================================================
+
+        sock.ev.on(
+            "contacts.upsert",
+            async (
+                list
+            ) => {
+
+                const safeList =
+                    Array.isArray(list)
+                        ? list
+                        : [];
+
+
+                const changed =
+                    upsertContacts(
+                        state,
+                        safeList
+                    );
+
+
+                console.log(
+                    `📱 contacts.upsert [${state.id}] : ${safeList.length} reçus → ${state.contacts.size} contacts`
+                );
+
+
+                if (
+                    changed > 0
+                ) {
+
+                    await saveContactsCache(
+                        state
+                    );
+
+                }
+
+            }
+        );
+
+
+        // ====================================================
+        // CONTACTS.UPDATE
+        // ====================================================
+
+        sock.ev.on(
+            "contacts.update",
+            async (
+                list
+            ) => {
+
+                const safeList =
+                    Array.isArray(list)
+                        ? list
+                        : [];
+
+
+                const changed =
+                    upsertContacts(
+                        state,
+                        safeList
+                    );
+
+
+                console.log(
+                    `📱 contacts.update [${state.id}] : ${safeList.length} reçus → ${state.contacts.size} contacts`
+                );
+
+
+                if (
+                    changed > 0
+                ) {
+
+                    await saveContactsCache(
+                        state
+                    );
+
+                }
+
+            }
+        );
+
+
+        // ====================================================
+        // HISTORY
+        // ====================================================
+
+        sock.ev.on(
+            "messaging-history.set",
+            async (
+                event
+            ) => {
+
+                const list =
+                    event?.contacts ||
+                    [];
+
+
+                if (
+                    !Array.isArray(
+                        list
+                    )
+                ) {
+
+                    return;
+
+                }
+
+
+                const changed =
+                    upsertContacts(
+                        state,
+                        list
+                    );
+
+
+                console.log(
+                    `📚 Historique contacts [${state.id}] : ${list.length} reçus → ${state.contacts.size} contacts`
+                );
+
+
+                if (
+                    changed > 0
+                ) {
+
+                    await saveContactsCache(
+                        state
+                    );
+
+                }
+
+            }
+        );
+
+
+        console.log(
+            `✅ Socket Baileys créé [${state.id}].`
+        );
+
+
+    } catch (error) {
+
+        state.connected =
+            false;
+
+
+        state.sock =
+            null;
+
+
+        state.lastConnectionError =
+            null;
+
+
+        console.error(
+            `❌ Erreur initialisation Baileys [${state.id}] :`,
+            error
+        );
+
+
+        if (
+            !shuttingDown
+        ) {
+
+            setTimeout(
+                () => {
+
+                    startSession(
+                        state
+                    ).catch(
+                        (retryError) => {
+
+                            console.error(
+                                `❌ Erreur nouvelle tentative [${state.id}] :`,
+                                retryError
+                            );
+
+                        }
+                    );
+
+                },
+                3000
+            );
+
+        }
 
     } finally {
 
-        reconnecting =
+        state.starting =
             false;
 
     }
@@ -816,686 +1425,396 @@ async function recoverAfterLogout() {
 
 
 // ============================================================
-// DESTRUCTION SAFE DU CLIENT
+// REFRESH CONTACTS
 // ============================================================
 
-async function safeDestroyClient(
-    targetClient
+async function refreshContacts(
+    state
 ) {
 
     if (
-        !targetClient
+        !state.connected ||
+        !state.sock
     ) {
 
-        return;
+        throw new Error(
+            "WhatsApp n'est pas connecté."
+        );
+
     }
 
 
-    console.log(
-        "🧹 Fermeture de l'ancien client WhatsApp..."
-    );
+    if (
+        state.refreshPromise
+    ) {
+
+        return state.refreshPromise;
+
+    }
+
+
+    state.contactsLoading =
+        true;
+
+
+    state.refreshPromise =
+        (async () => {
+
+            console.log("");
+
+            console.log(
+                `🔄 Actualisation manuelle des contacts [${state.id}]...`
+            );
+
+
+            const before =
+                state.contacts.size;
+
+
+            // ------------------------------------------------
+            // DEMANDER À BAILEYS DE RESYNCHRONISER L'ÉTAT
+            // ------------------------------------------------
+
+            if (
+                typeof state.sock
+                    .resyncAppState ===
+                "function"
+            ) {
+
+                try {
+
+                    await state.sock.resyncAppState(
+                        [
+                            "regular",
+                        ],
+                        true
+                    );
+
+
+                } catch (error) {
+
+                    console.log(
+                        `⚠️ Resync contacts incomplet [${state.id}] : ${error.message}`
+                    );
+
+                }
+
+            }
+
+
+            // ------------------------------------------------
+            // LAISSER LE TEMPS AUX EVENTS BAILEYS D'ARRIVER
+            // ------------------------------------------------
+
+            await sleep(
+                3000
+            );
+
+
+            // ------------------------------------------------
+            // SAUVEGARDER L'ÉTAT ACTUEL
+            // ------------------------------------------------
+
+            await saveContactsCache(
+                state
+            );
+
+
+            const after =
+                state.contacts.size;
+
+
+            const added =
+                after -
+                before;
+
+
+            console.log(
+                `📱 Refresh terminé [${state.id}] : ${after} contacts (${added >= 0 ? "+" : ""}${added})`
+            );
+
+
+            if (
+                added === 0
+            ) {
+
+                console.log(
+                    "ℹ️ Aucun nouveau contact reçu par Baileys pendant ce refresh."
+                );
+
+            }
+
+
+            return {
+
+                count:
+                    after,
+
+                added:
+                    Math.max(
+                        0,
+                        added
+                    ),
+
+                previousCount:
+                    before,
+
+            };
+
+        })();
 
 
     try {
 
-        if (
-            typeof targetClient.destroy ===
-            "function"
-        ) {
+        return await state.refreshPromise;
 
-            await Promise.race([
+    } finally {
 
-                targetClient
-                    .destroy()
-                    .catch(() => {}),
+        state.refreshPromise =
+            null;
 
-                sleep(5000),
-
-            ]);
-
-        }
-
-    } catch (error) {
-
-        console.log(
-            "⚠️ Erreur pendant destruction client :",
-            error.message
-        );
+        state.contactsLoading =
+            false;
 
     }
-
-
-    // --------------------------------------------------------
-    // Sécurité : navigateur Puppeteer
-    // --------------------------------------------------------
-
-    try {
-
-        if (
-            targetClient.pupBrowser
-        ) {
-
-            if (
-                targetClient.pupBrowser.isConnected()
-            ) {
-
-                await targetClient
-                    .pupBrowser
-                    .close()
-                    .catch(() => {});
-
-            }
-
-        }
-
-    } catch (error) {
-
-        console.log(
-            "⚠️ Erreur fermeture Chromium :",
-            error.message
-        );
-
-    }
-
-
-    await sleep(1000);
-
-
-    console.log(
-        "✅ Ancien client fermé"
-    );
 
 }
 
 
 // ============================================================
-// NETTOYAGE SESSION
+// STATUS PUBLIC
 // ============================================================
 
-async function removeSessionFolder() {
-
-    if (
-        !fs.existsSync(SESSION_ROOT)
-    ) {
-
-        return true;
-    }
-
-
-    console.log(
-        "🧹 Nettoyage de l'ancienne session..."
-    );
-
-
-    const MAX_ATTEMPTS =
-        10;
-
-
-    for (
-        let attempt = 1;
-        attempt <= MAX_ATTEMPTS;
-        attempt++
-    ) {
-
-        try {
-
-            await fs.promises.rm(
-                SESSION_ROOT,
-                {
-                    recursive: true,
-                    force: true,
-                    maxRetries: 3,
-                    retryDelay: 500,
-                }
-            );
-
-
-            console.log(
-                "✅ Ancienne session supprimée"
-            );
-
-
-            return true;
-
-
-        } catch (error) {
-
-            if (
-                error.code === "EBUSY" ||
-                error.code === "EPERM" ||
-                error.code === "ENOTEMPTY"
-            ) {
-
-                console.log(
-                    `⏳ Session encore verrouillée, nouvelle tentative ${attempt}/${MAX_ATTEMPTS}...`
-                );
-
-
-                await sleep(1000);
-
-
-                continue;
-
-            }
-
-
-            console.error(
-                "❌ Erreur suppression session :",
-                error
-            );
-
-
-            return false;
-
-        }
-
-    }
-
-
-    console.log(
-        "⚠️ Session toujours verrouillée."
-    );
-
-
-    console.log(
-        "ℹ️ Le prochain cycle tentera automatiquement de la nettoyer."
-    );
-
-
-    return false;
-}
-
-
-// ============================================================
-// SYNCHRONISATION CONTACTS
-// ============================================================
-
-async function waitForContactSync(
-    targetClient,
-    currentGeneration
+function publicStatus(
+    state
 ) {
 
-    const start =
-        Date.now();
+    return {
 
+        connected:
+            state.connected,
 
-    let previousCount =
-        -1;
+        hasQR:
+            !!state.qr,
 
+        qr:
+            state.qr,
 
-    let stableCount =
-        0;
+        contactCount:
+            state.contacts.size,
 
+        contactsLoading:
+            state.contactsLoading,
 
-    while (
-        Date.now() - start <
-        CONTACT_SYNC_TIMEOUT
-    ) {
+        contactsLoaded:
+            state.contacts.size > 0,
 
-        if (
-            !whatsappReady ||
-            currentGeneration !== generation
-        ) {
+        initialSyncDone:
+            state.initialSyncDone,
 
-            throw new Error(
-                "WhatsApp déconnecté pendant la synchronisation"
-            );
+        starting:
+            state.starting,
 
-        }
+        sessionId:
+            state.id,
 
+        lastConnectionError:
+            state.lastConnectionError,
 
-        try {
-
-            const allContacts =
-                await targetClient
-                    .getContacts();
-
-
-            const count =
-                allContacts.length;
-
-
-            console.log(
-                `📦 Synchronisation : ${count} entrées WhatsApp`
-            );
-
-
-            if (
-                count > 0 &&
-                count === previousCount
-            ) {
-
-                stableCount++;
-
-            } else {
-
-                stableCount = 0;
-
-            }
-
-
-            previousCount =
-                count;
-
-
-            if (
-                stableCount >=
-                CONTACT_STABLE_CHECKS
-            ) {
-
-                console.log(
-                    "✅ Nombre de contacts stabilisé"
-                );
-
-
-                return;
-
-            }
-
-
-        } catch (error) {
-
-            if (
-                !whatsappReady ||
-                currentGeneration !== generation
-            ) {
-
-                throw new Error(
-                    "WhatsApp déconnecté pendant la synchronisation"
-                );
-
-            }
-
-
-            console.log(
-                "⚠️ Synchronisation encore en cours..."
-            );
-
-        }
-
-
-        await sleep(
-            CONTACT_STABLE_INTERVAL
-        );
-
-    }
-
-
-    console.log(
-        "⚠️ Timeout synchronisation, récupération des contacts disponibles."
-    );
+    };
 
 }
 
 
 // ============================================================
-// CHARGEMENT CONTACTS
+// SESSION ID DEPUIS REQUEST
 // ============================================================
 
-async function loadContacts(
-    targetClient,
-    currentGeneration
+function sessionFromRequest(
+    req
 ) {
 
-    const allContacts =
-        await targetClient
-            .getContacts();
+    return safeSessionId(
 
+        req.header(
+            "x-whatsapp-session"
+        )
 
-    console.log(
-        `📦 ${allContacts.length} entrées reçues`
-    );
+        ||
 
+        req.query.sessionId
 
-    const contactsByNumber =
-        new Map();
+        ||
 
+        req.body?.sessionId
 
-    const lidContacts =
-        [];
+        ||
 
+        DEFAULT_SESSION_ID
 
-    // ========================================================
-    // PREMIER PASS
-    // ========================================================
-
-    for (
-        const contact of allContacts
-    ) {
-
-        if (
-            !whatsappReady ||
-            currentGeneration !== generation
-        ) {
-
-            throw new Error(
-                "WhatsApp déconnecté pendant la récupération"
-            );
-
-        }
-
-
-        if (
-            contact.isGroup
-        ) {
-
-            continue;
-
-        }
-
-
-        if (
-            !contact.isWAContact
-        ) {
-
-            continue;
-
-        }
-
-
-        if (
-            !contact.id
-        ) {
-
-            continue;
-
-        }
-
-
-        const serializedId =
-            contact.id._serialized ||
-            "";
-
-
-        if (
-            !serializedId
-        ) {
-
-            continue;
-
-        }
-
-
-        const name =
-            contact.name ||
-            contact.pushname ||
-            contact.shortName ||
-            "";
-
-
-        if (
-            !name.trim()
-        ) {
-
-            continue;
-
-        }
-
-
-        // ====================================================
-        // @c.us
-        // ====================================================
-
-        if (
-            serializedId.endsWith("@c.us")
-        ) {
-
-            let number =
-                contact.id.user;
-
-
-            if (
-                !number
-            ) {
-
-                continue;
-
-            }
-
-
-            number =
-                String(number)
-                    .replace(/\D/g, "");
-
-
-            if (
-                !number
-            ) {
-
-                continue;
-
-            }
-
-
-            if (
-                !contactsByNumber.has(number)
-            ) {
-
-                contactsByNumber.set(
-                    number,
-                    {
-                        id:
-                            serializedId,
-
-                        name:
-                            name.trim(),
-
-                        number,
-
-                        isMyContact:
-                            contact.isMyContact,
-
-                    }
-                );
-
-            }
-
-
-            continue;
-
-        }
-
-
-        // ====================================================
-        // @lid
-        // ====================================================
-
-        if (
-            serializedId.endsWith("@lid")
-        ) {
-
-            lidContacts.push({
-
-                contact,
-
-                serializedId,
-
-                name:
-                    name.trim(),
-
-            });
-
-        }
-
-    }
-
-
-    console.log(
-        `📱 ${lidContacts.length} contacts LID à résoudre`
-    );
-
-
-    // ========================================================
-    // RÉSOLUTION LID
-    // ========================================================
-
-    for (
-        let i = 0;
-        i < lidContacts.length;
-        i += LID_BATCH_SIZE
-    ) {
-
-        if (
-            !whatsappReady ||
-            currentGeneration !== generation
-        ) {
-
-            throw new Error(
-                "WhatsApp déconnecté pendant la résolution des LID"
-            );
-
-        }
-
-
-        const batch =
-            lidContacts.slice(
-                i,
-                i + LID_BATCH_SIZE
-            );
-
-
-        await Promise.allSettled(
-
-            batch.map(
-                async ({
-                    contact,
-                    serializedId,
-                    name,
-                }) => {
-
-                    try {
-
-                        const result =
-                            await targetClient
-                                .getContactLidAndPhone([
-                                    serializedId
-                                ]);
-
-
-                        if (
-                            !result ||
-                            !result.length ||
-                            !result[0]?.pn
-                        ) {
-
-                            return;
-
-                        }
-
-
-                        let number =
-                            result[0].pn;
-
-
-                        number =
-                            String(number)
-                                .replace(
-                                    "@c.us",
-                                    ""
-                                )
-                                .replace(
-                                    "@s.whatsapp.net",
-                                    ""
-                                )
-                                .replace(
-                                    /\D/g,
-                                    ""
-                                );
-
-
-                        if (
-                            !number
-                        ) {
-
-                            return;
-
-                        }
-
-
-                        if (
-                            !contactsByNumber.has(
-                                number
-                            )
-                        ) {
-
-                            contactsByNumber.set(
-                                number,
-                                {
-                                    id:
-                                        serializedId,
-
-                                    name,
-
-                                    number,
-
-                                    isMyContact:
-                                        contact.isMyContact,
-
-                                }
-                            );
-
-                        }
-
-
-                    } catch (error) {
-
-                        // LID impossible à résoudre :
-                        // on ignore ce contact.
-
-                    }
-
-                }
-            )
-
-        );
-
-    }
-
-
-    // ========================================================
-    // RÉSULTAT
-    // ========================================================
-
-    contacts =
-        Array.from(
-            contactsByNumber.values()
-        );
-
-
-    console.log(
-        `📱 ${contacts.length} vrais contacts récupérés`
     );
 
 }
 
 
 // ============================================================
-// STATUS
+// ROUTE STATUS
 // ============================================================
 
 app.get(
     "/status",
-    (req, res) => {
+    async (
+        req,
+        res
+    ) => {
+
+        const state =
+            getSession(
+                sessionFromRequest(
+                    req
+                )
+            );
+
+
+        await loadContactsCache(
+            state
+        );
+
+
+        // ----------------------------------------------------
+        // IMPORTANT :
+        // Si cette session n'existe pas encore, on la démarre.
+        // Cela permet à chaque utilisateur/agence d'obtenir
+        // automatiquement son propre QR.
+        // ----------------------------------------------------
+
+        if (
+            !state.sock
+            &&
+            !state.starting
+            &&
+            !shuttingDown
+        ) {
+
+            startSession(
+                state
+            ).catch(
+                (error) => {
+
+                    console.error(
+                        `❌ Impossible de démarrer la session [${state.id}] :`,
+                        error
+                    );
+
+                }
+            );
+
+        }
+
+
+        res.json(
+            publicStatus(
+                state
+            )
+        );
+
+    }
+);
+
+
+// ============================================================
+// ROUTE CONTACTS
+// ============================================================
+
+app.get(
+    "/contacts",
+    async (
+        req,
+        res
+    ) => {
+
+        const state =
+            getSession(
+                sessionFromRequest(
+                    req
+                )
+            );
+
+
+        await loadContactsCache(
+            state
+        );
+
+
+        if (
+            !state.connected
+        ) {
+
+            return res
+                .status(400)
+                .json({
+
+                    error:
+                        "WhatsApp n'est pas connecté.",
+
+                    ...publicStatus(
+                        state
+                    ),
+
+                });
+
+        }
+
+
+        res.json(
+            sortedContacts(
+                state
+            )
+        );
+
+    }
+);
+
+
+// ============================================================
+// ROUTE QR
+// ============================================================
+
+app.get(
+    "/whatsapp/qr",
+    (
+        req,
+        res
+    ) => {
+
+        const state =
+            getSession(
+                sessionFromRequest(
+                    req
+                )
+            );
+
+
+        if (
+            !state.qr
+        ) {
+
+            return res
+                .status(404)
+                .json({
+
+                    error:
+                        "Aucun QR code disponible.",
+
+                });
+
+        }
+
 
         res.json({
 
-            connected:
-                whatsappReady,
-
-            hasQR:
-                !!currentQR,
-
             qr:
-                currentQR,
-
-            contactCount:
-                contacts.length,
-
-            contactsLoading:
-                contactsLoading,
-
-            contactsLoaded:
-                contactsLoadedForSession,
+                state.qr,
 
         });
 
@@ -1504,100 +1823,30 @@ app.get(
 
 
 // ============================================================
-// CONTACTS
-// ============================================================
-
-app.get(
-    "/contacts",
-    (req, res) => {
-
-        if (
-            !whatsappReady
-        ) {
-
-            return res.status(400).json({
-
-                error:
-                    "WhatsApp n'est pas connecté",
-
-            });
-
-        }
-
-
-        res.json(
-            contacts
-        );
-
-    }
-);
-
-
-// ============================================================
-// REFRESH CONTACTS
+// ROUTE REFRESH
 // ============================================================
 
 app.post(
     "/refresh",
-    async (req, res) => {
+    async (
+        req,
+        res
+    ) => {
 
-        if (
-            !whatsappReady
-        ) {
-
-            return res.status(400).json({
-
-                error:
-                    "WhatsApp n'est pas connecté",
-
-            });
-
-        }
-
-
-        if (
-            contactsLoading
-        ) {
-
-            return res.status(409).json({
-
-                error:
-                    "Récupération des contacts déjà en cours",
-
-            });
-
-        }
-
-
-        contactsLoading =
-            true;
-
-
-        const currentGeneration =
-            generation;
+        const state =
+            getSession(
+                sessionFromRequest(
+                    req
+                )
+            );
 
 
         try {
 
-            console.log(
-                "🔄 Actualisation manuelle des contacts..."
-            );
-
-
-            await waitForContactSync(
-                client,
-                currentGeneration
-            );
-
-
-            await loadContacts(
-                client,
-                currentGeneration
-            );
-
-
-            contactsLoadedForSession =
-                true;
+            const result =
+                await refreshContacts(
+                    state
+                );
 
 
             res.json({
@@ -1605,35 +1854,24 @@ app.post(
                 success:
                     true,
 
-                count:
-                    contacts.length,
+                ...result,
 
             });
 
 
         } catch (error) {
 
-            console.error(
-                "❌ Erreur refresh contacts :",
-                error
-            );
+            res
+                .status(400)
+                .json({
 
+                    success:
+                        false,
 
-            res.status(500).json({
+                    error:
+                        error.message,
 
-                success:
-                    false,
-
-                error:
-                    "Erreur récupération des contacts",
-
-            });
-
-
-        } finally {
-
-            contactsLoading =
-                false;
+                });
 
         }
 
@@ -1642,33 +1880,324 @@ app.post(
 
 
 // ============================================================
-// SERVEUR
+// ROUTE SESSION START
 // ============================================================
 
-app.listen(
-    PORT,
-    () => {
+app.post(
+    "/session/start",
+    async (
+        req,
+        res
+    ) => {
 
-        console.log(
-            `🚀 WhatsApp service lancé sur http://localhost:${PORT}`
+        const state =
+            getSession(
+                sessionFromRequest(
+                    req
+                )
+            );
+
+
+        startSession(
+            state
+        ).catch(
+            (error) => {
+
+                console.error(
+                    `❌ Erreur démarrage session [${state.id}] :`,
+                    error
+                );
+
+            }
         );
+
+
+        res.json({
+
+            success:
+                true,
+
+            ...publicStatus(
+                state
+            ),
+
+        });
 
     }
 );
 
 
 // ============================================================
-// UTILITAIRE
+// ROUTE SESSION LOGOUT
 // ============================================================
 
-function sleep(ms) {
+app.post(
+    "/session/logout",
+    async (
+        req,
+        res
+    ) => {
 
-    return new Promise(
-        resolve =>
-            setTimeout(
-                resolve,
-                ms
-            )
+        const state =
+            getSession(
+                sessionFromRequest(
+                    req
+                )
+            );
+
+
+        if (
+            state.reconnectTimer
+        ) {
+
+            clearTimeout(
+                state.reconnectTimer
+            );
+
+
+            state.reconnectTimer =
+                null;
+
+        }
+
+
+        // ----------------------------------------------------
+        // Si une socket existe, on demande à WhatsApp
+        // de déconnecter cette session.
+        // Le connection.update "loggedOut" se chargera
+        // ensuite de nettoyer cette session et de générer
+        // un nouveau QR.
+        // ----------------------------------------------------
+
+        if (
+            state.sock
+            &&
+            state.connected
+        ) {
+
+            try {
+
+                await state.sock.logout();
+
+            } catch (error) {
+
+                console.log(
+                    `⚠️ Logout socket [${state.id}] : ${error.message}`
+                );
+
+            }
+
+        } else {
+
+            await destroySocket(
+                state
+            );
+
+
+            await clearAuth(
+                state
+            );
+
+
+            state.connected =
+                false;
+
+            state.qr =
+                null;
+
+            state.qrText =
+                null;
+
+            state.initialSyncDone =
+                false;
+
+            state.contacts.clear();
+
+
+            await sleep(
+                500
+            );
+
+
+            if (
+                !shuttingDown
+            ) {
+
+                startSession(
+                    state
+                ).catch(
+                    (error) => {
+
+                        console.error(
+                            `❌ Redémarrage session [${state.id}] :`,
+                            error
+                        );
+
+                    }
+                );
+
+            }
+
+        }
+
+
+        res.json({
+
+            success:
+                true,
+
+        });
+
+    }
+);
+
+
+// ============================================================
+// ROUTE ROOT
+// ============================================================
+
+app.get(
+    "/",
+    (
+        req,
+        res
+    ) => {
+
+        res.json({
+
+            service:
+                "ShiftFlow WhatsApp",
+
+            provider:
+                "Baileys",
+
+            status:
+                "ok",
+
+        });
+
+    }
+);
+
+
+// ============================================================
+// BOOTSTRAP
+// ============================================================
+
+async function bootstrap() {
+
+    await fs.promises.mkdir(
+        SESSION_ROOT,
+        {
+            recursive:
+                true,
+        }
+    );
+
+
+    console.log("");
+
+    console.log(
+        "🚀 SHIFTLOW - WHATSAPP BAILEYS SERVICE"
+    );
+
+    console.log(
+        "────────────────────────────────────"
+    );
+
+    console.log(
+        `📁 Sessions : ${SESSION_ROOT}`
+    );
+
+    console.log(
+        `🌐 Port : ${PORT}`
+    );
+
+    console.log(
+        "────────────────────────────────────"
+    );
+
+
+    // --------------------------------------------------------
+    // COMPATIBILITÉ AVEC L'ANCIEN DOSSIER
+    // --------------------------------------------------------
+
+    const defaultDir =
+        sessionPath(
+            DEFAULT_SESSION_ID
+        );
+
+
+    if (
+
+        DEFAULT_SESSION_ID ===
+            "default"
+
+        &&
+
+        fs.existsSync(
+            LEGACY_SESSION_ROOT
+        )
+
+        &&
+
+        !fs.existsSync(
+            defaultDir
+        )
+
+    ) {
+
+        await fs.promises.rename(
+            LEGACY_SESSION_ROOT,
+            defaultDir
+        ).catch(
+            () => {}
+        );
+
+    }
+
+
+    // --------------------------------------------------------
+    // SESSION PAR DÉFAUT
+    // --------------------------------------------------------
+
+    const state =
+        getSession(
+            DEFAULT_SESSION_ID
+        );
+
+
+    await loadContactsCache(
+        state
+    );
+
+
+    await startSession(
+        state
+    );
+
+
+    // --------------------------------------------------------
+    // SERVEUR HTTP
+    // --------------------------------------------------------
+
+    app.listen(
+        PORT,
+        () => {
+
+            console.log("");
+
+            console.log(
+                `🌐 Serveur lancé sur le port ${PORT}`
+            );
+
+            console.log(
+                `👉 http://localhost:${PORT}`
+            );
+
+            console.log("");
+
+        }
     );
 
 }
@@ -1677,10 +2206,6 @@ function sleep(ms) {
 // ============================================================
 // ARRÊT PROPRE
 // ============================================================
-
-let shuttingDown =
-    false;
-
 
 async function shutdown(
     signal
@@ -1699,42 +2224,60 @@ async function shutdown(
         true;
 
 
+    console.log("");
+
     console.log(
-        `\n🛑 Arrêt du service (${signal})...`
+        `🛑 Arrêt du service (${signal})...`
     );
 
 
-    whatsappReady =
-        false;
+    for (
+        const state of
+            sessions.values()
+    ) {
+
+        if (
+            state.reconnectTimer
+        ) {
+
+            clearTimeout(
+                state.reconnectTimer
+            );
+
+        }
 
 
-    const oldClient =
-        client;
+        await destroySocket(
+            state
+        );
+
+    }
 
 
-    client =
-        null;
-
-
-    await safeDestroyClient(
-        oldClient
+    process.exit(
+        0
     );
-
-
-    process.exit(0);
 
 }
 
 
+// ============================================================
+// SIGNALS
+// ============================================================
+
 process.on(
     "SIGINT",
-    () => shutdown("SIGINT")
+    () => shutdown(
+        "SIGINT"
+    )
 );
 
 
 process.on(
     "SIGTERM",
-    () => shutdown("SIGTERM")
+    () => shutdown(
+        "SIGTERM"
+    )
 );
 
 
@@ -1742,14 +2285,18 @@ process.on(
 // START
 // ============================================================
 
-initializeWhatsApp()
-    .catch(
-        (error) => {
+bootstrap().catch(
+    (error) => {
 
-            console.error(
-                "❌ Erreur fatale initialisation WhatsApp :",
-                error
-            );
+        console.error(
+            "❌ Erreur fatale :",
+            error
+        );
 
-        }
-    );
+
+        process.exit(
+            1
+        );
+
+    }
+);

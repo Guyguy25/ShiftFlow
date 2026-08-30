@@ -1,4 +1,5 @@
 import os
+
 import httpx
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,11 +13,19 @@ from server import (
 )
 
 
+# ============================================================
+# ROUTER
+# ============================================================
+
 router = APIRouter(
     prefix="/whatsapp",
     tags=["WhatsApp"],
 )
 
+
+# ============================================================
+# CONFIGURATION SERVICE WHATSAPP
+# ============================================================
 
 WHATSAPP_SERVICE_URL = os.environ.get(
     "WHATSAPP_SERVICE_URL",
@@ -24,26 +33,74 @@ WHATSAPP_SERVICE_URL = os.environ.get(
 ).rstrip("/")
 
 
-# ==========================================
-# COMMUNICATION AVEC WHATSAPP SERVICE
-# ==========================================
+WHATSAPP_TIMEOUT = float(
+    os.environ.get(
+        "WHATSAPP_SERVICE_TIMEOUT",
+        "90",
+    )
+)
+
+
+# ============================================================
+# SESSION WHATSAPP
+# ============================================================
+
+def session_id_for_user(user):
+    """
+    Chaque utilisateur/agence possède
+    sa propre session Baileys.
+
+    Le service Node reçoit cet ID dans :
+    X-WhatsApp-Session
+    """
+
+    return str(user["id"])
+
+
+# ============================================================
+# REQUÊTE VERS LE SERVICE BAILEYS
+# ============================================================
 
 async def whatsapp_request(
     method: str,
     path: str,
+    user,
     **kwargs,
 ):
-    url = f"{WHATSAPP_SERVICE_URL}{path}"
+    url = (
+        f"{WHATSAPP_SERVICE_URL}"
+        f"{path}"
+    )
+
+
+    headers = dict(
+        kwargs.pop(
+            "headers",
+            {},
+        )
+        or {}
+    )
+
+
+    headers[
+        "X-WhatsApp-Session"
+    ] = session_id_for_user(user)
+
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(
+            timeout=WHATSAPP_TIMEOUT
+        ) as client:
+
             response = await client.request(
                 method,
                 url,
+                headers=headers,
                 **kwargs,
             )
 
     except httpx.RequestError as error:
+
         print(
             "❌ Service WhatsApp inaccessible :",
             error,
@@ -57,36 +114,43 @@ async def whatsapp_request(
             ),
         )
 
-    # ======================================
-    # RÉPONSE DU SERVICE
-    # ======================================
 
     try:
         data = response.json()
+
     except Exception:
         data = {
             "error": response.text
         }
 
-    # ======================================
-    # ERREUR HTTP
-    # ======================================
 
     if response.status_code >= 400:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=data.get(
+
+        error_message = (
+            data.get(
                 "error",
                 "Erreur du service WhatsApp",
-            ),
+            )
+            if isinstance(
+                data,
+                dict,
+            )
+            else "Erreur du service WhatsApp"
         )
+
+
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=error_message,
+        )
+
 
     return data
 
 
-# ==========================================
-# STATUT WHATSAPP
-# ==========================================
+# ============================================================
+# STATUS WHATSAPP
+# ============================================================
 
 @router.get("/status")
 async def whatsapp_status(
@@ -95,12 +159,13 @@ async def whatsapp_status(
     return await whatsapp_request(
         "GET",
         "/status",
+        user,
     )
 
 
-# ==========================================
+# ============================================================
 # CONTACTS WHATSAPP
-# ==========================================
+# ============================================================
 
 @router.get("/contacts")
 async def whatsapp_contacts(
@@ -109,12 +174,13 @@ async def whatsapp_contacts(
     return await whatsapp_request(
         "GET",
         "/contacts",
+        user,
     )
 
 
-# ==========================================
-# ACTUALISER LES CONTACTS
-# ==========================================
+# ============================================================
+# REFRESH CONTACTS
+# ============================================================
 
 @router.post("/refresh")
 async def whatsapp_refresh(
@@ -123,63 +189,124 @@ async def whatsapp_refresh(
     return await whatsapp_request(
         "POST",
         "/refresh",
+        user,
     )
 
 
-# ==========================================
-# IMPORTER DANS SHIFTLOW
-# ==========================================
+# ============================================================
+# START SESSION
+# ============================================================
+
+@router.post("/session/start")
+async def whatsapp_start(
+    user=Depends(get_current_user),
+):
+    return await whatsapp_request(
+        "POST",
+        "/session/start",
+        user,
+    )
+
+
+# ============================================================
+# LOGOUT SESSION
+# ============================================================
+
+@router.post("/session/logout")
+async def whatsapp_logout(
+    user=Depends(get_current_user),
+):
+    return await whatsapp_request(
+        "POST",
+        "/session/logout",
+        user,
+    )
+
+
+# ============================================================
+# IMPORT WHATSAPP → WORKERS
+# ============================================================
 
 @router.post("/import")
 async def whatsapp_import(
     payload: dict,
     user=Depends(get_current_user),
 ):
-    selected_contacts = payload.get(
+    selected_ids = payload.get(
         "contacts",
         [],
     )
 
-    # ======================================
-    # VALIDATION
-    # ======================================
 
-    if not selected_contacts:
+    # --------------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------------
+
+    if (
+        not isinstance(
+            selected_ids,
+            list,
+        )
+        or not selected_ids
+    ):
         raise HTTPException(
             status_code=400,
             detail="Aucun contact sélectionné.",
         )
 
-    # ======================================
-    # RÉCUPÉRATION DES CONTACTS WHATSAPP
-    # ======================================
+
+    # --------------------------------------------------------
+    # RÉCUPÉRER LES CONTACTS BAILEYS
+    # --------------------------------------------------------
 
     whatsapp_data = await whatsapp_request(
         "GET",
         "/contacts",
+        user,
     )
 
+
+    if not isinstance(
+        whatsapp_data,
+        list,
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Réponse invalide du service WhatsApp."
+            ),
+        )
+
+
     whatsapp_contacts = {
-        contact["id"]: contact
+        str(contact.get("id")): contact
         for contact in whatsapp_data
         if contact.get("id")
     }
 
-    # ======================================
+
+    # --------------------------------------------------------
     # CONTACTS SÉLECTIONNÉS
-    # ======================================
+    # --------------------------------------------------------
 
     selected = []
 
-    for contact_id in selected_contacts:
+
+    for contact_id in selected_ids:
+
         contact = whatsapp_contacts.get(
-            contact_id
+            str(contact_id)
         )
 
+
         if contact:
-            selected.append(contact)
+            selected.append(
+                contact
+            )
+
 
     if not selected:
+
         raise HTTPException(
             status_code=400,
             detail=(
@@ -188,9 +315,10 @@ async def whatsapp_import(
             ),
         )
 
-    # ======================================
-    # PLAN / QUOTA
-    # ======================================
+
+    # --------------------------------------------------------
+    # PLAN UTILISATEUR
+    # --------------------------------------------------------
 
     plan = await db.users.find_one(
         {
@@ -201,6 +329,7 @@ async def whatsapp_import(
         },
     )
 
+
     plan_name = (
         (plan or {}).get(
             "plan",
@@ -208,14 +337,23 @@ async def whatsapp_import(
         )
     )
 
-    current_count = await db.workers.count_documents(
-        {
-            "agency_id": user["id"],
-        }
+
+    # --------------------------------------------------------
+    # NOMBRE ACTUEL DE WORKERS
+    # --------------------------------------------------------
+
+    current_count = (
+        await db.workers.count_documents(
+            {
+                "agency_id": user["id"],
+            }
+        )
     )
 
-    # Free = 10 workers
-    # Pro = illimité
+
+    # --------------------------------------------------------
+    # LIMITE
+    # --------------------------------------------------------
 
     limit = (
         None
@@ -223,29 +361,36 @@ async def whatsapp_import(
         else 10
     )
 
+
     created = []
+
     skipped = []
 
-    # ======================================
+
+    # --------------------------------------------------------
     # CRÉATION DES WORKERS
-    # ======================================
+    # --------------------------------------------------------
 
     for contact in selected:
 
-        # ----------------------------------
-        # QUOTA
-        # ----------------------------------
+        # -----------------------------------------------
+        # LIMITE DU PLAN
+        # -----------------------------------------------
 
         if (
             limit is not None
             and current_count >= limit
         ):
-            skipped.append(contact)
+            skipped.append(
+                contact
+            )
+
             continue
 
-        # ----------------------------------
+
+        # -----------------------------------------------
         # NUMÉRO
-        # ----------------------------------
+        # -----------------------------------------------
 
         number = str(
             contact.get(
@@ -254,47 +399,57 @@ async def whatsapp_import(
             )
         ).strip()
 
+
         if (
             not number
             or len(number) < 8
         ):
-            skipped.append(contact)
+            skipped.append(
+                contact
+            )
+
             continue
 
-        # ----------------------------------
-        # NORMALISATION
-        # ----------------------------------
 
         number = number.replace(
             " ",
             "",
         )
 
-        if number.startswith("+"):
-            normalized_number = number
-        else:
-            normalized_number = f"+{number}"
 
-        # ----------------------------------
-        # DÉTECTION DOUBLON
-        # ----------------------------------
+        normalized_number = (
+            number
+            if number.startswith("+")
+            else f"+{number}"
+        )
+
+
+        number_without_plus = (
+            number.lstrip("+")
+        )
+
 
         possible_numbers = [
             number,
             normalized_number,
         ]
 
-        # Cas français :
-        # 33612345678
+
+        # France :
         # +33612345678
         # 0612345678
 
-        number_without_plus = number.lstrip("+")
-
-        if number_without_plus.startswith("33"):
+        if number_without_plus.startswith(
+            "33"
+        ):
             possible_numbers.append(
                 f"0{number_without_plus[2:]}"
             )
+
+
+        # -----------------------------------------------
+        # ÉVITER LES DOUBLONS
+        # -----------------------------------------------
 
         existing = await db.workers.find_one(
             {
@@ -305,20 +460,30 @@ async def whatsapp_import(
             }
         )
 
+
         if existing:
-            skipped.append(contact)
+            skipped.append(
+                contact
+            )
+
             continue
 
-        # ----------------------------------
-        # NOM
-        # ----------------------------------
 
-        full_name = (
-            contact.get("name")
+        # -----------------------------------------------
+        # NOM
+        # -----------------------------------------------
+
+        full_name = str(
+            contact.get(
+                "name",
+                "",
+            )
             or "Sans nom"
         ).strip()
 
+
         parts = full_name.split()
+
 
         first_name = (
             parts[0]
@@ -326,57 +491,95 @@ async def whatsapp_import(
             else "Sans"
         )
 
+
         last_name = (
             " ".join(parts[1:])
             if len(parts) > 1
             else "Nom"
         )
 
-        # ----------------------------------
+
+        # -----------------------------------------------
         # WORKER
-        # ----------------------------------
+        # -----------------------------------------------
 
         worker = {
             "id": new_id(),
-            "agency_id": user["id"],
-            "first_name": first_name,
-            "last_name": last_name,
-            "phone": normalized_number,
-            "email": "",
-            "skills": [],
-            "note": "",
-            "active": True,
-            "created_at": iso(
-                now_utc()
-            ),
+
+            "agency_id":
+                user["id"],
+
+            "first_name":
+                first_name,
+
+            "last_name":
+                last_name,
+
+            "phone":
+                normalized_number,
+
+            "email":
+                "",
+
+            "skills":
+                [],
+
+            "note":
+                "",
+
+            "active":
+                True,
+
+            "created_at":
+                iso(now_utc()),
         }
+
+
+        # -----------------------------------------------
+        # INSERTION
+        # -----------------------------------------------
 
         await db.workers.insert_one(
             worker
         )
+
 
         worker.pop(
             "_id",
             None,
         )
 
-        created.append(worker)
+
+        created.append(
+            worker
+        )
+
 
         current_count += 1
 
-    # ======================================
-    # RÉSULTAT
-    # ======================================
+
+    # ====================================================
+    # RÉPONSE
+    # ====================================================
 
     return {
         "success": True,
-        "created": len(created),
-        "skipped": len(skipped),
-        "workers": created,
+
+        "created":
+            len(created),
+
+        "skipped":
+            len(skipped),
+
+        "workers":
+            created,
+
         "quota_hit": (
             limit is not None
             and len(skipped) > 0
             and current_count >= limit
         ),
-        "limit": limit,
+
+        "limit":
+            limit,
     }
