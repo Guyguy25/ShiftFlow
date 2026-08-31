@@ -88,5 +88,6 @@ credentials.json
 .credentials
 
 # Session WhatsApp
-whatsapp-session/
-.wwebjs_cache/
+/backend/whatsapp-sessions/
+/backend/whatsapp-session/
+/backend/.wwebjs_cache/

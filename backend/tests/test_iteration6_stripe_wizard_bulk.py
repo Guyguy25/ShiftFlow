@@ -58,8 +58,8 @@ class TestConfig:
     def test_stripe_keys_are_real_account(self):
         acct = stripe_lib.Account.retrieve()
         assert acct.id == "acct_1NfUSOEElIPXa4JR", f"unexpected stripe account {acct.id}"
-        assert BE["STRIPE_SECRET_KEY"].startswith("sk_test_")
-        assert BE["STRIPE_PUBLISHABLE_KEY"].startswith("pk_test_")
+        assert BE["STRIPE_SECRET_KEY"].startswith("sk_live_")
+        assert BE["STRIPE_PUBLISHABLE_KEY"].startswith("pk_live_")
 
     def test_product_and_price_exist(self):
         prices = stripe_lib.Price.list(lookup_keys=["shiftflow_pro_monthly"], active=True, limit=1).data
