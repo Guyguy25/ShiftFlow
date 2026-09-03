@@ -1,8 +1,0 @@
-crons:
-  - name: shift-reminders
-    description: "Sends 24h reminder SMS to confirmed workers every 30 minutes"
-    cron: "*/30 * * * *"
-    endpoint: "{{BASE_URL}}/api/cron/reminders"
-    method: POST
-    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
-    enabled: true
