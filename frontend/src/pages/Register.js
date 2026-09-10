@@ -21,6 +21,7 @@ export default function Register() {
   const [form, setForm] = useState({ name: "", agency_name: "", email: "", phone: "", password: "" });
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const setA = (k, v) => setAnswers({ ...answers, [k]: v });
@@ -37,6 +38,13 @@ export default function Register() {
     if (isPhoneValid(raw)) return "";
     return "Téléphone invalide (ex : +33612345678 ou 0612345678).";
   };
+  const validatePassword = (raw) => {
+    const v = raw || "";
+    if (v.length < 8 || !/[A-Za-z]/.test(v) || !/\d/.test(v)) {
+      return "8 caractères minimum, avec au moins une lettre et un chiffre.";
+    }
+    return "";
+  };
   const totalSteps = QUESTIONS.length + 2; // 3 QCM + 1 pain + 1 signup
   const progress = Math.round(((step + 1) / totalSteps) * 100);
 
@@ -51,7 +59,9 @@ export default function Register() {
     setError(""); setLoading(true);
     const pErr = validatePhone(form.phone);
     setPhoneError(pErr);
-    if (pErr) { setLoading(false); return; }
+    const pwErr = validatePassword(form.password);
+    setPasswordError(pwErr);
+    if (pErr || pwErr) { setLoading(false); return; }
     try {
       await register({ ...form, onboarding_answers: answers });
       nav("/app/dashboard");
@@ -117,7 +127,7 @@ export default function Register() {
         )}
 
         {step === QUESTIONS.length + 1 && (
-          <form onSubmit={submit} data-testid="register-form">
+          <form onSubmit={submit} data-testid="register-form" autoComplete="on">
             <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Finalisation</div>
             <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Créez votre compte gratuit</h1>
             <p className="mt-2 text-gray-600 text-sm">Pas de carte bancaire requise. Compte gratuit permanent.</p>
@@ -127,13 +137,14 @@ export default function Register() {
               <div><label className="text-sm font-medium">Votre nom *</label>
                 <input required data-testid="register-name-input" className={inputCls} value={form.name} onChange={setF("name")} placeholder="Tanguy Dupont"/></div>
               <div><label className="text-sm font-medium">Email *</label>
-                <input type="email" required data-testid="register-email-input" className={inputCls} value={form.email} onChange={setF("email")} placeholder="vous@agence.com"/></div>
+                <input type="email" name="email" autoComplete="username" required data-testid="register-email-input" className={inputCls} value={form.email} onChange={setF("email")} placeholder="vous@agence.com"/></div>
               <div><label className="text-sm font-medium">Téléphone</label>
                 <input data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
                 {phoneError && <div className="text-xs text-red-600 mt-1" data-testid="register-phone-error">{phoneError}</div>}
               </div>
               <div><label className="text-sm font-medium">Mot de passe *</label>
-                <input type="password" required minLength={6} data-testid="register-password-input" className={inputCls} value={form.password} onChange={setF("password")} placeholder="Minimum 6 caractères"/></div>
+                <input type="password" name="new-password" autoComplete="new-password" required minLength={8} data-testid="register-password-input" className={inputCls} value={form.password} onChange={setF("password")} placeholder="Minimum 8 caractères, 1 lettre + 1 chiffre"/>
+                {passwordError && <div className="text-xs text-red-600 mt-1" data-testid="register-password-error">{passwordError}</div>}</div>
             </div>
             {error && <div className="mt-4 text-sm text-red-600" data-testid="register-error">{error}</div>}
             <button type="submit" disabled={loading} data-testid="register-submit-btn"

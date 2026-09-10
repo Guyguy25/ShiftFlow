@@ -3,6 +3,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import PublicOnlyRoute from "@/components/PublicOnlyRoute";
 import Layout from "@/components/Layout";
 import Landing from "@/pages/Landing";
 import Pricing from "@/pages/Pricing";
@@ -25,10 +26,10 @@ import { Toaster } from "sonner";
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
       <Route path="/pricing" element={<Pricing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
+      <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
       <Route path="/m/:token" element={<PublicConfirm />} />
       <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding/></ProtectedRoute>} />
       <Route path="/payment/success" element={<PaymentSuccess />} />

@@ -33,7 +33,7 @@ DB_NAME = os.environ['DB_NAME']
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24
-REFRESH_TOKEN_DAYS = 30
+REFRESH_TOKEN_DAYS = 90  # "rester connecté" : la session glisse tant que l'utilisateur revient dans les 90 jours
 
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -245,11 +245,19 @@ async def send_owner_alert_sms(agency: dict, mission: dict, shift: dict, worker:
 # ---------------- Schemas ----------------
 class RegisterIn(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8)
     name: str
     agency_name: str
     phone: str = ""
     onboarding_answers: Optional[dict] = None
+
+    @field_validator("password")
+    @classmethod
+    def _password_strong(cls, v: str) -> str:
+        import re
+        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+            raise ValueError("Le mot de passe doit contenir au moins 8 caractères, dont une lettre et un chiffre.")
+        return v
 
     @field_validator("phone")
     @classmethod
@@ -282,7 +290,15 @@ class ForgotIn(BaseModel):
 
 class ResetIn(BaseModel):
     token: str
-    new_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def _new_password_strong(cls, v: str) -> str:
+        import re
+        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+            raise ValueError("Le mot de passe doit contenir au moins 8 caractères, dont une lettre et un chiffre.")
+        return v
 
 
 class WorkerIn(BaseModel):
@@ -458,6 +474,37 @@ async def login(payload: LoginIn, response: Response):
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
+    return {"user": public_user(user), "access_token": access}
+
+
+@api.post("/auth/refresh")
+async def refresh_session(request: Request, response: Response):
+    """
+    Renouvelle un access_token expiré à partir du refresh_token (cookie longue durée).
+    Appelé automatiquement par le frontend quand une requête renvoie 401 —
+    c'est ce qui permet de rester connecté sans se reconnecter à chaque visite.
+    """
+    token = request.cookies.get("refresh_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    access = create_access_token(user["id"], user["email"])
+    # On régénère aussi le refresh_token à chaque passage : tant que l'utilisateur
+    # revient au moins une fois tous les 90 jours, il reste connecté indéfiniment.
+    new_refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, new_refresh)
     return {"user": public_user(user), "access_token": access}
 
 

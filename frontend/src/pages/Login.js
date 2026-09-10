@@ -38,12 +38,15 @@ export default function Login() {
         <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
           <h1 className="text-2xl font-display font-bold">Connexion</h1>
           <p className="text-sm text-gray-500 mt-1">Accédez à votre tableau de bord.</p>
-          <form onSubmit={submit} className="mt-6 space-y-4">
+          <form onSubmit={submit} className="mt-6 space-y-4" autoComplete="on">
             <div>
-              <label className="text-sm font-medium text-gray-700">Email</label>
+              <label htmlFor="login-email" className="text-sm font-medium text-gray-700">Email</label>
               <input
+                id="login-email"
+                name="email"
                 type="email"
                 required
+                autoComplete="username"
                 data-testid="login-email-input"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -52,10 +55,13 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700">Mot de passe</label>
+              <label htmlFor="login-password" className="text-sm font-medium text-gray-700">Mot de passe</label>
               <input
+                id="login-password"
+                name="password"
                 type="password"
                 required
+                autoComplete="current-password"
                 data-testid="login-password-input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
