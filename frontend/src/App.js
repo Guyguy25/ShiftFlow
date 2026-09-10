@@ -21,6 +21,7 @@ import PublicConfirm from "@/pages/PublicConfirm";
 import Onboarding from "@/pages/Onboarding";
 import PaymentSuccess from "@/pages/PaymentSuccess";
 import PaymentCancel from "@/pages/PaymentCancel";
+import HelpChatbot from "@/components/HelpChatbot";
 import { Toaster } from "sonner";
 
 function AppRoutes() {
@@ -51,7 +52,16 @@ function AppRoutes() {
 }
 
 // need Outlet
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
+
+// Le chatbot d'aide s'affiche partout SAUF sur la page publique de confirmation
+// de mission (/m/:token) : cette page est ouverte par des intervenants externes
+// qui n'ont pas de compte ShiftFlow, ce n'est pas le bon contexte pour eux.
+function ChatbotGate() {
+  const location = useLocation();
+  if (location.pathname.startsWith("/m/")) return null;
+  return <HelpChatbot />;
+}
 
 function App() {
   return (
@@ -59,6 +69,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRoutes />
+          <ChatbotGate />
           <Toaster position="top-right" richColors />
         </AuthProvider>
       </BrowserRouter>
