@@ -5,7 +5,6 @@ import {
   Trash2,
   Edit2,
   X,
-  Upload,
   Info,
   MessageCircle,
   Smartphone,
@@ -698,496 +697,264 @@ function WorkerForm({
 
 
 // ============================================================
-// IMPORT RAPIDE
+// IMPORTER LES CONTACTS DU TÉLÉPHONE
 // ============================================================
+// Utilise la Contact Picker API du navigateur (même mécanisme que les
+// "Importer depuis WhatsApp/Contacts" natifs) : le choix des contacts se
+// fait dans la fenêtre native du téléphone, puis on affiche une checklist
+// ici pour confirmer/désélectionner avant l'envoi à /workers/bulk.
+// Disponible uniquement sur navigateur mobile compatible (Chrome/Edge
+// Android). Sur PC ou navigateur non compatible (iOS Safari, Firefox...),
+// on affiche une popup explicative au lieu de planter silencieusement.
 
-function BulkImportModal({
-  onClose,
-  onDone,
-  onQuota,
-}) {
+function isContactPickerSupported() {
+  return (
+    typeof navigator !== "undefined" &&
+    "contacts" in navigator &&
+    typeof navigator.contacts?.select === "function" &&
+    "ContactsManager" in window
+  );
+}
 
-  const [
-    text,
-    setText,
-  ] = useState("");
+function splitFullName(fullName) {
+  const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: parts[0] };
+  return { first_name: parts[0], last_name: parts.slice(1).join(" ") };
+}
 
+function PhoneContactsUnsupportedModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl text-center"
+        data-testid="phone-contacts-unsupported-modal"
+      >
+        <div className="w-14 h-14 mx-auto rounded-full bg-blue-50 flex items-center justify-center">
+          <Smartphone className="w-7 h-7 text-blue-600" />
+        </div>
+        <h3 className="mt-4 font-display font-bold text-xl">Fonction réservée au téléphone</h3>
+        <p className="mt-2 text-sm text-gray-600">
+          L'import direct depuis le répertoire ne fonctionne que sur un téléphone mobile
+          (Chrome ou Edge sur Android). Depuis un ordinateur, ce n'est pas accessible.
+        </p>
+        <p className="mt-2 text-sm text-gray-600">
+          Ouvre ShiftFlow sur ton téléphone pour importer tes contacts en un tap, ou utilise
+          « Importer depuis WhatsApp » / « Ajouter » en attendant.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-5 w-full px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
+          data-testid="phone-contacts-unsupported-close"
+        >
+          Compris
+        </button>
+      </div>
+    </div>
+  );
+}
 
-  const [
-    preview,
-    setPreview,
-  ] = useState([]);
+function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
+  const [rows, setRows] = useState([]); // { key, first_name, last_name, phone, email, valid, reason }
+  const [selected, setSelected] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [picking, setPicking] = useState(true);
+  const [importing, setImporting] = useState(false);
 
-
-  const [
-    submitting,
-    setSubmitting,
-  ] = useState(false);
-
-
-  const parse = (
-    value
-  ) => {
-
-    const rows = [];
-
-
-    for (
-      const raw of value.split(
-        /\r?\n/
-      )
-    ) {
-
-      const line =
-        raw.trim();
-
-
-      if (!line) {
-
-        continue;
-
-      }
-
-
-      const parts =
-        line
-          .split(
-            /[,;\t]/
-          )
-          .map(
-            (item) =>
-              item.trim()
-          )
-          .filter(
-            Boolean
-          );
-
-
-      if (
-        parts.length < 3
-      ) {
-
-        continue;
-
-      }
-
-
-      const [
-        first_name,
-        last_name,
-        phone,
-        email = "",
-      ] = parts;
-
-
-      const errs =
-        validateWorker({
+  const pickFromDevice = async () => {
+    setPicking(true);
+    try {
+      const props = ["name", "tel", "email"];
+      const picked = await navigator.contacts.select(props, { multiple: true });
+      const built = picked.map((c, idx) => {
+        const { first_name, last_name } = splitFullName((c.name && c.name[0]) || "");
+        const phone = (c.tel && c.tel[0]) || "";
+        const email = (c.email && c.email[0]) || "";
+        const errs = validateWorker({ first_name, last_name, phone, email });
+        return {
+          key: `${idx}-${phone || first_name}`,
           first_name,
           last_name,
           phone,
           email,
-        });
+          valid: Object.keys(errs).length === 0,
+          reason: errs.phone || errs.first_name || errs.last_name || "",
+        };
+      });
+      setRows(built);
+      setSelected(new Set(built.filter((r) => r.valid).map((r) => r.key)));
+    } catch (err) {
+      // AbortError = l'utilisateur a fermé la fenêtre native sans choisir → pas d'erreur à afficher
+      if (err && err.name !== "AbortError") {
+        toast.error("Impossible d'accéder aux contacts du téléphone.");
+      }
+      onClose();
+      return;
+    } finally {
+      setPicking(false);
+    }
+  };
 
+  useEffect(() => {
+    pickFromDevice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-      rows.push({
+  const toggle = (key) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const filteredRows = rows.filter((r) => {
+    const value = `${r.first_name} ${r.last_name} ${r.phone}`.toLowerCase();
+    return value.includes(search.toLowerCase());
+  });
+
+  const submit = async () => {
+    const workers = rows
+      .filter((r) => r.valid && selected.has(r.key))
+      .map(({ first_name, last_name, phone, email }) => ({
         first_name,
         last_name,
         phone,
         email,
-        valid:
-          Object.keys(
-            errs
-          ).length === 0,
-        errors:
-          errs,
-      });
+        skills: [],
+        note: "",
+        active: true,
+      }));
 
+    if (workers.length === 0) {
+      toast.error("Sélectionnez au moins un contact.");
+      return;
     }
 
-
-    return rows;
-
+    setImporting(true);
+    try {
+      const { data } = await api.post("/workers/bulk", { workers });
+      if (data.quota_hit) {
+        onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`);
+      } else {
+        toast.success(`${data.created} intervenant${data.created > 1 ? "s" : ""} ajouté${data.created > 1 ? "s" : ""}`);
+      }
+      onDone();
+      onClose();
+    } catch (err) {
+      const statusCode = err.response?.status;
+      const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import des contacts.";
+      if (statusCode === 402) {
+        onQuota(detail);
+        onClose();
+      } else {
+        toast.error(detail);
+      }
+    } finally {
+      setImporting(false);
+    }
   };
 
-
-  const onText = (
-    value
-  ) => {
-
-    setText(
-      value
-    );
-
-    setPreview(
-      parse(
-        value
-      )
-    );
-
-  };
-
-
-  const submit =
-    async () => {
-
-      const valid =
-        preview
-          .filter(
-            (row) =>
-              row.valid
-          )
-          .map(
-            ({
-              first_name,
-              last_name,
-              phone,
-              email,
-            }) => ({
-              first_name,
-              last_name,
-              phone,
-              email,
-              skills: [],
-              note: "",
-              active: true,
-            })
-          );
-
-
-      if (
-        valid.length === 0
-      ) {
-
-        toast.error(
-          "Aucune ligne valide à importer."
-        );
-
-        return;
-
-      }
-
-
-      setSubmitting(
-        true
-      );
-
-
-      try {
-
-        const {
-          data,
-        } =
-          await api.post(
-            "/workers/bulk",
-            {
-              workers:
-                valid,
-            }
-          );
-
-
-        if (
-          data.quota_hit
-        ) {
-
-          onQuota(
-            `${data.created} ajoutés, ${data.skipped_quota} ignorés (limite plan gratuit à ${data.limit} intervenants).`
-          );
-
-        } else {
-
-          toast.success(
-            `${data.created} intervenant${
-              data.created > 1
-                ? "s"
-                : ""
-            } ajouté${
-              data.created > 1
-                ? "s"
-                : ""
-            }`
-          );
-
-        }
-
-
-        onDone();
-
-
-      } catch (err) {
-
-        const status =
-          err.response?.status;
-
-
-        const detail =
-          formatApiError(
-            err.response?.data?.detail
-          ) ||
-          "Erreur d'import";
-
-
-        if (
-          status === 402
-        ) {
-
-          onQuota(
-            detail
-          );
-
-          onClose();
-
-        } else {
-
-          toast.error(
-            detail
-          );
-
-        }
-
-      } finally {
-
-        setSubmitting(
-          false
-        );
-
-      }
-
-    };
-
-
-  const validCount =
-    preview.filter(
-      (row) =>
-        row.valid
-    ).length;
-
+  const invalidCount = rows.filter((r) => !r.valid).length;
 
   return (
-
-    <div
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        onClick={(event) =>
-          event.stopPropagation()
-        }
-        className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto"
-        data-testid="bulk-import-modal"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col"
+        data-testid="phone-contacts-import-modal"
       >
-
-        <div className="flex items-center justify-between">
-
-          <h3 className="font-display font-bold text-xl">
-            Import rapide d'intervenants
-          </h3>
-
-
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
-        </div>
-
-
-        <div
-          className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900"
-          data-testid="bulk-whatsapp-hint"
-        >
-
-          <div className="flex items-start gap-2">
-
-            <MessageCircle className="w-4 h-4 mt-0.5 shrink-0" />
-
-            <div>
-
-              <div className="font-semibold">
-                Astuce WhatsApp — 2 clics
-              </div>
-
-              <div>
-                Sur WhatsApp Web ou votre téléphone,
-                ouvrez un contact, tapez sur son nom
-                pour voir la fiche puis{" "}
-                <em>
-                  Partager le contact
-                </em>
-                . Vous pouvez aussi copier plusieurs
-                contacts depuis Google Contacts / iCloud
-                et les coller ici. Format :{" "}
-                <code className="bg-white px-1 rounded">
-                  Prénom, Nom, Téléphone[, Email]
-                </code>
-              </div>
-
-            </div>
-
+        <div className="flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="font-display font-bold text-xl">Importer les contacts</h3>
+            <p className="text-sm text-gray-500 mt-1">Choisissez qui ajouter comme intervenant.</p>
           </div>
-
+          <button onClick={onClose} aria-label="Fermer" data-testid="phone-contacts-close">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
 
-
-        <textarea
-          rows={8}
-          value={text}
-          onChange={(event) =>
-            onText(
-              event.target.value
-            )
-          }
-          data-testid="bulk-textarea"
-          placeholder={
-            "Thomas, Dupont, +33612345678, thomas@mail.com\nLucas, Martin, 0623456789\nKevin, Bernard, 0634567890"
-          }
-          className="mt-4 w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white font-mono text-sm"
-        />
-
-
-        {preview.length > 0 && (
-
-          <div
-            className="mt-4 border border-gray-200 rounded-lg overflow-hidden"
-            data-testid="bulk-preview"
-          >
-
-            <div className="bg-gray-50 px-3 py-2 text-xs text-gray-600 uppercase tracking-widest font-semibold flex justify-between">
-
-              <span>
-                Aperçu {preview.length} ligne{
-                  preview.length > 1
-                    ? "s"
-                    : ""
-                }
-              </span>
-
-              <span className="text-green-700">
-                {validCount} valide{
-                  validCount > 1
-                    ? "s"
-                    : ""
-                }
-              </span>
-
+        {picking ? (
+          <div className="py-16 text-center text-gray-500 text-sm">Ouverture du répertoire du téléphone…</div>
+        ) : rows.length === 0 ? (
+          <div className="py-16 text-center text-gray-500 text-sm">Aucun contact sélectionné.</div>
+        ) : (
+          <>
+            <div className="relative mt-4 shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher…"
+                data-testid="phone-contacts-search"
+                className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
 
+            {invalidCount > 0 && (
+              <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                {invalidCount} contact{invalidCount > 1 ? "s" : ""} ignoré{invalidCount > 1 ? "s" : ""} (numéro manquant ou invalide).
+              </div>
+            )}
 
-            <ul className="max-h-64 overflow-y-auto divide-y divide-gray-100 text-sm">
-
-              {preview.map(
-                (row, index) => (
-
-                  <li
-                    key={index}
-                    className={`px-3 py-2 flex items-center justify-between ${
-                      row.valid
-                        ? ""
-                        : "bg-red-50"
-                    }`}
+            <div className="mt-3 border border-gray-200 rounded-lg overflow-y-auto flex-1">
+              {filteredRows.map((row) => {
+                const checked = row.valid && selected.has(row.key);
+                return (
+                  <label
+                    key={row.key}
+                    className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${
+                      row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50 cursor-not-allowed"
+                    } ${checked ? "bg-blue-50" : ""}`}
                   >
-
-                    <div className="min-w-0 truncate">
-
-                      <span className="font-medium">
-                        {row.first_name}{" "}
-                        {row.last_name}
-                      </span>
-
-                      <span className="text-gray-500 ml-2">
-                        {row.phone}
-                      </span>
-
-                      {row.email && (
-
-                        <span className="text-gray-400 ml-2">
-                          {row.email}
-                        </span>
-
-                      )}
-
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!row.valid}
+                      onChange={() => toggle(row.key)}
+                      className="w-4 h-4 accent-blue-600"
+                      data-testid={`phone-contacts-checkbox-${row.key}`}
+                    />
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600 shrink-0">
+                      {`${row.first_name}${row.last_name}`.slice(0, 2).toUpperCase() || "?"}
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{row.first_name} {row.last_name}</div>
+                      <div className="text-sm text-gray-500 truncate">{row.phone || row.reason}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
 
-
-                    {row.valid ? (
-
-                      <span className="text-xs text-green-700 font-semibold shrink-0">
-                        OK
-                      </span>
-
-                    ) : (
-
-                      <span
-                        className="text-xs text-red-600 truncate ml-2"
-                        title={Object.values(
-                          row.errors
-                        ).join(" ")}
-                      >
-                        {
-                          Object.values(
-                            row.errors
-                          )[0]
-                        }
-                      </span>
-
-                    )}
-
-                  </li>
-
-                )
-              )}
-
-            </ul>
-
-          </div>
-
+            <div className="mt-5 flex items-center justify-between shrink-0">
+              <div className="text-sm text-gray-500">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={importing || selected.size === 0}
+                  data-testid="phone-contacts-submit"
+                  className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {importing ? "Import…" : `Importer ${selected.size} contact(s)`}
+                </button>
+              </div>
+            </div>
+          </>
         )}
-
-
-        <div className="mt-5 flex justify-end gap-2">
-
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-md border border-gray-300"
-          >
-            Annuler
-          </button>
-
-
-          <button
-            onClick={submit}
-            disabled={
-              submitting ||
-              validCount === 0
-            }
-            data-testid="bulk-submit-btn"
-            className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60 inline-flex items-center gap-2"
-          >
-
-            <Upload className="w-4 h-4" />
-
-            {submitting
-              ? "Import…"
-              : `Importer ${validCount} intervenant${
-                  validCount > 1
-                    ? "s"
-                    : ""
-                }`}
-
-          </button>
-
-        </div>
-
       </div>
-
     </div>
-
   );
-
 }
+
+
 
 
 // ============================================================
@@ -2120,9 +1887,22 @@ export default function Workers() {
 
 
   const [
-    bulkOpen,
-    setBulkOpen,
+    phoneContactsOpen,
+    setPhoneContactsOpen,
   ] = useState(false);
+
+  const [
+    phoneContactsUnsupported,
+    setPhoneContactsUnsupported,
+  ] = useState(false);
+
+  const openPhoneContacts = () => {
+    if (isContactPickerSupported()) {
+      setPhoneContactsOpen(true);
+    } else {
+      setPhoneContactsUnsupported(true);
+    }
+  };
 
 
   const [
@@ -2283,18 +2063,14 @@ export default function Workers() {
         <div className="flex gap-2">
 
           <button
-            onClick={() =>
-              setBulkOpen(
-                true
-              )
-            }
-            data-testid="bulk-import-btn"
+            onClick={openPhoneContacts}
+            data-testid="phone-contacts-import-btn"
             className="hidden sm:inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 px-4 py-2.5 rounded-md font-medium"
           >
 
-            <Upload className="w-4 h-4" />
+            <Smartphone className="w-4 h-4" />
 
-            Import rapide
+            Importer les contacts
 
           </button>
 
@@ -2341,18 +2117,14 @@ export default function Workers() {
       <div className="mt-4 sm:hidden">
 
         <button
-          onClick={() =>
-            setBulkOpen(
-              true
-            )
-          }
-          data-testid="bulk-import-btn-mobile"
+          onClick={openPhoneContacts}
+          data-testid="phone-contacts-import-btn-mobile"
           className="w-full inline-flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-800 px-4 py-2.5 rounded-md font-medium"
         >
 
-          <Upload className="w-4 h-4" />
+          <Smartphone className="w-4 h-4" />
 
-          Import rapide
+          Importer les contacts
 
         </button>
 
@@ -2372,16 +2144,14 @@ export default function Workers() {
             Astuce :
           </strong>{" "}
 
-          pour ajouter 20+ intervenants
-          d'un coup, utilisez{" "}
+          pour ajouter plusieurs intervenants
+          d'un coup depuis ton téléphone, utilisez{" "}
 
           <strong>
-            Import rapide
+            Importer les contacts
           </strong>{" "}
 
-          et collez directement une liste
-          depuis WhatsApp, Google Contacts
-          ou un tableur.
+          (répertoire natif, disponible uniquement sur mobile).
 
         </div>
 
@@ -2624,28 +2394,21 @@ export default function Workers() {
       )}
 
 
-      {bulkOpen && (
+      {phoneContactsOpen && (
 
-        <BulkImportModal
-          onClose={() =>
-            setBulkOpen(
-              false
-            )
-          }
-          onDone={() => {
+        <PhoneContactsImportModal
+          onClose={() => setPhoneContactsOpen(false)}
+          onDone={load}
+          onQuota={(message) => setUpgrade(message)}
+        />
 
-            setBulkOpen(
-              false
-            );
+      )}
 
-            load();
 
-          }}
-          onQuota={(message) =>
-            setUpgrade(
-              message
-            )
-          }
+      {phoneContactsUnsupported && (
+
+        <PhoneContactsUnsupportedModal
+          onClose={() => setPhoneContactsUnsupported(false)}
         />
 
       )}
