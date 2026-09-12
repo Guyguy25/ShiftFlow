@@ -93,6 +93,19 @@ def set_auth_cookies(response: Response, access: str, refresh: str):
                         max_age=REFRESH_TOKEN_DAYS * 86400, path="/")
 
 
+def clear_auth_cookies(response: Response):
+    """
+    Doit reprendre EXACTEMENT les mêmes attributs que set_auth_cookies()
+    (secure, samesite, path) — sinon certains navigateurs ignorent la
+    suppression du cookie cross-site et le refresh_token reste valide,
+    ce qui reconnecte silencieusement l'utilisateur après un logout.
+    """
+    response.set_cookie("access_token", "", max_age=0, expires=0,
+                         httponly=True, secure=True, samesite="none", path="/")
+    response.set_cookie("refresh_token", "", max_age=0, expires=0,
+                         httponly=True, secure=True, samesite="none", path="/")
+
+
 def public_user(u: dict) -> dict:
     return {"id": u["id"], "email": u["email"], "name": u.get("name", ""),
             "agency_name": u.get("agency_name", ""), "phone": u.get("phone", ""),
@@ -510,8 +523,7 @@ async def refresh_session(request: Request, response: Response):
 
 @api.post("/auth/logout")
 async def logout(response: Response):
-    response.delete_cookie("access_token", path="/")
-    response.delete_cookie("refresh_token", path="/")
+    clear_auth_cookies(response)
     return {"ok": True}
 
 

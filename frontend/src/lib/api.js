@@ -16,9 +16,17 @@ export const api = axios.create({
 // session est vraiment terminée. C'est ce qui évite de redemander une connexion
 // à chaque retour sur le site.
 let refreshPromise = null;
+let justLoggedOut = false; // sécurité : après un logout explicite, on ne tente plus jamais un refresh silencieux
 const AUTH_ROUTES_NO_REFRESH = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"];
 
+export function markLoggedOut(value) {
+  justLoggedOut = value;
+}
+
 function refreshSession() {
+  if (justLoggedOut) {
+    return Promise.reject(new Error("Logged out — refresh disabled"));
+  }
   if (!refreshPromise) {
     refreshPromise = axios
       .post(`${API}/auth/refresh`, {}, { withCredentials: true })
