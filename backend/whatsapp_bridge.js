@@ -1,5 +1,4 @@
 const Module = require("module");
-const path = require("path");
 
 const SEND_INTERVAL_MS = Math.max(
     500,
@@ -9,6 +8,7 @@ const SEND_INTERVAL_MS = Math.max(
 const sockets = new Map();
 const queues = new Map();
 const authStateToSession = new WeakMap();
+
 let capturedApp = null;
 let routeInstalled = false;
 
@@ -37,9 +37,11 @@ function normalizePhone(value) {
 
 function toJid(value) {
     const digits = normalizePhone(value);
+
     if (!digits || digits.length < 8) {
         throw new Error("Numéro WhatsApp invalide");
     }
+
     return `${digits}@s.whatsapp.net`;
 }
 
@@ -67,81 +69,95 @@ function enqueue(sessionId, task) {
 }
 
 // ------------------------------------------------------------
-// Capture l'application Express créée par whatsapp_service.js
+// Capture uniquement ce dont /send a besoin.
+// Aucun changement à la logique de connexion Baileys.
 // ------------------------------------------------------------
-const originalExpressLoad = Module._load;
+const originalLoad = Module._load;
+
 Module._load = function(request, parent, isMain) {
-    const loaded = originalExpressLoad.apply(this, arguments);
+    const loaded = originalLoad.apply(this, arguments);
 
-    if (request !== "express" || loaded.__shiftflowExpressBridge) {
-        return loaded;
-    }
-
-    function expressWrapper(...args) {
-        const app = loaded(...args);
-        capturedApp = app;
-        return app;
-    }
-
-    Object.keys(loaded).forEach((key) => {
-        expressWrapper[key] = loaded[key];
-    });
-
-    expressWrapper.__shiftflowExpressBridge = true;
-    return expressWrapper;
-};
-
-// ------------------------------------------------------------
-// Capture les sockets Baileys créées par whatsapp_service.js
-// ------------------------------------------------------------
-const originalBaileysLoad = Module._load;
-Module._load = function(request, parent, isMain) {
-    const loaded = originalBaileysLoad.apply(this, arguments);
-
-    if (request !== "@whiskeysockets/baileys" || loaded.__shiftflowBaileysBridge) {
-        return loaded;
-    }
-
-    const wrapped = { ...loaded };
-    const originalMakeWASocket = loaded.default;
-    const originalUseMultiFileAuthState = loaded.useMultiFileAuthState;
-
-    wrapped.useMultiFileAuthState = async function(dir) {
-        const result = await originalUseMultiFileAuthState(dir);
-        const normalized = String(dir).replace(/\\/g, "/");
-        const match = normalized.match(/whatsapp-sessions\/([^/]+)$/);
-
-        if (match && result?.state) {
-            authStateToSession.set(
-                result.state,
-                safeSessionId(match[1])
-            );
+    // Capture l'app Express sans modifier son comportement.
+    if (request === "express" && !loaded.__shiftflowExpressBridge) {
+        function expressWrapper(...args) {
+            const app = loaded(...args);
+            capturedApp = app;
+            return app;
         }
 
-        return result;
-    };
+        Object.setPrototypeOf(expressWrapper, loaded);
+        Object.keys(loaded).forEach((key) => {
+            try {
+                expressWrapper[key] = loaded[key];
+            } catch (_) {}
+        });
 
-    wrapped.default = function(options) {
-        const sock = originalMakeWASocket(options);
-        const sessionId = safeSessionId(
-            authStateToSession.get(options?.auth) || "default"
-        );
+        expressWrapper.__shiftflowExpressBridge = true;
+        return expressWrapper;
+    }
 
-        sockets.set(sessionId, sock);
+    // Capture le socket réel, tout en conservant toutes les autres
+    // fonctions/exportations Baileys inchangées.
+    if (request === "@whiskeysockets/baileys" && !loaded.__shiftflowBaileysBridge) {
+        const originalMakeWASocket = loaded.default;
+        const originalUseMultiFileAuthState = loaded.useMultiFileAuthState;
 
-        if (sock?.ev?.on) {
-            sock.ev.on("connection.update", (update) => {
-                if (update?.connection === "close" && sockets.get(sessionId) === sock) {
-                    sockets.delete(sessionId);
+        if (typeof originalMakeWASocket === "function") {
+            loaded.default = function(options) {
+                const sock = originalMakeWASocket(options);
+                const sessionId = safeSessionId(
+                    authStateToSession.get(options?.auth) || "default"
+                );
+
+                sockets.set(sessionId, sock);
+
+                if (sock?.ev?.on) {
+                    sock.ev.on("connection.update", (update) => {
+                        if (
+                            update?.connection === "close" &&
+                            sockets.get(sessionId) === sock
+                        ) {
+                            sockets.delete(sessionId);
+                        }
+                    });
                 }
-            });
+
+                return sock;
+            };
         }
 
-        return sock;
-    };
+        if (typeof originalUseMultiFileAuthState === "function") {
+            loaded.useMultiFileAuthState = async function(dir) {
+                const result = await originalUseMultiFileAuthState(dir);
+                const normalized = String(dir).replace(/\\/g, "/");
+                const match = normalized.match(/whatsapp-sessions\/([^/]+)$/);
 
-    wrapped.__shiftflowBaileysBridge = true;
-    return wrapped;
+                if (match && result?.state) {
+                    authStateToSession.set(
+                        result.state,
+                        safeSessionId(match[1])
+                    );
+                }
+
+                return result;
+            };
+        }
+
+        loaded.__shiftflowBaileysBridge = true;
+    }
+
+    // whatsapp_service.js vient d'être chargé : son app Express est maintenant
+    // capturée, donc on peut installer /send sans modifier son code métier.
+    if (
+        !routeInstalled &&
+        capturedApp &&
+        typeof request === "string" &&
+        (request.endsWith("whatsapp_service.js") || request.includes("whatsapp_service"))
+    ) {
+        installSendRoute();
+    }
+
+    return loaded;
 };
 
 function installSendRoute() {
@@ -165,11 +181,15 @@ function installSendRoute() {
                 const sock = sockets.get(sessionId);
 
                 if (!sock) {
-                    throw new Error(`Session WhatsApp introuvable ou déconnectée: ${sessionId}`);
+                    throw new Error(
+                        `Session WhatsApp introuvable ou déconnectée: ${sessionId}`
+                    );
                 }
 
                 if (!sock.user) {
-                    throw new Error(`Session WhatsApp non connectée: ${sessionId}`);
+                    throw new Error(
+                        `Session WhatsApp non connectée: ${sessionId}`
+                    );
                 }
 
                 const jid = toJid(to);
@@ -208,24 +228,12 @@ function installSendRoute() {
     });
 
     routeInstalled = true;
+
     console.log(
         `📨 Route WhatsApp /send installée — intervalle minimum ${SEND_INTERVAL_MS} ms`
     );
 }
 
-// Le main whatsapp_service.js est chargé après ce preload.
-const originalMainLoad = Module._load;
-Module._load = function(request, parent, isMain) {
-    const result = originalMainLoad.apply(this, arguments);
-
-    if (!routeInstalled && capturedApp && typeof request === "string" &&
-        (request.endsWith("whatsapp_service.js") || request.includes("whatsapp_service"))) {
-        installSendRoute();
-    }
-
-    return result;
-};
-
 console.log(
-    `🔌 ShiftFlow WhatsApp bridge chargé — délai minimum ${SEND_INTERVAL_MS} ms`
+    `🔌 ShiftFlow WhatsApp send bridge chargé — délai minimum ${SEND_INTERVAL_MS} ms`
 );
