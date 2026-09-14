@@ -7,8 +7,6 @@
     "test": "tests"
   },
   "scripts": {
-    "start": "node -r ./whatsapp_bridge.js whatsapp_service.js",
-    "start:whatsapp": "node -r ./whatsapp_bridge.js whatsapp_service.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
