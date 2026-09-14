@@ -1,5 +1,4 @@
 import os
-import inspect
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -56,6 +55,23 @@ async def _insert_notification(**doc):
     await db.notifications.insert_one(notification)
     notification.pop("_id", None)
     return notification
+
+
+def usable_contact(contact: dict) -> bool:
+    """Only expose human-readable WhatsApp contacts; never use a phone number as a name."""
+    if not isinstance(contact, dict):
+        return False
+    name = str(contact.get("name") or "").strip()
+    number = str(contact.get("number") or "").strip()
+    if not name or not number:
+        return False
+    compact = "".join(ch for ch in name if ch.isalnum())
+    if not compact:
+        return False
+    digits = "".join(ch for ch in name if ch.isdigit())
+    if digits and len(digits) >= max(6, len(compact) - 2):
+        return False
+    return True
 
 
 async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: dict, agency: dict) -> dict:
@@ -132,15 +148,7 @@ async def send_reminder_whatsapp(slot: dict, shift: dict, mission: dict, agency:
 
 
 async def cascade_all_selected_for_shift(shift_id: str):
-    """Launch all pending invitations, but only after the explicit launch action.
-
-    select-workers historically called cascade immediately. We deliberately detect that
-    call and do nothing there; the explicit next-cascade endpoint is the only launcher.
-    """
-    callers = {frame.function for frame in inspect.stack()[1:5]}
-    if "select_workers_for_shift" in callers and "force_cascade" not in callers:
-        return 0
-
+    """Send pending invitations in priority order until the shift is full."""
     shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
     if not shift:
         return 0
@@ -152,17 +160,21 @@ async def cascade_all_selected_for_shift(shift_id: str):
         return 0
 
     slots = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).sort("priority", 1).to_list(1000)
+    active_count = sum(1 for slot in slots if slot.get("status") in ("contacted", "confirmed"))
+    capacity = max(0, int(shift.get("people_needed", 0)) - active_count)
     sent = 0
     failed = 0
 
     for slot in slots:
         if slot.get("status") != "pending":
             continue
+        if sent >= capacity:
+            break
         worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
         if not worker:
+            failed += 1
             continue
 
-        # IMPORTANT: status stays pending until the WhatsApp service confirms send.
         notification = await send_invite_whatsapp(slot, shift, mission, worker, agency)
         if notification.get("status") == "sent":
             await db.mission_workers.update_one(
@@ -253,21 +265,29 @@ server_module.twilio_ready = lambda: False
 async def whatsapp_status(user=Depends(get_current_user)):
     return await whatsapp_request("GET", "/status", user)
 
+
 @router.get("/contacts")
 async def whatsapp_contacts(user=Depends(get_current_user)):
-    return await whatsapp_request("GET", "/contacts", user)
+    data = await whatsapp_request("GET", "/contacts", user)
+    if not isinstance(data, list):
+        return []
+    return [c for c in data if usable_contact(c)]
+
 
 @router.post("/refresh")
 async def whatsapp_refresh(user=Depends(get_current_user)):
     return await whatsapp_request("POST", "/refresh", user)
 
+
 @router.post("/session/start")
 async def whatsapp_start(user=Depends(get_current_user)):
     return await whatsapp_request("POST", "/session/start", user)
 
+
 @router.post("/session/logout")
 async def whatsapp_logout(user=Depends(get_current_user)):
     return await whatsapp_request("POST", "/session/logout", user)
+
 
 @router.post("/send-test")
 async def whatsapp_send_test(payload: dict, user=Depends(get_current_user)):
@@ -282,6 +302,7 @@ async def whatsapp_send_test(payload: dict, user=Depends(get_current_user)):
     except Exception as exc:
         await _insert_notification(mission_id=None, shift_id=None, slot_id=None, worker_id=None, to=target, body=body, url=None, status="failed", error=str(exc), kind="test")
         return {"success": False, "channel": "whatsapp", "to": target, "status": "failed", "error": str(exc)}
+
 
 @router.get("/stats")
 async def whatsapp_stats(user=Depends(get_current_user)):
@@ -302,10 +323,12 @@ async def whatsapp_stats(user=Depends(get_current_user)):
         responded = sum(1 for s in slots if s.get("status") in ("confirmed", "refused"))
     return {"sent_this_month": sent_this_month, "whatsapp_total": whatsapp_total, "invites_sent": len(invite_ids), "invites_responded": responded, "response_rate": round((responded / len(invite_ids)) * 100, 1) if invite_ids else 0}
 
+
 @router.post("/cron/followups")
 async def whatsapp_followups_cron(user=Depends(get_current_user)):
     count = await run_whatsapp_followups()
     return {"ok": True, "sent": count}
+
 
 @router.post("/import")
 async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
@@ -315,10 +338,10 @@ async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
     whatsapp_data = await whatsapp_request("GET", "/contacts", user)
     if not isinstance(whatsapp_data, list):
         raise HTTPException(status_code=502, detail="Réponse invalide du service WhatsApp.")
-    contacts = {str(c.get("id")): c for c in whatsapp_data if c.get("id")}
+    contacts = {str(c.get("id")): c for c in whatsapp_data if c.get("id") and usable_contact(c)}
     selected = [contacts[str(cid)] for cid in selected_ids if str(cid) in contacts]
     if not selected:
-        raise HTTPException(status_code=400, detail="Les contacts sélectionnés sont introuvables.")
+        raise HTTPException(status_code=400, detail="Les contacts sélectionnés sont introuvables ou sans nom exploitable.")
     plan_doc = await db.users.find_one({"id": user["id"]}, {"plan": 1})
     limit = None if (plan_doc or {}).get("plan", "free") == "pro" else 10
     current_count = await db.workers.count_documents({"agency_id": user["id"]})
@@ -339,12 +362,15 @@ async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
         if await db.workers.find_one({"agency_id": user["id"], "phone": {"$in": possible}}):
             skipped.append(contact)
             continue
-        full_name = str(contact.get("name") or "Sans nom").strip()
+        full_name = str(contact.get("name") or "").strip()
         parts = full_name.split()
+        if not parts:
+            skipped.append(contact)
+            continue
         worker = {
             "id": new_id(), "agency_id": user["id"],
-            "first_name": parts[0] if parts else "Sans",
-            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "Nom",
+            "first_name": parts[0],
+            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
             "phone": normalized, "email": "", "skills": [], "note": "", "active": True,
             "created_at": iso(now_utc()),
         }
