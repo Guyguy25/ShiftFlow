@@ -9,7 +9,8 @@ const fs = require("fs");
 
 const app = express();
 const PORT = Number(process.env.WHATSAPP_PORT || 3001);
-const SESSION_ROOT = path.join(__dirname, "whatsapp-sessions");
+// IMPORTANT: set this to a persistent volume on the host (for example /data/whatsapp-sessions).
+const SESSION_ROOT = process.env.WHATSAPP_SESSION_ROOT || path.join(__dirname, "whatsapp-sessions");
 const LEGACY_SESSION_ROOT = path.join(__dirname, "whatsapp-session");
 const DEFAULT_SESSION_ID = process.env.WHATSAPP_SESSION_ID || "default";
 const SEND_INTERVAL_MS = Math.max(500, Number(process.env.WHATSAPP_SEND_INTERVAL_MS || 1200));
@@ -19,56 +20,40 @@ app.use(express.json());
 const sessions = new Map();
 let shuttingDown = false;
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function safeSessionId(value) {
     const raw = String(value || DEFAULT_SESSION_ID).trim();
     return raw.replace(/[^a-zA-Z0-9_-]/g, "_") || "default";
 }
 
-function sessionPath(sessionId) {
-    return path.join(SESSION_ROOT, safeSessionId(sessionId));
-}
+function sessionPath(sessionId) { return path.join(SESSION_ROOT, safeSessionId(sessionId)); }
 
 function createSessionState(sessionId) {
     return {
-        id: safeSessionId(sessionId),
-        sock: null,
-        connected: false,
-        qr: null,
-        qrText: null,
-        contacts: new Map(),
-        contactsLoading: false,
-        initialSyncDone: false,
-        starting: false,
-        reconnectTimer: null,
-        refreshPromise: null,
-        generation: 0,
-        lastConnectionError: null,
-        sendQueue: Promise.resolve(),
-        sendQueueLength: 0,
-        lastSendAt: 0,
+        id: safeSessionId(sessionId), sock: null, connected: false, qr: null, qrText: null,
+        contacts: new Map(), contactsLoading: false, initialSyncDone: false,
+        starting: false, reconnectTimer: null, refreshPromise: null, generation: 0,
+        lastConnectionError: null, sendQueue: Promise.resolve(), sendQueueLength: 0, lastSendAt: 0,
     };
 }
 
 function getSession(sessionId) {
     const id = safeSessionId(sessionId);
     let state = sessions.get(id);
-    if (!state) {
-        state = createSessionState(id);
-        sessions.set(id, state);
-    }
+    if (!state) { state = createSessionState(id); sessions.set(id, state); }
     return state;
 }
 
+function hasAuthFiles(state) {
+    const dir = sessionPath(state.id);
+    try {
+        return fs.existsSync(path.join(dir, "creds.json"));
+    } catch (_) { return false; }
+}
+
 function normalizeNumber(value) {
-    return String(value || "")
-        .replace(/@s\.whatsapp\.net/g, "")
-        .replace(/@c\.us/g, "")
-        .replace(/@lid/g, "")
-        .replace(/\D/g, "");
+    return String(value || "").replace(/@s\.whatsapp\.net/g, "").replace(/@c\.us/g, "").replace(/@lid/g, "").replace(/\D/g, "");
 }
 
 function normalizeSendNumber(value) {
@@ -85,9 +70,7 @@ function isPersonJid(jid) {
     return value.endsWith("@s.whatsapp.net") || value.endsWith("@lid");
 }
 
-function contactName(contact) {
-    return String(contact?.name || contact?.shortName || "").trim();
-}
+function contactName(contact) { return String(contact?.name || contact?.shortName || "").trim(); }
 
 function normalizeContact(contact) {
     if (!contact) return null;
@@ -107,85 +90,59 @@ function upsertContacts(state, list) {
         if (!contact) continue;
         const existing = state.contacts.get(contact.number);
         if (!existing || existing.id !== contact.id || existing.name !== contact.name) {
-            state.contacts.set(contact.number, contact);
-            changed++;
+            state.contacts.set(contact.number, contact); changed++;
         }
     }
     return changed;
 }
 
 function sortedContacts(state) {
-    return Array.from(state.contacts.values()).sort((a, b) =>
-        a.name.localeCompare(b.name, "fr", { sensitivity: "base" })
-    );
+    return Array.from(state.contacts.values()).sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
 }
 
-function contactsFile(state) {
-    return path.join(sessionPath(state.id), "contacts.json");
-}
+function contactsFile(state) { return path.join(sessionPath(state.id), "contacts.json"); }
 
 async function loadContactsCache(state) {
-    const file = contactsFile(state);
     try {
+        const file = contactsFile(state);
         if (!fs.existsSync(file)) return;
         const data = JSON.parse(await fs.promises.readFile(file, "utf8"));
         if (Array.isArray(data)) upsertContacts(state, data);
         console.log(`📂 ${state.contacts.size} contacts cache chargés [${state.id}]`);
-    } catch (error) {
-        console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message);
-    }
+    } catch (error) { console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message); }
 }
 
 async function saveContactsCache(state) {
     try {
         await fs.promises.mkdir(sessionPath(state.id), { recursive: true });
         await fs.promises.writeFile(contactsFile(state), JSON.stringify(sortedContacts(state), null, 2), "utf8");
-    } catch (error) {
-        console.error(`❌ Sauvegarde contacts impossible [${state.id}] :`, error.message);
-    }
+    } catch (error) { console.error(`❌ Sauvegarde contacts impossible [${state.id}] :`, error.message); }
 }
 
 async function generateQR(state, qr) {
     state.qrText = qr;
-    try {
-        state.qr = await QRCode.toDataURL(qr);
-    } catch (error) {
-        console.error(`❌ Erreur génération QR [${state.id}] :`, error.message);
-        state.qr = null;
-    }
+    try { state.qr = await QRCode.toDataURL(qr); }
+    catch (error) { console.error(`❌ Erreur génération QR [${state.id}] :`, error.message); state.qr = null; }
     console.log(`📱 NOUVEAU QR CODE [${state.id}]`);
-    try {
-        qrcode.generate(qr, { small: true });
-    } catch (error) {
-        console.error("❌ Impossible d'afficher le QR dans le terminal :", error.message);
-    }
+    try { qrcode.generate(qr, { small: true }); } catch (_) {}
 }
 
 function statusCodeFrom(error) {
-    try {
-        return new Boom(error)?.output?.statusCode;
-    } catch (_) {
-        return undefined;
-    }
+    try { return new Boom(error)?.output?.statusCode; } catch (_) { return undefined; }
 }
 
 async function destroySocket(state) {
     const old = state.sock;
     state.sock = null;
     if (!old) return;
-    try {
-        if (typeof old.end === "function") old.end(undefined);
-    } catch (_) {}
+    try { if (typeof old.end === "function") old.end(undefined); } catch (_) {}
     await sleep(250);
 }
 
 async function clearAuth(state) {
     const dir = sessionPath(state.id);
-    try {
-        await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
-    } catch (error) {
-        console.error(`❌ Suppression session impossible [${state.id}] :`, error.message);
-    }
+    try { await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 }); }
+    catch (error) { console.error(`❌ Suppression session impossible [${state.id}] :`, error.message); }
     await fs.promises.mkdir(dir, { recursive: true });
 }
 
@@ -196,16 +153,11 @@ function enqueueSend(state, task) {
             const wait = SEND_INTERVAL_MS - (Date.now() - state.lastSendAt);
             if (wait > 0) await sleep(wait);
         }
-        try {
-            return await task();
-        } finally {
-            state.lastSendAt = Date.now();
-        }
+        try { return await task(); }
+        finally { state.lastSendAt = Date.now(); }
     });
     state.sendQueue = run.catch(() => {});
-    return run.finally(() => {
-        state.sendQueueLength = Math.max(0, state.sendQueueLength - 1);
-    });
+    return run.finally(() => { state.sendQueueLength = Math.max(0, state.sendQueueLength - 1); });
 }
 
 async function sendText(state, to, message) {
@@ -230,9 +182,12 @@ async function startSession(state) {
     state.generation += 1;
     const generation = state.generation;
     try {
-        console.log(`🔄 Initialisation Baileys [${state.id}]...`);
         const dir = sessionPath(state.id);
         await fs.promises.mkdir(dir, { recursive: true });
+        const existingAuth = hasAuthFiles(state);
+        console.log(`${existingAuth ? "🔐 SESSION EXISTANTE" : "🆕 AUCUNE SESSION"} [${state.id}] → ${dir}`);
+        console.log(`🔄 Initialisation Baileys [${state.id}]...`);
+
         const { state: authState, saveCreds } = await useMultiFileAuthState(dir);
         const sock = makeWASocket({
             auth: authState,
@@ -268,11 +223,10 @@ async function startSession(state) {
                 state.connected = false;
                 const code = statusCodeFrom(lastDisconnect?.error);
                 state.lastConnectionError = code ?? null;
-                console.log(`❌ CONNEXION WHATSAPP FERMÉE [${state.id}]`);
-                console.log(`📋 Code : ${code ?? "inconnu"}`);
+                console.log(`❌ CONNEXION WHATSAPP FERMÉE [${state.id}] — code ${code ?? "inconnu"}`);
 
                 if (code === DisconnectReason.loggedOut) {
-                    console.log(`🚪 Session WhatsApp retirée [${state.id}]`);
+                    console.log(`🚪 Logout réel détecté → suppression de la session [${state.id}]`);
                     await destroySocket(state);
                     await clearAuth(state);
                     state.qr = null;
@@ -302,17 +256,14 @@ async function startSession(state) {
         sock.ev.on("contacts.set", async event => {
             const list = event?.contacts || [];
             const changed = upsertContacts(state, list);
-            console.log(`📱 contacts.set [${state.id}] : ${list.length} reçus → ${state.contacts.size} contacts`);
             if (changed > 0) await saveContactsCache(state);
         });
         sock.ev.on("contacts.upsert", async list => {
-            const safeList = Array.isArray(list) ? list : [];
-            const changed = upsertContacts(state, safeList);
+            const changed = upsertContacts(state, Array.isArray(list) ? list : []);
             if (changed > 0) await saveContactsCache(state);
         });
         sock.ev.on("contacts.update", async list => {
-            const safeList = Array.isArray(list) ? list : [];
-            const changed = upsertContacts(state, safeList);
+            const changed = upsertContacts(state, Array.isArray(list) ? list : []);
             if (changed > 0) await saveContactsCache(state);
         });
         sock.ev.on("messaging-history.set", async event => {
@@ -325,14 +276,9 @@ async function startSession(state) {
     } catch (error) {
         state.connected = false;
         state.sock = null;
-        state.lastConnectionError = null;
         console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error);
-        if (!shuttingDown) {
-            setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Erreur nouvelle tentative [${state.id}] :`, retryError)), 3000);
-        }
-    } finally {
-        state.starting = false;
-    }
+        if (!shuttingDown) setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000);
+    } finally { state.starting = false; }
 }
 
 async function refreshContacts(state) {
@@ -356,16 +302,10 @@ async function refreshContacts(state) {
 
 function publicStatus(state) {
     return {
-        connected: state.connected,
-        hasQR: !!state.qr,
-        qr: state.qr,
-        contactCount: state.contacts.size,
-        contactsLoading: state.contactsLoading,
-        contactsLoaded: state.contacts.size > 0,
-        initialSyncDone: state.initialSyncDone,
-        starting: state.starting,
-        sessionId: state.id,
-        lastConnectionError: state.lastConnectionError,
+        connected: state.connected, hasQR: !!state.qr, qr: state.qr,
+        contactCount: state.contacts.size, contactsLoading: state.contactsLoading,
+        contactsLoaded: state.contacts.size > 0, initialSyncDone: state.initialSyncDone,
+        starting: state.starting, sessionId: state.id, lastConnectionError: state.lastConnectionError,
         sendQueueLength: state.sendQueueLength,
     };
 }
@@ -377,9 +317,7 @@ function sessionFromRequest(req) {
 app.get("/status", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
     await loadContactsCache(state);
-    if (!state.sock && !state.starting && !shuttingDown) {
-        startSession(state).catch(error => console.error(`❌ Impossible de démarrer la session [${state.id}] :`, error));
-    }
+    if (!state.sock && !state.starting && !shuttingDown) startSession(state).catch(error => console.error(`❌ Impossible de démarrer [${state.id}] :`, error));
     res.json(publicStatus(state));
 });
 
@@ -398,24 +336,17 @@ app.get("/whatsapp/qr", (req, res) => {
 
 app.post("/refresh", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
-    try {
-        const result = await refreshContacts(state);
-        res.json({ success: true, ...result });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
+    try { res.json({ success: true, ...(await refreshContacts(state)) }); }
+    catch (error) { res.status(400).json({ success: false, error: error.message }); }
 });
 
 app.post("/send", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
-    const to = req.body?.to;
-    const message = req.body?.message;
+    const { to, message } = req.body || {};
     if (!message || !String(message).trim()) return res.status(400).json({ error: "Message vide." });
     if (!to) return res.status(400).json({ error: "Numéro de téléphone manquant." });
-    try {
-        const result = await sendText(state, to, message);
-        res.json({ success: true, ...result });
-    } catch (error) {
+    try { res.json({ success: true, ...(await sendText(state, to, message)) }); }
+    catch (error) {
         console.error(`❌ Envoi WhatsApp échoué [${state.id}] :`, error.message);
         res.status(400).json({ success: false, error: error.message });
     }
@@ -428,29 +359,20 @@ app.get("/send/status", (req, res) => {
 
 app.post("/session/start", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
-    startSession(state).catch(error => console.error(`❌ Erreur démarrage session [${state.id}] :`, error));
+    startSession(state).catch(error => console.error(`❌ Erreur démarrage [${state.id}] :`, error));
     res.json({ success: true, ...publicStatus(state) });
 });
 
 app.post("/session/logout", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
-    if (state.reconnectTimer) {
-        clearTimeout(state.reconnectTimer);
-        state.reconnectTimer = null;
-    }
+    if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
     if (state.sock && state.connected) {
-        try { await state.sock.logout(); }
-        catch (error) { console.log(`⚠️ Logout socket [${state.id}] : ${error.message}`); }
+        try { await state.sock.logout(); } catch (error) { console.log(`⚠️ Logout socket [${state.id}] : ${error.message}`); }
     } else {
         await destroySocket(state);
         await clearAuth(state);
-        state.connected = false;
-        state.qr = null;
-        state.qrText = null;
-        state.initialSyncDone = false;
-        state.contacts.clear();
-        state.sendQueue = Promise.resolve();
-        state.sendQueueLength = 0;
+        state.connected = false; state.qr = null; state.qrText = null; state.initialSyncDone = false;
+        state.contacts.clear(); state.sendQueue = Promise.resolve(); state.sendQueueLength = 0;
         if (!shuttingDown) {
             await sleep(500);
             startSession(state).catch(error => console.error(`❌ Redémarrage session [${state.id}] :`, error));
@@ -461,10 +383,20 @@ app.post("/session/logout", async (req, res) => {
 
 app.get("/", (req, res) => res.json({ service: "ShiftFlow WhatsApp", provider: "Baileys", status: "ok" }));
 
+async function discoverExistingSessions() {
+    try {
+        const entries = await fs.promises.readdir(SESSION_ROOT, { withFileTypes: true });
+        return entries.filter(entry => entry.isDirectory()).map(entry => safeSessionId(entry.name)).filter(Boolean);
+    } catch (error) {
+        console.error(`❌ Impossible de lire le dossier des sessions :`, error.message);
+        return [];
+    }
+}
+
 async function bootstrap() {
     await fs.promises.mkdir(SESSION_ROOT, { recursive: true });
     console.log("🚀 SHIFTLOW - WHATSAPP BAILEYS SERVICE");
-    console.log(`📁 Sessions : ${SESSION_ROOT}`);
+    console.log(`📁 Sessions persistantes : ${SESSION_ROOT}`);
     console.log(`🌐 Port : ${PORT}`);
 
     const defaultDir = sessionPath(DEFAULT_SESSION_ID);
@@ -472,9 +404,18 @@ async function bootstrap() {
         await fs.promises.rename(LEGACY_SESSION_ROOT, defaultDir).catch(() => {});
     }
 
-    const state = getSession(DEFAULT_SESSION_ID);
-    await loadContactsCache(state);
-    await startSession(state);
+    // Restore every existing session instead of creating a fresh "default" session.
+    const existing = await discoverExistingSessions();
+    if (existing.length > 0) {
+        console.log(`♻️ Sessions existantes détectées : ${existing.join(", ")}`);
+        for (const id of existing) {
+            const state = getSession(id);
+            await loadContactsCache(state);
+            startSession(state).catch(error => console.error(`❌ Restauration session [${id}] :`, error));
+        }
+    } else {
+        console.log("ℹ️ Aucune session sauvegardée au démarrage. Une session sera créée à la demande via /status.");
+    }
 
     app.listen(PORT, () => console.log(`🌐 Serveur lancé sur le port ${PORT}`));
 }
