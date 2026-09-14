@@ -1,585 +1,410 @@
 import os
 
 import httpx
-
 from fastapi import APIRouter, Depends, HTTPException
 
-from server import (
-    get_current_user,
-    db,
-    new_id,
-    iso,
-    now_utc,
-)
+import server as server_module
+from server import get_current_user, db, new_id, iso, now_utc
 
+router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 
-# ============================================================
-# ROUTER
-# ============================================================
+WHATSAPP_SERVICE_URL = os.environ.get("WHATSAPP_SERVICE_URL", "http://localhost:3001").rstrip("/")
+WHATSAPP_TIMEOUT = float(os.environ.get("WHATSAPP_SERVICE_TIMEOUT", "90"))
+FOLLOWUP_DEFAULT_HOURS = max(1, int(os.environ.get("WHATSAPP_FOLLOWUP_HOURS", "2")))
 
-router = APIRouter(
-    prefix="/whatsapp",
-    tags=["WhatsApp"],
-)
-
-
-# ============================================================
-# CONFIGURATION SERVICE WHATSAPP
-# ============================================================
-
-WHATSAPP_SERVICE_URL = os.environ.get(
-    "WHATSAPP_SERVICE_URL",
-    "http://localhost:3001",
-).rstrip("/")
-
-
-WHATSAPP_TIMEOUT = float(
-    os.environ.get(
-        "WHATSAPP_SERVICE_TIMEOUT",
-        "90",
-    )
-)
-
-
-# ============================================================
-# SESSION WHATSAPP
-# ============================================================
 
 def session_id_for_user(user):
-    """
-    Chaque utilisateur/agence possède
-    sa propre session Baileys.
-
-    Le service Node reçoit cet ID dans :
-    X-WhatsApp-Session
-    """
-
     return str(user["id"])
 
 
-# ============================================================
-# REQUÊTE VERS LE SERVICE BAILEYS
-# ============================================================
-
-async def whatsapp_request(
-    method: str,
-    path: str,
-    user,
-    **kwargs,
-):
-    url = (
-        f"{WHATSAPP_SERVICE_URL}"
-        f"{path}"
-    )
-
-
-    headers = dict(
-        kwargs.pop(
-            "headers",
-            {},
-        )
-        or {}
-    )
-
-
-    headers[
-        "X-WhatsApp-Session"
-    ] = session_id_for_user(user)
-
-
+async def whatsapp_request(method: str, path: str, user, **kwargs):
+    headers = dict(kwargs.pop("headers", {}) or {})
+    headers["X-WhatsApp-Session"] = session_id_for_user(user)
     try:
-        async with httpx.AsyncClient(
-            timeout=WHATSAPP_TIMEOUT
-        ) as client:
-
+        async with httpx.AsyncClient(timeout=WHATSAPP_TIMEOUT) as client:
             response = await client.request(
                 method,
-                url,
+                f"{WHATSAPP_SERVICE_URL}{path}",
                 headers=headers,
                 **kwargs,
             )
-
     except httpx.RequestError as error:
-
-        print(
-            "❌ Service WhatsApp inaccessible :",
-            error,
-        )
-
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Le service WhatsApp n'est pas disponible. "
-                "Vérifiez que whatsapp_service.js est lancé."
-            ),
+            detail=f"Le service WhatsApp n'est pas disponible: {error}",
         )
-
 
     try:
         data = response.json()
-
     except Exception:
-        data = {
-            "error": response.text
-        }
-
+        data = {"error": response.text}
 
     if response.status_code >= 400:
-
-        error_message = (
-            data.get(
-                "error",
-                "Erreur du service WhatsApp",
-            )
-            if isinstance(
-                data,
-                dict,
-            )
-            else "Erreur du service WhatsApp"
-        )
-
-
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=error_message,
-        )
-
-
+        message = data.get("error", "Erreur du service WhatsApp") if isinstance(data, dict) else "Erreur du service WhatsApp"
+        raise HTTPException(status_code=response.status_code, detail=message)
     return data
 
 
-# ============================================================
-# STATUS WHATSAPP
-# ============================================================
+async def send_whatsapp_text(session_user: dict, to: str, body: str) -> dict:
+    return await whatsapp_request(
+        "POST",
+        "/send",
+        session_user,
+        json={"to": to, "message": body},
+    )
+
+
+def build_invite_message(worker: dict, shift: dict, mission: dict, agency_name: str, url: str) -> str:
+    return (
+        f"Bonjour {worker['first_name']}, {agency_name} vous propose la mission "
+        f"« {mission['name']} » le {shift['date']} de {shift['start_time']} à {shift['end_time']} "
+        f"à {mission['location']}. Rémunération : {shift['rate_hourly']}€/h. "
+        f"Répondez ici : {url}"
+    )
+
+
+async def _insert_notification(**doc):
+    notification = {
+        "id": new_id(),
+        "channel": "whatsapp",
+        "sent_at": iso(now_utc()),
+        **doc,
+    }
+    await db.notifications.insert_one(notification)
+    notification.pop("_id", None)
+    return notification
+
+
+async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: dict, agency: dict) -> dict:
+    url = f"{server_module.FRONTEND_URL}/m/{slot['token']}" if server_module.FRONTEND_URL else f"/m/{slot['token']}"
+    body = build_invite_message(worker, shift, mission, agency.get("agency_name", "Votre agence"), url)
+    to = server_module.normalize_phone(worker.get("phone", ""))
+
+    if not to:
+        return await _insert_notification(
+            mission_id=mission["id"], shift_id=shift["id"], slot_id=slot["id"], worker_id=worker["id"],
+            to=None, body=body, url=url, status="failed", error="Numéro de téléphone invalide",
+        )
+
+    try:
+        result = await send_whatsapp_text(agency, to, body)
+        status = "sent"
+        error = None
+        server_module.logger.info(f"WhatsApp invitation sent to {to} session={agency['id']}")
+    except Exception as exc:
+        result = None
+        status = "failed"
+        error = str(exc)
+        server_module.logger.warning(f"WhatsApp invitation failed to {to}: {error}")
+
+    return await _insert_notification(
+        mission_id=mission["id"], shift_id=shift["id"], slot_id=slot["id"], worker_id=worker["id"],
+        to=to, body=body, url=url, status=status, error=error, kind="invite",
+        provider_message_id=(result or {}).get("messageId") if result else None,
+    )
+
+
+async def send_owner_alert_whatsapp(agency: dict, mission: dict, shift: dict, worker: dict, missing: int) -> dict:
+    body = (
+        f"Alerte ShiftFlow : {worker['first_name']} {worker['last_name']} vient d'annuler la mission "
+        f"« {mission['name']} » du {shift['date']} à {shift['start_time']}. "
+        f"Il manque {missing} personne{'s' if missing > 1 else ''}."
+    )
+    to = server_module.normalize_phone(agency.get("phone", ""))
+    if not to:
+        return await _insert_notification(
+            mission_id=mission["id"], shift_id=shift["id"], slot_id=None, worker_id=None,
+            to=None, body=body, url=None, status="failed", error="Numéro du responsable invalide", kind="owner_alert",
+        )
+
+    try:
+        result = await send_whatsapp_text(agency, to, body)
+        status, error = "sent", None
+    except Exception as exc:
+        result = None
+        status, error = "failed", str(exc)
+
+    return await _insert_notification(
+        mission_id=mission["id"], shift_id=shift["id"], slot_id=None, worker_id=None,
+        to=to, body=body, url=None, status=status, error=error, kind="owner_alert",
+        provider_message_id=(result or {}).get("messageId") if result else None,
+    )
+
+
+async def send_reminder_whatsapp(slot: dict, shift: dict, mission: dict, agency: dict, worker: dict) -> dict:
+    url = f"{server_module.FRONTEND_URL}/m/{slot['token']}" if server_module.FRONTEND_URL else f"/m/{slot['token']}"
+    body = (
+        f"Rappel {agency.get('agency_name', '')} : vous êtes confirmé pour « {mission['name']} » "
+        f"le {shift['date']} de {shift['start_time']} à {shift['end_time']} à {mission['location']}. "
+        f"Détails : {url}"
+    )
+    to = server_module.normalize_phone(worker.get("phone", ""))
+    try:
+        result = await send_whatsapp_text(agency, to, body)
+        status, error = "sent", None
+    except Exception as exc:
+        result = None
+        status, error = "failed", str(exc)
+    return await _insert_notification(
+        mission_id=mission["id"], shift_id=shift["id"], slot_id=slot["id"], worker_id=worker["id"],
+        to=to, body=body, url=url, status=status, error=error, kind="reminder",
+        provider_message_id=(result or {}).get("messageId") if result else None,
+    )
+
+
+async def cascade_all_selected_for_shift(shift_id: str):
+    shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
+    if not shift:
+        return 0
+    mission = await db.missions.find_one({"id": shift["mission_id"]}, {"_id": 0})
+    if not mission or mission.get("status") == "cancelled":
+        return 0
+    agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+    if not agency:
+        return 0
+
+    slots = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).sort("priority", 1).to_list(1000)
+    sent = 0
+    for slot in slots:
+        if slot.get("status") != "pending":
+            continue
+        await db.mission_workers.update_one(
+            {"id": slot["id"]},
+            {"$set": {"status": "contacted", "contacted_at": iso(now_utc())}},
+        )
+        worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
+        if not worker:
+            continue
+        await send_invite_whatsapp(slot, shift, mission, worker, agency)
+        sent += 1
+    return sent
+
+
+async def run_whatsapp_followups():
+    now = now_utc()
+    shifts = await db.shifts.find({"status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(5000)
+    sent = 0
+
+    for shift in shifts:
+        try:
+            shift_dt = __import__("datetime").datetime.fromisoformat(
+                f"{shift['date']}T{shift['start_time']}:00+00:00"
+            )
+        except Exception:
+            continue
+        if shift_dt <= now:
+            continue
+
+        mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
+        if not mission:
+            continue
+        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        if not agency:
+            continue
+
+        hours = max(1, int(mission.get("followup_hours") or FOLLOWUP_DEFAULT_HOURS))
+        cutoff = now - __import__("datetime").timedelta(hours=hours)
+        slots = await db.mission_workers.find({
+            "shift_id": shift["id"],
+            "status": "contacted",
+            "contacted_at": {"$lte": iso(cutoff)},
+            "followup_sent_at": {"$exists": False},
+        }, {"_id": 0}).to_list(1000)
+
+        for slot in slots:
+            worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
+            if not worker:
+                continue
+            await send_invite_whatsapp(slot, shift, mission, worker, agency)
+            await db.mission_workers.update_one(
+                {"id": slot["id"]},
+                {"$set": {"followup_sent_at": iso(now_utc())}},
+            )
+            sent += 1
+
+    return sent
+
+
+async def run_whatsapp_reminders():
+    now = now_utc()
+    window_start = now + __import__("datetime").timedelta(hours=23)
+    window_end = now + __import__("datetime").timedelta(hours=25)
+    candidate_dates = {window_start.date().isoformat(), window_end.date().isoformat()}
+    shifts = await db.shifts.find({"date": {"$in": list(candidate_dates)}, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(2000)
+    sent = 0
+
+    for shift in shifts:
+        try:
+            dt = __import__("datetime").datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00+00:00")
+        except Exception:
+            continue
+        if not (window_start <= dt <= window_end):
+            continue
+        mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
+        if not mission:
+            continue
+        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        if not agency:
+            continue
+        slots = await db.mission_workers.find({"shift_id": shift["id"], "status": "confirmed", "reminder_sent": {"$ne": True}}, {"_id": 0}).to_list(500)
+        for slot in slots:
+            worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
+            if not worker:
+                continue
+            await send_reminder_whatsapp(slot, shift, mission, agency, worker)
+            await db.mission_workers.update_one({"id": slot["id"]}, {"$set": {"reminder_sent": True}})
+            sent += 1
+    return sent
+
+
+# ------------------------------------------------------------
+# Existing server functions are rebound here. server.py already
+# imports this module at the end, so runtime calls use these versions.
+# ------------------------------------------------------------
+server_module.send_invite_sms = send_invite_whatsapp
+server_module.send_owner_alert_sms = send_owner_alert_whatsapp
+server_module.cascade_next_for_shift = cascade_all_selected_for_shift
+server_module._run_reminders = run_whatsapp_reminders
+server_module.twilio_ready = lambda: False
+
 
 @router.get("/status")
-async def whatsapp_status(
-    user=Depends(get_current_user),
-):
-    return await whatsapp_request(
-        "GET",
-        "/status",
-        user,
-    )
+async def whatsapp_status(user=Depends(get_current_user)):
+    return await whatsapp_request("GET", "/status", user)
 
-
-# ============================================================
-# CONTACTS WHATSAPP
-# ============================================================
 
 @router.get("/contacts")
-async def whatsapp_contacts(
-    user=Depends(get_current_user),
-):
-    return await whatsapp_request(
-        "GET",
-        "/contacts",
-        user,
-    )
+async def whatsapp_contacts(user=Depends(get_current_user)):
+    return await whatsapp_request("GET", "/contacts", user)
 
-
-# ============================================================
-# REFRESH CONTACTS
-# ============================================================
 
 @router.post("/refresh")
-async def whatsapp_refresh(
-    user=Depends(get_current_user),
-):
-    return await whatsapp_request(
-        "POST",
-        "/refresh",
-        user,
-    )
+async def whatsapp_refresh(user=Depends(get_current_user)):
+    return await whatsapp_request("POST", "/refresh", user)
 
-
-# ============================================================
-# START SESSION
-# ============================================================
 
 @router.post("/session/start")
-async def whatsapp_start(
-    user=Depends(get_current_user),
-):
-    return await whatsapp_request(
-        "POST",
-        "/session/start",
-        user,
-    )
+async def whatsapp_start(user=Depends(get_current_user)):
+    return await whatsapp_request("POST", "/session/start", user)
 
-
-# ============================================================
-# LOGOUT SESSION
-# ============================================================
 
 @router.post("/session/logout")
-async def whatsapp_logout(
-    user=Depends(get_current_user),
-):
-    return await whatsapp_request(
-        "POST",
-        "/session/logout",
-        user,
-    )
+async def whatsapp_logout(user=Depends(get_current_user)):
+    return await whatsapp_request("POST", "/session/logout", user)
 
 
-# ============================================================
-# IMPORT WHATSAPP → WORKERS
-# ============================================================
-
-@router.post("/import")
-async def whatsapp_import(
-    payload: dict,
-    user=Depends(get_current_user),
-):
-    selected_ids = payload.get(
-        "contacts",
-        [],
-    )
-
-
-    # --------------------------------------------------------
-    # VALIDATION
-    # --------------------------------------------------------
-
-    if (
-        not isinstance(
-            selected_ids,
-            list,
+@router.post("/send-test")
+async def whatsapp_send_test(payload: dict, user=Depends(get_current_user)):
+    target = server_module.normalize_phone(payload.get("to") or user.get("phone", ""))
+    if not target:
+        raise HTTPException(status_code=400, detail="Aucun numéro fourni ni renseigné sur votre profil")
+    body = f"[Test ShiftFlow] Bonjour {user.get('name', '')}, l'envoi WhatsApp fonctionne."
+    try:
+        result = await send_whatsapp_text(user, target, body)
+        await _insert_notification(
+            mission_id=None, shift_id=None, slot_id=None, worker_id=None,
+            to=target, body=body, url=None, status="sent", error=None, kind="test",
+            provider_message_id=result.get("messageId"),
         )
-        or not selected_ids
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail="Aucun contact sélectionné.",
+        return {"success": True, "channel": "whatsapp", "to": target, "status": "sent"}
+    except Exception as exc:
+        await _insert_notification(
+            mission_id=None, shift_id=None, slot_id=None, worker_id=None,
+            to=target, body=body, url=None, status="failed", error=str(exc), kind="test",
         )
+        return {"success": False, "channel": "whatsapp", "to": target, "status": "failed", "error": str(exc)}
 
 
-    # --------------------------------------------------------
-    # RÉCUPÉRER LES CONTACTS BAILEYS
-    # --------------------------------------------------------
+@router.get("/stats")
+async def whatsapp_stats(user=Depends(get_current_user)):
+    missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(5000)
+    mids = [m["id"] for m in missions]
+    if not mids:
+        return {"sent_this_month": 0, "whatsapp_total": 0, "invites_sent": 0, "invites_responded": 0, "response_rate": 0}
 
-    whatsapp_data = await whatsapp_request(
-        "GET",
-        "/contacts",
-        user,
-    )
-
-
-    if not isinstance(
-        whatsapp_data,
-        list,
-    ):
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Réponse invalide du service WhatsApp."
-            ),
-        )
-
-
-    whatsapp_contacts = {
-        str(contact.get("id")): contact
-        for contact in whatsapp_data
-        if contact.get("id")
+    now = now_utc()
+    month_start = iso(__import__("datetime").datetime(now.year, now.month, 1, tzinfo=now.tzinfo))
+    notifications = await db.notifications.find({"mission_id": {"$in": mids}, "channel": "whatsapp"}, {"_id": 0}).to_list(20000)
+    sent_this_month = sum(1 for n in notifications if n.get("sent_at", "") >= month_start and n.get("status") == "sent")
+    whatsapp_total = sum(1 for n in notifications if n.get("status") == "sent")
+    invite_slot_ids = [n["slot_id"] for n in notifications if n.get("kind", "invite") == "invite" and n.get("slot_id")]
+    invite_ids = list(set(invite_slot_ids))
+    responded = 0
+    if invite_ids:
+        slots = await db.mission_workers.find({"id": {"$in": invite_ids}}, {"_id": 0}).to_list(5000)
+        responded = sum(1 for s in slots if s.get("status") in ("confirmed", "refused"))
+    return {
+        "sent_this_month": sent_this_month,
+        "whatsapp_total": whatsapp_total,
+        "invites_sent": len(invite_ids),
+        "invites_responded": responded,
+        "response_rate": round((responded / len(invite_ids)) * 100, 1) if invite_ids else 0,
     }
 
 
-    # --------------------------------------------------------
-    # CONTACTS SÉLECTIONNÉS
-    # --------------------------------------------------------
-
-    selected = []
-
-
-    for contact_id in selected_ids:
-
-        contact = whatsapp_contacts.get(
-            str(contact_id)
-        )
+@router.post("/cron/followups")
+async def whatsapp_followups_cron(user=Depends(get_current_user)):
+    # This authenticated route is mainly for manual testing. Production cron should use /api/cron/followups.
+    count = await run_whatsapp_followups()
+    return {"ok": True, "sent": count}
 
 
-        if contact:
-            selected.append(
-                contact
-            )
+@router.post("/import")
+async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
+    selected_ids = payload.get("contacts", [])
+    if not isinstance(selected_ids, list) or not selected_ids:
+        raise HTTPException(status_code=400, detail="Aucun contact sélectionné.")
 
+    whatsapp_data = await whatsapp_request("GET", "/contacts", user)
+    if not isinstance(whatsapp_data, list):
+        raise HTTPException(status_code=502, detail="Réponse invalide du service WhatsApp.")
 
+    contacts = {str(c.get("id")): c for c in whatsapp_data if c.get("id")}
+    selected = [contacts[str(cid)] for cid in selected_ids if str(cid) in contacts]
     if not selected:
+        raise HTTPException(status_code=400, detail="Les contacts sélectionnés sont introuvables.")
 
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Les contacts sélectionnés "
-                "sont introuvables."
-            ),
-        )
-
-
-    # --------------------------------------------------------
-    # PLAN UTILISATEUR
-    # --------------------------------------------------------
-
-    plan = await db.users.find_one(
-        {
-            "id": user["id"],
-        },
-        {
-            "plan": 1,
-        },
-    )
-
-
-    plan_name = (
-        (plan or {}).get(
-            "plan",
-            "free",
-        )
-    )
-
-
-    # --------------------------------------------------------
-    # NOMBRE ACTUEL DE WORKERS
-    # --------------------------------------------------------
-
-    current_count = (
-        await db.workers.count_documents(
-            {
-                "agency_id": user["id"],
-            }
-        )
-    )
-
-
-    # --------------------------------------------------------
-    # LIMITE
-    # --------------------------------------------------------
-
-    limit = (
-        None
-        if plan_name == "pro"
-        else 10
-    )
-
-
-    created = []
-
-    skipped = []
-
-
-    # --------------------------------------------------------
-    # CRÉATION DES WORKERS
-    # --------------------------------------------------------
+    plan_doc = await db.users.find_one({"id": user["id"]}, {"plan": 1})
+    limit = None if (plan_doc or {}).get("plan", "free") == "pro" else 10
+    current_count = await db.workers.count_documents({"agency_id": user["id"]})
+    created, skipped = [], []
 
     for contact in selected:
-
-        # -----------------------------------------------
-        # LIMITE DU PLAN
-        # -----------------------------------------------
-
-        if (
-            limit is not None
-            and current_count >= limit
-        ):
-            skipped.append(
-                contact
-            )
-
+        if limit is not None and current_count >= limit:
+            skipped.append(contact)
+            continue
+        number = str(contact.get("number", "")).strip().replace(" ", "")
+        if not number or len(number) < 8:
+            skipped.append(contact)
+            continue
+        normalized = number if number.startswith("+") else f"+{number}"
+        possible = [number, normalized]
+        digits = number.lstrip("+")
+        if digits.startswith("33"):
+            possible.append(f"0{digits[2:]}")
+        if await db.workers.find_one({"agency_id": user["id"], "phone": {"$in": possible}}):
+            skipped.append(contact)
             continue
 
-
-        # -----------------------------------------------
-        # NUMÉRO
-        # -----------------------------------------------
-
-        number = str(
-            contact.get(
-                "number",
-                "",
-            )
-        ).strip()
-
-
-        if (
-            not number
-            or len(number) < 8
-        ):
-            skipped.append(
-                contact
-            )
-
-            continue
-
-
-        number = number.replace(
-            " ",
-            "",
-        )
-
-
-        normalized_number = (
-            number
-            if number.startswith("+")
-            else f"+{number}"
-        )
-
-
-        number_without_plus = (
-            number.lstrip("+")
-        )
-
-
-        possible_numbers = [
-            number,
-            normalized_number,
-        ]
-
-
-        # France :
-        # +33612345678
-        # 0612345678
-
-        if number_without_plus.startswith(
-            "33"
-        ):
-            possible_numbers.append(
-                f"0{number_without_plus[2:]}"
-            )
-
-
-        # -----------------------------------------------
-        # ÉVITER LES DOUBLONS
-        # -----------------------------------------------
-
-        existing = await db.workers.find_one(
-            {
-                "agency_id": user["id"],
-                "phone": {
-                    "$in": possible_numbers,
-                },
-            }
-        )
-
-
-        if existing:
-            skipped.append(
-                contact
-            )
-
-            continue
-
-
-        # -----------------------------------------------
-        # NOM
-        # -----------------------------------------------
-
-        full_name = str(
-            contact.get(
-                "name",
-                "",
-            )
-            or "Sans nom"
-        ).strip()
-
-
+        full_name = str(contact.get("name") or "Sans nom").strip()
         parts = full_name.split()
-
-
-        first_name = (
-            parts[0]
-            if parts
-            else "Sans"
-        )
-
-
-        last_name = (
-            " ".join(parts[1:])
-            if len(parts) > 1
-            else "Nom"
-        )
-
-
-        # -----------------------------------------------
-        # WORKER
-        # -----------------------------------------------
-
         worker = {
-            "id": new_id(),
-
-            "agency_id":
-                user["id"],
-
-            "first_name":
-                first_name,
-
-            "last_name":
-                last_name,
-
-            "phone":
-                normalized_number,
-
-            "email":
-                "",
-
-            "skills":
-                [],
-
-            "note":
-                "",
-
-            "active":
-                True,
-
-            "created_at":
-                iso(now_utc()),
+            "id": new_id(), "agency_id": user["id"],
+            "first_name": parts[0] if parts else "Sans",
+            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "Nom",
+            "phone": normalized, "email": "", "skills": [], "note": "", "active": True,
+            "created_at": iso(now_utc()),
         }
-
-
-        # -----------------------------------------------
-        # INSERTION
-        # -----------------------------------------------
-
-        await db.workers.insert_one(
-            worker
-        )
-
-
-        worker.pop(
-            "_id",
-            None,
-        )
-
-
-        created.append(
-            worker
-        )
-
-
+        await db.workers.insert_one(worker)
+        worker.pop("_id", None)
+        created.append(worker)
         current_count += 1
-
-
-    # ====================================================
-    # RÉPONSE
-    # ====================================================
 
     return {
         "success": True,
-
-        "created":
-            len(created),
-
-        "skipped":
-            len(skipped),
-
-        "workers":
-            created,
-
-        "quota_hit": (
-            limit is not None
-            and len(skipped) > 0
-            and current_count >= limit
-        ),
-
-        "limit":
-            limit,
+        "created": len(created),
+        "skipped": len(skipped),
+        "workers": created,
+        "quota_hit": limit is not None and len(skipped) > 0 and current_count >= limit,
+        "limit": limit,
     }
