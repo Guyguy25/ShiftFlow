@@ -68,16 +68,11 @@ function enqueue(sessionId, task) {
     return next;
 }
 
-// ------------------------------------------------------------
-// Capture uniquement ce dont /send a besoin.
-// Aucun changement à la logique de connexion Baileys.
-// ------------------------------------------------------------
 const originalLoad = Module._load;
 
 Module._load = function(request, parent, isMain) {
     const loaded = originalLoad.apply(this, arguments);
 
-    // Capture l'app Express sans modifier son comportement.
     if (request === "express" && !loaded.__shiftflowExpressBridge) {
         function expressWrapper(...args) {
             const app = loaded(...args);
@@ -96,8 +91,6 @@ Module._load = function(request, parent, isMain) {
         return expressWrapper;
     }
 
-    // Capture le socket réel, tout en conservant toutes les autres
-    // fonctions/exportations Baileys inchangées.
     if (request === "@whiskeysockets/baileys" && !loaded.__shiftflowBaileysBridge) {
         const originalMakeWASocket = loaded.default;
         const originalUseMultiFileAuthState = loaded.useMultiFileAuthState;
@@ -144,17 +137,6 @@ Module._load = function(request, parent, isMain) {
         }
 
         loaded.__shiftflowBaileysBridge = true;
-    }
-
-    // whatsapp_service.js vient d'être chargé : son app Express est maintenant
-    // capturée, donc on peut installer /send sans modifier son code métier.
-    if (
-        !routeInstalled &&
-        capturedApp &&
-        typeof request === "string" &&
-        (request.endsWith("whatsapp_service.js") || request.includes("whatsapp_service"))
-    ) {
-        installSendRoute();
     }
 
     return loaded;
@@ -233,6 +215,12 @@ function installSendRoute() {
         `📨 Route WhatsApp /send installée — intervalle minimum ${SEND_INTERVAL_MS} ms`
     );
 }
+
+// Le bridge est chargé avant whatsapp_service.js. On attend donc que
+// son code d'initialisation ait créé l'app Express avant d'ajouter /send.
+process.nextTick(() => {
+    installSendRoute();
+});
 
 console.log(
     `🔌 ShiftFlow WhatsApp send bridge chargé — délai minimum ${SEND_INTERVAL_MS} ms`
