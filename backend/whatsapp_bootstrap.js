@@ -1,10 +1,10 @@
 /*
  * Baileys contact bridge.
  *
- * We keep whatsapp_service.js untouched and inject one narrow bridge before it
- * registers its own event listeners. WhatsApp can expose a person's local
- * contact/display name through chat events even when contacts.upsert is missing
- * or incomplete (a known problem in some Baileys v7 releases).
+ * WhatsApp/Baileys can expose a chat without exposing the local phonebook name.
+ * In that case we still keep the person, using the phone number as the display
+ * name instead of silently dropping the contact. If WhatsApp gives us a real
+ * name (name/subject/notify/pushName), that name wins.
  */
 const baileysPath = require.resolve("@whiskeysockets/baileys");
 const baileys = require(baileysPath);
@@ -32,7 +32,7 @@ function nameFromChat(chat) {
 }
 
 function phoneFromChat(chat) {
-  for (const value of [chat?.phoneNumber, chat?.number, chat?.pn, chat?.jid]) {
+  for (const value of [chat?.phoneNumber, chat?.number, chat?.pn, chat?.jid, chat?.id]) {
     const raw = String(value || "");
     const digits = raw.replace(/\D/g, "");
     if (/^\d{10,15}$/.test(digits)) return digits;
@@ -45,18 +45,23 @@ baileys.default = function patchedMakeWASocket(...args) {
 
   const bridgeChat = (chat) => {
     const id = String(chat?.id || chat?.jid || "");
-    const name = nameFromChat(chat);
-    if (!isPersonOrLid(id) || !name) return;
+    if (!isPersonOrLid(id)) return;
 
     const phoneNumber = phoneFromChat(chat);
-    const synthetic = {
-      id,
-      name,
-      ...(phoneNumber ? { phoneNumber } : {}),
-    };
+    const realName = nameFromChat(chat);
 
-    // whatsapp_service.js already listens to contacts.upsert. We deliberately
-    // emit only named person/LID chats, never message history/pushName globally.
+    // For a normal PN chat, the JID itself contains the phone number. This is
+    // the important fallback for contacts such as Baba: if WhatsApp does not
+    // transmit the saved address-book label, ShiftFlow must still show the
+    // contact instead of dropping it completely.
+    const number = phoneNumber || (id.endsWith("@s.whatsapp.net") ? id.split("@")[0] : "");
+    if (!/^\d{10,15}$/.test(number)) return;
+
+    const name = realName || `+${number}`;
+    const synthetic = { id, name, phoneNumber: number };
+
+    // whatsapp_service.js already listens to contacts.upsert. We emit only
+    // person/LID chat metadata; groups are excluded above.
     sock.ev.emit("contacts.upsert", [synthetic]);
   };
 
