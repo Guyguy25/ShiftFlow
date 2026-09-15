@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus, Smartphone, RefreshCw } from "lucide-react";
+import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
@@ -15,6 +15,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
+  const completedRef = useRef(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -55,9 +56,9 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
   }, [refreshStatus, startSession]);
 
   useEffect(() => {
-    if (!status?.connected) return undefined;
+    if (!status?.connected || completedRef.current) return;
+    completedRef.current = true;
     onConnected();
-    return undefined;
   }, [status?.connected, onConnected]);
 
   useEffect(() => {
@@ -150,6 +151,7 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
     try {
       const { data } = await api.get("/whatsapp/status");
       if (!data.connected) {
+        setWaitingForWhatsApp(true);
         setConnectOpen(true);
         return;
       }
