@@ -26,9 +26,6 @@ function hasAuthFiles(state) { try { return fs.existsSync(path.join(sessionPath(
 function normalizeNumber(value) { return String(value || "").replace(/@s\.whatsapp\.net/g, "").replace(/@c\.us/g, "").replace(/@lid/g, "").replace(/\D/g, ""); }
 function normalizeSendNumber(value) { let number = normalizeNumber(value); if (number.startsWith("00")) number = number.slice(2); if (number.startsWith("0") && number.length === 10) number = "33" + number.slice(1); if (number.startsWith("33") && number.length === 11) return number; if (number.length >= 10) return number; return ""; }
 
-// A normal ShiftFlow contact must be backed by a real phone number. @lid is a
-// WhatsApp internal identifier, so it is only accepted when Baileys also gives
-// us the real phone number explicitly (phoneNumber/number).
 function isPersonJid(jid) { return String(jid || "").endsWith("@s.whatsapp.net"); }
 function isLidJid(jid) { return String(jid || "").endsWith("@lid"); }
 function looksLikePhoneName(value) {
@@ -36,6 +33,7 @@ function looksLikePhoneName(value) {
     if (!name) return true;
     const digits = (name.match(/\d/g) || []).length;
     const letters = (name.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g) || []).length;
+    // Reject phone numbers and masked labels such as +33.......04.
     if (!letters && digits >= 2) return true;
     return digits >= 6 && digits >= letters;
 }
@@ -59,19 +57,27 @@ function contactName(contact, id) {
     const addressBookName = String(contact?.name || contact?.shortName || "").trim();
     if (addressBookName && !looksLikePhoneName(addressBookName)) return addressBookName;
 
-    // Some saved contacts can be represented by a WhatsApp LID. If Baileys
-    // gives us the corresponding real phone number, profile/name fields are
-    // safe to use for the display name.
-    if (isLidJid(id) && explicitPhoneNumber(contact)) {
-        const fallbacks = [contact?.notify, contact?.pushName, contact?.verifiedName];
+    const fallbacks = [contact?.notify, contact?.pushName, contact?.verifiedName];
+
+    // A real phone JID is already coming from the WhatsApp contacts events
+    // (contacts.set/upsert/update). If its local name is unavailable, use the
+    // WhatsApp-provided profile name so saved contacts such as "Baba" are still
+    // displayed. We deliberately never process messaging-history.set.
+    if (isPersonJid(id)) {
         for (const candidate of fallbacks) {
             const value = String(candidate || "").trim();
             if (value && !looksLikePhoneName(value)) return value;
         }
     }
 
-    // For ordinary phone JIDs, do not use notify/pushName when the address-book
-    // name is absent: that would re-import chat/history-only users.
+    // LIDs are accepted only when WhatsApp explicitly supplies their real phone
+    // number. Never turn the numeric LID itself into a phone number.
+    if (isLidJid(id) && explicitPhoneNumber(contact)) {
+        for (const candidate of fallbacks) {
+            const value = String(candidate || "").trim();
+            if (value && !looksLikePhoneName(value)) return value;
+        }
+    }
     return "";
 }
 function normalizeContact(contact) {
@@ -151,7 +157,7 @@ app.get("/status", async (req, res) => { const state = getSession(sessionFromReq
 app.get("/contacts", async (req, res) => { const state = getSession(sessionFromRequest(req)); await loadContactsCache(state); if (!state.connected) return res.status(400).json({ error: "WhatsApp n'est pas connecté.", ...publicStatus(state) }); res.json(sortedContacts(state)); });
 app.get("/whatsapp/qr", (req, res) => { const state = getSession(sessionFromRequest(req)); if (!state.qr) return res.status(404).json({ error: "Aucun QR code disponible." }); res.json({ qr: state.qr }); });
 app.post("/refresh", async (req, res) => { const state = getSession(sessionFromRequest(req)); try { res.json({ success: true, ...(await refreshContacts(state)) }); } catch (error) { res.status(400).json({ success: false, error: error.message }); } });
-app.post("/send", async (req, res) => { const state = getSession(sessionFromRequest(req)); const { to, message } = req.body || {}; if (!message || !String(message).trim()) return res.status(400).json({ error: "Message vide." }); if (!to) return res.status(400).json({ error: "Numéro de téléphone manquant." }); try { res.json({ success: true, ...(await sendText(state, to, message)) }); } catch (error) { console.error(`❌ Envoi WhatsApp échoué [${state.id}] :`, error.message); res.status(400).json({ success: false, error: error.message }); } });
+app.post("/send", async (req, res) => { const state = getSession(sessionFromRequest(req)); const { to, message } = req.body || {}; if (!message || !String(message).trim()) return res.status(400).json({ error: "Message vide." }); if (!to) return res.status(400).json({ error: "Numéro de téléphone manquant." }); try { res.json({ success: true, ...(await sendText(state, to, message) ) }); } catch (error) { console.error(`❌ Envoi WhatsApp échoué [${state.id}] :`, error.message); res.status(400).json({ success: false, error: error.message }); } });
 app.get("/send/status", (req, res) => { const state = getSession(sessionFromRequest(req)); res.json({ connected: state.connected, queueLength: state.sendQueueLength, lastSendAt: state.lastSendAt || null }); });
 app.post("/session/start", async (req, res) => { const state = getSession(sessionFromRequest(req)); startSession(state).catch(error => console.error(`❌ Erreur démarrage [${state.id}] :`, error)); res.json({ success: true, ...publicStatus(state) }); });
 app.post("/session/logout", async (req, res) => { const state = getSession(sessionFromRequest(req)); if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; } if (state.sock && state.connected) { try { await state.sock.logout(); } catch (error) { console.log(`⚠️ Logout socket [${state.id}] : ${error.message}`); } } else { await destroySocket(state); await clearAuth(state); state.connected = false; state.qr = null; state.qrText = null; state.initialSyncDone = false; state.contacts.clear(); state.sendQueue = Promise.resolve(); state.sendQueueLength = 0; if (!shuttingDown) { await sleep(500); startSession(state).catch(error => console.error(`❌ Redémarrage session [${state.id}] :`, error)); } } res.json({ success: true }); });
