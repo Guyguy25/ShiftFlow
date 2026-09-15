@@ -7,8 +7,8 @@
     "test": "tests"
   },
   "scripts": {
-    "start": "node whatsapp_service.js",
-    "start:whatsapp": "node whatsapp_service.js",
+    "start": "node whatsapp_bootstrap.js",
+    "start:whatsapp": "node whatsapp_bootstrap.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
