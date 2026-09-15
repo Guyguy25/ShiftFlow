@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus } from "lucide-react";
+import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus, Smartphone, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
@@ -10,10 +10,114 @@ const TYPE_LABEL = {
   technique: "Technique", autre: "Autre",
 };
 
+function WhatsAppConnectModal({ onClose, onConnected }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get("/whatsapp/status");
+      setStatus(data);
+      setError("");
+      return data;
+    } catch (err) {
+      setError(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp.");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const startSession = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await api.post("/whatsapp/session/start");
+      await refreshStatus();
+    } catch (err) {
+      setError(formatApiError(err.response?.data?.detail) || "Impossible de démarrer WhatsApp.");
+    } finally {
+      setStarting(false);
+    }
+  }, [refreshStatus, starting]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const current = await refreshStatus();
+      if (!cancelled && current && !current.connected && !current.hasQR && !current.starting) {
+        await startSession();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [refreshStatus, startSession]);
+
+  useEffect(() => {
+    if (!status?.connected) return undefined;
+    onConnected();
+    return undefined;
+  }, [status?.connected, onConnected]);
+
+  useEffect(() => {
+    if (status?.connected) return undefined;
+    const timer = setInterval(refreshStatus, 1500);
+    return () => clearInterval(timer);
+  }, [status?.connected, refreshStatus]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-widest text-green-700 font-bold">WhatsApp requis</div>
+            <h3 className="mt-1 font-display font-bold text-xl">Connectez votre WhatsApp</h3>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-500">×</button>
+        </div>
+        <p className="mt-3 text-sm text-gray-600">
+          ShiftFlow envoie les missions uniquement via votre compte WhatsApp. Connectez-le pour lancer la cascade.
+        </p>
+
+        {status?.connected ? (
+          <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm text-green-800">
+            WhatsApp est connecté. Lancement de la cascade…
+          </div>
+        ) : status?.hasQR && status?.qr ? (
+          <div className="mt-5 text-center">
+            <div className="text-sm font-medium text-gray-900">Scannez ce QR code avec WhatsApp</div>
+            <div className="mt-2 text-xs text-gray-500">WhatsApp → Paramètres → Appareils connectés → Connecter un appareil</div>
+            <div className="mt-4 flex justify-center">
+              <img src={status.qr} alt="QR code WhatsApp" className="w-64 h-64 border rounded-lg" />
+            </div>
+            <div className="mt-3 text-xs text-gray-400">La fenêtre détectera automatiquement la connexion.</div>
+          </div>
+        ) : (
+          <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
+            <RefreshCw className="w-7 h-7 mx-auto text-gray-400 animate-spin" />
+            <div className="mt-3 text-sm font-medium text-gray-800">Préparation de votre session WhatsApp…</div>
+            <div className="mt-1 text-xs text-gray-500">Le QR code apparaîtra automatiquement.</div>
+          </div>
+        )}
+
+        {error && <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">{error}</div>}
+        {!loading && !status?.connected && !status?.hasQR && !status?.starting && (
+          <button type="button" onClick={startSession} disabled={starting} className="mt-4 w-full py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-60">
+            {starting ? "Connexion…" : "Réessayer"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ShiftSelector({ mission, shift, workers, onSelected }) {
   const [selected, setSelected] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [waitingForWhatsApp, setWaitingForWhatsApp] = useState(false);
 
   const toggle = (id) => setSelected((s) => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const move = (idx, dir) => setSelected((s) => {
@@ -23,69 +127,100 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
     return arr;
   });
 
-  const submit = async () => {
+  const sendSelection = useCallback(async () => {
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
-    setSaving(true); setError("");
+    setSaving(true); setError(""); setWaitingForWhatsApp(false); setConnectOpen(false);
     try {
       await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected });
       toast.success("Cascade démarrée sur ce shift");
       onSelected();
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || err.message);
+      const detail = formatApiError(err.response?.data?.detail) || err.message;
+      if (/whatsapp/i.test(detail) && /connect|déconnect|pas connecté|not connected/i.test(detail)) {
+        setWaitingForWhatsApp(true);
+        setConnectOpen(true);
+      } else {
+        setError(detail);
+      }
     } finally { setSaving(false); }
+  }, [onSelected, selected, shift.id]);
+
+  const submit = async () => {
+    if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
+    try {
+      const { data } = await api.get("/whatsapp/status");
+      if (!data.connected) {
+        setConnectOpen(true);
+        return;
+      }
+    } catch (err) {
+      setError(formatApiError(err.response?.data?.detail) || "Impossible de vérifier la connexion WhatsApp.");
+      return;
+    }
+    await sendSelection();
   };
 
+  const onWhatsAppConnected = useCallback(() => {
+    if (!waitingForWhatsApp && !connectOpen) return;
+    setConnectOpen(false);
+    setWaitingForWhatsApp(false);
+    sendSelection();
+  }, [connectOpen, sendSelection, waitingForWhatsApp]);
+
   return (
-    <div className="grid md:grid-cols-2 gap-6" data-testid={`shift-selector-${shift.id}`}>
-      <div>
-        <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Disponibles</div>
-        <div className="border border-gray-200 rounded-md max-h-80 overflow-y-auto">
-          {workers.map((w) => {
-            const on = selected.includes(w.id);
-            return (
-              <button type="button" key={w.id} onClick={()=>toggle(w.id)}
-                data-testid={`select-worker-${shift.id}-${w.id}`}
-                className={`w-full flex items-center justify-between px-4 py-2.5 border-b border-gray-100 last:border-0 text-left hover:bg-gray-50 ${on ? "bg-blue-50" : ""}`}>
-                <div>
-                  <div className="text-sm font-medium">{w.first_name} {w.last_name}</div>
-                  <div className="text-xs text-gray-500">{w.phone}</div>
+    <>
+      <div className="grid md:grid-cols-2 gap-6" data-testid={`shift-selector-${shift.id}`}>
+        <div>
+          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Disponibles</div>
+          <div className="border border-gray-200 rounded-md max-h-80 overflow-y-auto">
+            {workers.map((w) => {
+              const on = selected.includes(w.id);
+              return (
+                <button type="button" key={w.id} onClick={()=>toggle(w.id)}
+                  data-testid={`select-worker-${shift.id}-${w.id}`}
+                  className={`w-full flex items-center justify-between px-4 py-2.5 border-b border-gray-100 last:border-0 text-left hover:bg-gray-50 ${on ? "bg-blue-50" : ""}`}>
+                  <div>
+                    <div className="text-sm font-medium">{w.first_name} {w.last_name}</div>
+                    <div className="text-xs text-gray-500">{w.phone}</div>
+                  </div>
+                  {on && <span className="text-xs font-bold text-blue-700">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Ordre de priorité ({selected.length})</div>
+          <div className="border border-gray-200 rounded-md min-h-[6rem]">
+            {selected.length === 0 ? (
+              <div className="p-6 text-sm text-gray-400 text-center">Aucun sélectionné</div>
+            ) : selected.map((wid, idx) => {
+              const w = workers.find(x => x.id === wid);
+              if (!w) return null;
+              return (
+                <div key={wid} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 last:border-0">
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">{idx + 1}</span>
+                    <div className="text-sm">{w.first_name} {w.last_name}</div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={()=>move(idx,-1)} className="p-1 hover:bg-gray-100 rounded"><ArrowUp className="w-4 h-4"/></button>
+                    <button onClick={()=>move(idx,1)} className="p-1 hover:bg-gray-100 rounded"><ArrowDown className="w-4 h-4"/></button>
+                    <button onClick={()=>toggle(wid)} className="p-1 hover:bg-red-50 text-red-600 rounded"><XCircle className="w-4 h-4"/></button>
+                  </div>
                 </div>
-                {on && <span className="text-xs font-bold text-blue-700">✓</span>}
-              </button>
-            );
-          })}
+              );
+            })}
+          </div>
+          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+          <button onClick={submit} disabled={saving} data-testid={`submit-selection-${shift.id}`}
+            className="mt-3 w-full py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60 text-sm">
+            {saving ? "Envoi…" : `Lancer la cascade (${selected.length})`}
+          </button>
         </div>
       </div>
-      <div>
-        <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Ordre de priorité ({selected.length})</div>
-        <div className="border border-gray-200 rounded-md min-h-[6rem]">
-          {selected.length === 0 ? (
-            <div className="p-6 text-sm text-gray-400 text-center">Aucun sélectionné</div>
-          ) : selected.map((wid, idx) => {
-            const w = workers.find(x => x.id === wid);
-            if (!w) return null;
-            return (
-              <div key={wid} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 last:border-0">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">{idx + 1}</span>
-                  <div className="text-sm">{w.first_name} {w.last_name}</div>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={()=>move(idx,-1)} className="p-1 hover:bg-gray-100 rounded"><ArrowUp className="w-4 h-4"/></button>
-                  <button onClick={()=>move(idx,1)} className="p-1 hover:bg-gray-100 rounded"><ArrowDown className="w-4 h-4"/></button>
-                  <button onClick={()=>toggle(wid)} className="p-1 hover:bg-red-50 text-red-600 rounded"><XCircle className="w-4 h-4"/></button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-        <button onClick={submit} disabled={saving} data-testid={`submit-selection-${shift.id}`}
-          className="mt-3 w-full py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60 text-sm">
-          {saving ? "Envoi…" : `Lancer la cascade (${selected.length})`}
-        </button>
-      </div>
-    </div>
+      {connectOpen && <WhatsAppConnectModal onClose={() => { setConnectOpen(false); setWaitingForWhatsApp(false); }} onConnected={onWhatsAppConnected} />}
+    </>
   );
 }
 
