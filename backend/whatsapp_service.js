@@ -26,32 +26,92 @@ function hasAuthFiles(state) { try { return fs.existsSync(path.join(sessionPath(
 function normalizeNumber(value) { return String(value || "").replace(/@s\.whatsapp\.net/g, "").replace(/@c\.us/g, "").replace(/@lid/g, "").replace(/\D/g, ""); }
 function normalizeSendNumber(value) { let number = normalizeNumber(value); if (number.startsWith("00")) number = number.slice(2); if (number.startsWith("0") && number.length === 10) number = "33" + number.slice(1); if (number.startsWith("33") && number.length === 11) return number; if (number.length >= 10) return number; return ""; }
 
-// Only real phone JIDs can become ShiftFlow contacts. WhatsApp @lid values are not phone numbers.
+// A normal ShiftFlow contact must be backed by a real phone number. @lid is a
+// WhatsApp internal identifier, so it is only accepted when Baileys also gives
+// us the real phone number explicitly (phoneNumber/number).
 function isPersonJid(jid) { return String(jid || "").endsWith("@s.whatsapp.net"); }
-function looksLikePhoneName(value) { const name = String(value || "").trim(); if (!name) return true; const digits = (name.match(/\d/g) || []).length; const letters = (name.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g) || []).length; return digits >= 6 && digits >= letters; }
-function contactName(contact) {
-    // Important: name/shortName are the address-book eligibility signal. Do not
-    // use notify/pushName when both are missing, otherwise chat/history users
-    // that merely messaged the account can be imported as "contacts".
-    const addressBookName = String(contact?.name || contact?.shortName || "").trim();
-    if (!addressBookName) return "";
-    if (!looksLikePhoneName(addressBookName)) return addressBookName;
-
-    // Some saved contacts can arrive with a phone-like/masked name. In that
-    // case, use the WhatsApp profile name only as a naming fallback. The contact
-    // is still eligible because name/shortName existed in the original payload.
-    const fallbacks = [contact?.notify, contact?.pushName, contact?.verifiedName];
-    for (const candidate of fallbacks) {
-        const value = String(candidate || "").trim();
-        if (value && !looksLikePhoneName(value)) return value;
+function isLidJid(jid) { return String(jid || "").endsWith("@lid"); }
+function looksLikePhoneName(value) {
+    const name = String(value || "").trim();
+    if (!name) return true;
+    const digits = (name.match(/\d/g) || []).length;
+    const letters = (name.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g) || []).length;
+    if (!letters && digits >= 2) return true;
+    return digits >= 6 && digits >= letters;
+}
+function explicitPhoneNumber(contact) {
+    const candidates = [contact?.phoneNumber, contact?.number];
+    for (const candidate of candidates) {
+        const number = normalizeNumber(candidate);
+        if (/^\d{10,15}$/.test(number)) return number;
     }
     return "";
 }
-function normalizeContact(contact) { if (!contact) return null; const id = String(contact.id || contact.jid || ""); if (!id || !isPersonJid(id)) return null; const number = normalizeNumber(contact.number || contact.phoneNumber || id.split("@")[0]); const name = contactName(contact); if (!number || !name) return null; return { id, name, number }; }
-function upsertContacts(state, list) { if (!Array.isArray(list)) return 0; let changed = 0; for (const raw of list) { const contact = normalizeContact(raw); if (!contact) continue; const existing = state.contacts.get(contact.number); if (!existing || existing.id !== contact.id || existing.name !== contact.name) { state.contacts.set(contact.number, contact); changed++; } } return changed; }
+function contactNumber(contact, id) {
+    if (isLidJid(id)) return explicitPhoneNumber(contact);
+    if (isPersonJid(id)) {
+        const number = normalizeNumber(contact?.number || contact?.phoneNumber || id.split("@")[0]);
+        return /^\d{10,15}$/.test(number) ? number : "";
+    }
+    return "";
+}
+function contactName(contact, id) {
+    const addressBookName = String(contact?.name || contact?.shortName || "").trim();
+    if (addressBookName && !looksLikePhoneName(addressBookName)) return addressBookName;
+
+    // Some saved contacts can be represented by a WhatsApp LID. If Baileys
+    // gives us the corresponding real phone number, profile/name fields are
+    // safe to use for the display name.
+    if (isLidJid(id) && explicitPhoneNumber(contact)) {
+        const fallbacks = [contact?.notify, contact?.pushName, contact?.verifiedName];
+        for (const candidate of fallbacks) {
+            const value = String(candidate || "").trim();
+            if (value && !looksLikePhoneName(value)) return value;
+        }
+    }
+
+    // For ordinary phone JIDs, do not use notify/pushName when the address-book
+    // name is absent: that would re-import chat/history-only users.
+    return "";
+}
+function normalizeContact(contact) {
+    if (!contact) return null;
+    const id = String(contact.id || contact.jid || "");
+    if (!id || (!isPersonJid(id) && !isLidJid(id))) return null;
+    const number = contactNumber(contact, id);
+    const name = contactName(contact, id);
+    if (!number || !name) return null;
+    return { id, name, number };
+}
+function upsertContacts(state, list) {
+    if (!Array.isArray(list)) return 0;
+    let changed = 0;
+    for (const raw of list) {
+        const contact = normalizeContact(raw);
+        if (!contact) continue;
+        const existing = state.contacts.get(contact.number);
+        if (!existing || existing.id !== contact.id || existing.name !== contact.name) {
+            state.contacts.set(contact.number, contact);
+            changed++;
+        }
+    }
+    return changed;
+}
 function sortedContacts(state) { return Array.from(state.contacts.values()).sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" })); }
 function contactsFile(state) { return path.join(sessionPath(state.id), "contacts.json"); }
-async function loadContactsCache(state) { try { const file = contactsFile(state); if (!fs.existsSync(file)) return; const data = JSON.parse(await fs.promises.readFile(file, "utf8")); if (Array.isArray(data)) upsertContacts(state, data); console.log(`📂 ${state.contacts.size} contacts cache chargés [${state.id}]`); } catch (error) { console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message); } }
+async function loadContactsCache(state) {
+    try {
+        const file = contactsFile(state);
+        if (!fs.existsSync(file)) return;
+        const data = JSON.parse(await fs.promises.readFile(file, "utf8"));
+        if (!Array.isArray(data)) return;
+        const before = data.length;
+        state.contacts.clear();
+        upsertContacts(state, data);
+        console.log(`📂 ${state.contacts.size} contacts cache chargés [${state.id}]`);
+        if (state.contacts.size !== before) await saveContactsCache(state);
+    } catch (error) { console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message); }
+}
 async function saveContactsCache(state) { try { await fs.promises.mkdir(sessionPath(state.id), { recursive: true }); await fs.promises.writeFile(contactsFile(state), JSON.stringify(sortedContacts(state), null, 2), "utf8"); } catch (error) { console.error(`❌ Sauvegarde contacts impossible [${state.id}] :`, error.message); } }
 async function generateQR(state, qr) { state.qrText = qr; try { state.qr = await QRCode.toDataURL(qr); } catch (error) { console.error(`❌ Erreur génération QR [${state.id}] :`, error.message); state.qr = null; } console.log(`📱 NOUVEAU QR CODE [${state.id}]`); try { qrcode.generate(qr, { small: true }); } catch (_) {} }
 function statusCodeFrom(error) { try { return new Boom(error)?.output?.statusCode; } catch (_) { return undefined; } }
@@ -80,7 +140,6 @@ async function startSession(state) {
         sock.ev.on("contacts.set", async event => { const changed = upsertContacts(state, event?.contacts || []); if (changed > 0) await saveContactsCache(state); });
         sock.ev.on("contacts.upsert", async list => { const changed = upsertContacts(state, Array.isArray(list) ? list : []); if (changed > 0) await saveContactsCache(state); });
         sock.ev.on("contacts.update", async list => { const changed = upsertContacts(state, Array.isArray(list) ? list : []); if (changed > 0) await saveContactsCache(state); });
-        // Never import messaging-history contacts: that includes people who only sent a message.
         console.log(`✅ Socket Baileys créé [${state.id}].`);
     } catch (error) { state.connected = false; state.sock = null; console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error); if (!shuttingDown) setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000); }
     finally { state.starting = false; }
