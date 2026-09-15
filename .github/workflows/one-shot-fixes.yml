@@ -1,0 +1,168 @@
+name: One-shot fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: "!contains(github.event.head_commit.message, '[auto-fix]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch frontend and WhatsApp service
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          workers = Path('frontend/src/pages/Workers.js')
+          text = workers.read_text(encoding='utf-8')
+
+          # Make the lock synchronous at the DOM level. React state updates are async,
+          # so rapid double/triple clicks can otherwise fire several handlers before
+          # the disabled state is committed.
+          old = 'onClick={refreshContacts}'
+          new = 'onClick={(event) => { event.currentTarget.disabled = true; refreshContacts(); }}'
+          if old in text:
+              text = text.replace(old, new)
+          else:
+              print('Frontend click handler already patched or pattern not found')
+
+          # Add a ref-based synchronous lock as a second layer.
+          text = text.replace(
+              'import React, { useEffect, useState } from "react";',
+              'import React, { useEffect, useRef, useState } from "react";'
+          )
+          text = text.replace(
+              'const [refreshing, setRefreshing] = useState(false); const [refreshCooldown, setRefreshCooldown] = useState(0);',
+              'const [refreshing, setRefreshing] = useState(false); const [refreshCooldown, setRefreshCooldown] = useState(0); const refreshLockRef = useRef(false);'
+          )
+          text = text.replace(
+              'if (refreshing || refreshCooldown > 0) return;',
+              'if (refreshLockRef.current || refreshing || refreshCooldown > 0) return; refreshLockRef.current = true;'
+          )
+          text = text.replace(
+              'setRefreshing(false);\n    }\n  };',
+              'setRefreshing(false); refreshLockRef.current = false;\n    }\n  };'
+          )
+          workers.write_text(text, encoding='utf-8')
+
+          service = Path('backend/whatsapp_service.js')
+          text = service.read_text(encoding='utf-8')
+
+          start = text.find('async function applyMessageContact(state, msg) {')
+          end = text.find('async function startSession(state) {', start)
+          if start < 0 or end < 0:
+              raise SystemExit('Could not locate applyMessageContact block')
+
+          replacement = r'''function messagePhoneCandidates(msg) {
+              const key = msg?.key || {};
+              const values = [
+                  key.remoteJidAlt,
+                  key.senderPn,
+                  key.participantPn,
+                  key.participantAlt,
+                  msg?.remoteJidAlt,
+                  msg?.senderPn,
+                  msg?.participantPn,
+                  msg?.participantAlt
+              ];
+              return values
+                  .map(value => normalizeNumber(value))
+                  .filter(number => /^\\d{10,15}$/.test(number));
+          }
+
+          async function applyMessageContact(state, msg) {
+              const key = msg?.key || {};
+              const remoteJid = String(key.remoteJid || '');
+              const remoteJidAlt = String(key.remoteJidAlt || '');
+              const pushName = String(msg?.pushName || '').trim();
+              const lid = [remoteJid, String(key.participant || ''), String(key.senderLid || '')].find(isLidJid) || '';
+              let number = messagePhoneCandidates(msg)[0] || '';
+
+              // Some Baileys/WhatsApp payloads omit remoteJidAlt but expose the PN
+              // through another *_pn/participantAlt field. If none is present, use
+              // the existing local LID mapping as a last resort.
+              if (!number && lid) number = await resolveLidPhone(state, lid, { phoneNumber: remoteJidAlt });
+              if (!number && isPersonJid(remoteJid)) number = normalizeNumber(remoteJid);
+              if (!/^\\d{10,15}$/.test(number)) return 0;
+
+              if (lid) state.lidToPhone.set(lid, number);
+
+              // Incoming messages can give us a real display name. Do not use the
+              // logged-in user's own pushName on fromMe messages.
+              if (!key.fromMe && pushName && !looksLikePhoneName(pushName)) {
+                  const changed = await upsertContacts(state, [{ id: lid || `${number}@s.whatsapp.net`, name: pushName, phoneNumber: number }]);
+                  if (changed > 0) await saveContactsCache(state);
+                  if (lid) state.pendingLidContacts.delete(lid);
+                  return changed;
+              }
+
+              // Even on fromMe messages, keep the LID↔PN mapping so a later
+              // contacts/chats event can resolve the same person without a full sync.
+              if (lid) {
+                  const pending = state.pendingLidContacts.get(lid);
+                  if (pending) {
+                      const changed = await upsertContacts(state, [{ ...pending, phoneNumber: number }]);
+                      state.pendingLidContacts.delete(lid);
+                      if (changed > 0) await saveContactsCache(state);
+                      return changed;
+                  }
+              }
+              return 0;
+          }
+
+          async function applyChatContact(state, chat) {
+              if (!chat) return 0;
+              const id = String(chat.id || '');
+              if (!isPersonJid(id) && !isLidJid(id)) return 0;
+              const name = contactName(chat) || String(chat.name || chat.notify || chat.pushName || '').trim();
+              if (!name || looksLikePhoneName(name)) return 0;
+              let number = isPersonJid(id) ? normalizeNumber(id.split('@')[0]) : await resolveLidPhone(state, id, chat);
+              if (!/^\\d{10,15}$/.test(number)) {
+                  state.pendingLidContacts.set(id, { ...chat, id, name });
+                  return 0;
+              }
+              const changed = await upsertContacts(state, [{ id, name, phoneNumber: number }]);
+              if (changed > 0) await saveContactsCache(state);
+              return changed;
+          }
+
+          '''
+          # The raw string above uses escaped regexes; normalize them back to JS regex text.
+          replacement = replacement.replace(r'/^\\d{10,15}$/', r'/^\d{10,15}$/')
+          text = text[:start] + replacement + text[end:]
+
+          # Listen to chat metadata too. This is deliberately event-driven: it does
+          # not import WhatsApp history or enumerate the user's 1,400+ contacts.
+          marker = 'sock.ev.on("contacts.set", async event => {'
+          listeners = '''sock.ev.on("chats.upsert", async list => {
+              for (const chat of (Array.isArray(list) ? list : [])) {
+                  try { await applyChatContact(state, chat); } catch (_) {}
+              }
+          });
+          sock.ev.on("chats.update", async list => {
+              for (const chat of (Array.isArray(list) ? list : [])) {
+                  try { await applyChatContact(state, chat); } catch (_) {}
+              }
+          });
+          '''
+          if marker in text and 'sock.ev.on("chats.upsert"' not in text:
+              text = text.replace(marker, listeners + marker, 1)
+
+          service.write_text(text, encoding='utf-8')
+          print('Patched frontend and backend')
+
+      - name: Commit and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/Workers.js backend/whatsapp_service.js .github/workflows/one-shot-fixes.yml
+          git rm .github/workflows/one-shot-fixes.yml
+          git diff --cached --quiet || git commit -m "fix: lock refresh button and improve targeted contact resolution [auto-fix]"
+          git push
