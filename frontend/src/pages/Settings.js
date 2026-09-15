@@ -1,26 +1,23 @@
 import React, { useEffect, useState } from "react";
-import { useAuth } from "../context/AuthContext";
-import { Sparkles, Send, CheckCircle2, AlertCircle, Save, Zap, Crown, ExternalLink } from "lucide-react";
+import { Crown, ExternalLink, Save } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { api, formatApiError } from "../lib/api";
 import { toast, Toaster } from "sonner";
 
 export default function Settings() {
   const { user, refresh } = useAuth();
-  const [cfg, setCfg] = useState(null);
   const [notifs, setNotifs] = useState([]);
   const [quota, setQuota] = useState(null);
   const [form, setForm] = useState({ name: "", agency_name: "", phone: "" });
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
-  const [testTo, setTestTo] = useState("");
 
   useEffect(() => {
-    api.get("/config").then((r) => setCfg(r.data)).catch(() => {});
     api.get("/plan/quota").then((r) => setQuota(r.data)).catch(() => {});
     reloadNotifs();
   }, []);
+
   useEffect(() => {
     if (user) setForm({ name: user.name || "", agency_name: user.agency_name || "", phone: user.phone || "" });
   }, [user]);
@@ -37,18 +34,6 @@ export default function Settings() {
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || "Erreur");
     } finally { setSaving(false); }
-  };
-
-  const sendTest = async () => {
-    setTesting(true);
-    try {
-      const { data } = await api.post("/notifications/test-sms", testTo ? { to: testTo } : {});
-      if (data.success) toast.success(`SMS envoyé via ${data.channel} → ${data.to}`);
-      else toast.error(data.error || `Échec (status ${data.status})`, { duration: 8000 });
-      reloadNotifs();
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail) || "Erreur d'envoi");
-    } finally { setTesting(false); }
   };
 
   const openPortal = async () => {
@@ -72,7 +57,6 @@ export default function Settings() {
       <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Compte & Agence</h1>
 
       <div className="mt-8 grid gap-6 max-w-3xl">
-        {/* Subscription block */}
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
           <div className="flex items-center gap-2 font-semibold">
             <Crown className="w-5 h-5"/> Abonnement
@@ -104,10 +88,9 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Editable profile */}
         <form onSubmit={saveProfile} className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-profile-form">
           <h2 className="font-display font-bold text-lg">Profil</h2>
-          <p className="text-xs text-gray-500 mt-1">Le numéro de téléphone reçoit les alertes patron (annulation intervenant &lt;24h).</p>
+          <p className="text-xs text-gray-500 mt-1">Vos coordonnées servent à identifier l'agence et à gérer votre compte.</p>
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="text-sm font-medium">Agence</label>
               <input required data-testid="settings-input-agency" className={inputCls} value={form.agency_name} onChange={(e)=>set("agency_name", e.target.value)}/></div>
@@ -125,45 +108,27 @@ export default function Settings() {
           </div>
         </form>
 
-        {/* Twilio */}
-        <div className={`rounded-xl border p-6 ${cfg?.twilio_ready ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`} data-testid="settings-twilio-block">
-          <div className="flex items-center gap-2 font-semibold">
-            <Send className="w-5 h-5"/> Notifications SMS (Twilio)
-            {cfg?.twilio_ready ? (
-              <span className="ml-auto text-xs px-2 py-1 rounded-md bg-green-600 text-white inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Actif</span>
-            ) : (
-              <span className="ml-auto text-xs px-2 py-1 rounded-md bg-amber-600 text-white inline-flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Non configuré</span>
-            )}
-          </div>
-          <div className="mt-3 text-sm text-gray-700">
-            {cfg?.twilio_ready ? (<>Envois SMS depuis <strong>{cfg.twilio_from}</strong>.</>) : (<>Ajoutez <code className="text-xs bg-white px-1 rounded">TWILIO_PHONE_NUMBER</code> dans .env.</>)}
-          </div>
-          <div className="mt-4 flex flex-col sm:flex-row gap-2">
-            <input data-testid="settings-test-to" value={testTo} onChange={(e)=>setTestTo(e.target.value)} placeholder={`Vide = mon numéro (${form.phone || "aucun"})`}
-              className="flex-1 h-10 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"/>
-            <button onClick={sendTest} disabled={testing} data-testid="settings-test-sms-btn"
-              className="inline-flex items-center justify-center gap-2 px-4 h-10 rounded-md bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium disabled:opacity-60">
-              <Zap className="w-4 h-4"/>{testing ? "Envoi…" : "Envoyer un SMS test"}
-            </button>
-          </div>
-        </div>
-
         <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-notif-log">
-          <h2 className="font-display font-bold text-lg">Journal SMS (30 derniers)</h2>
-          {notifs.length === 0 ? (<div className="mt-4 text-sm text-gray-500">Aucun SMS envoyé.</div>) : (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display font-bold text-lg">Journal des envois WhatsApp</h2>
+              <p className="mt-1 text-xs text-gray-500">Invitations, relances et rappels automatiques.</p>
+            </div>
+          </div>
+          {notifs.length === 0 ? (<div className="mt-4 text-sm text-gray-500">Aucun envoi enregistré.</div>) : (
             <ul className="mt-4 divide-y divide-gray-100">
               {notifs.map((n) => (
                 <li key={n.id} className="py-3 text-sm flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-medium text-gray-900 flex items-center gap-2">
                       → {n.to || "n/a"}
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${n.channel === "sms" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>{n.channel}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${n.status === "sent" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-700"}`}>{n.channel || "whatsapp"}</span>
                       <span className="text-[10px] uppercase tracking-widest text-gray-400">{n.kind || "invite"}</span>
                     </div>
                     <div className="text-xs text-gray-500 truncate max-w-lg">{n.body}</div>
                     {n.error && <div className="text-xs text-red-600 mt-0.5">{n.error}</div>}
                   </div>
-                  <div className="text-xs text-gray-400 shrink-0">{new Date(n.sent_at).toLocaleString("fr-FR")} · {n.status}</div>
+                  <div className="text-xs text-gray-400 shrink-0">{n.sent_at ? new Date(n.sent_at).toLocaleString("fr-FR") : ""} · {n.status}</div>
                 </li>
               ))}
             </ul>
@@ -172,7 +137,7 @@ export default function Settings() {
 
         <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-reminder-block">
           <h2 className="font-display font-bold text-lg">Rappels automatiques 24h</h2>
-          <p className="mt-2 text-sm text-gray-600">Rappel SMS envoyé automatiquement à chaque intervenant confirmé ~24h avant son shift.</p>
+          <p className="mt-2 text-sm text-gray-600">Les rappels sont envoyés automatiquement par WhatsApp aux intervenants confirmés ~24h avant leur shift. Si WhatsApp est déconnecté au moment de l'envoi, l'échec est enregistré dans le journal.</p>
         </div>
       </div>
     </div>
