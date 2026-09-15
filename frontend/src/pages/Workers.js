@@ -10,6 +10,8 @@ import {
   Smartphone,
   Check,
   RefreshCw,
+  ArrowRight,
+  UserPlus,
 } from "lucide-react";
 
 import {
@@ -699,13 +701,6 @@ function WorkerForm({
 // ============================================================
 // IMPORTER LES CONTACTS DU TÉLÉPHONE
 // ============================================================
-// Utilise la Contact Picker API du navigateur (même mécanisme que les
-// "Importer depuis WhatsApp/Contacts" natifs) : le choix des contacts se
-// fait dans la fenêtre native du téléphone, puis on affiche une checklist
-// ici pour confirmer/désélectionner avant l'envoi à /workers/bulk.
-// Disponible uniquement sur navigateur mobile compatible (Chrome/Edge
-// Android). Sur PC ou navigateur non compatible (iOS Safari, Firefox...),
-// on affiche une popup explicative au lieu de planter silencieusement.
 
 function isContactPickerSupported() {
   return (
@@ -726,11 +721,7 @@ function splitFullName(fullName) {
 function PhoneContactsUnsupportedModal({ onClose }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl text-center"
-        data-testid="phone-contacts-unsupported-modal"
-      >
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl text-center" data-testid="phone-contacts-unsupported-modal">
         <div className="w-14 h-14 mx-auto rounded-full bg-blue-50 flex items-center justify-center">
           <Smartphone className="w-7 h-7 text-blue-600" />
         </div>
@@ -743,12 +734,7 @@ function PhoneContactsUnsupportedModal({ onClose }) {
           Ouvre ShiftFlow sur ton téléphone pour importer tes contacts en un tap, ou utilise
           « Importer depuis WhatsApp » / « Ajouter » en attendant.
         </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-5 w-full px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium"
-          data-testid="phone-contacts-unsupported-close"
-        >
+        <button type="button" onClick={onClose} className="mt-5 w-full px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium" data-testid="phone-contacts-unsupported-close">
           Compris
         </button>
       </div>
@@ -757,7 +743,7 @@ function PhoneContactsUnsupportedModal({ onClose }) {
 }
 
 function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
-  const [rows, setRows] = useState([]); // { key, first_name, last_name, phone, email, valid, reason }
+  const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [search, setSearch] = useState("");
   const [picking, setPicking] = useState(true);
@@ -786,7 +772,6 @@ function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
       setRows(built);
       setSelected(new Set(built.filter((r) => r.valid).map((r) => r.key)));
     } catch (err) {
-      // AbortError = l'utilisateur a fermé la fenêtre native sans choisir → pas d'erreur à afficher
       if (err && err.name !== "AbortError") {
         toast.error("Impossible d'accéder aux contacts du téléphone.");
       }
@@ -862,11 +847,7 @@ function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col"
-        data-testid="phone-contacts-import-modal"
-      >
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col" data-testid="phone-contacts-import-modal">
         <div className="flex items-center justify-between shrink-0">
           <div>
             <h3 className="font-display font-bold text-xl">Importer les contacts</h3>
@@ -885,13 +866,7 @@ function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
           <>
             <div className="relative mt-4 shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Rechercher…"
-                data-testid="phone-contacts-search"
-                className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" data-testid="phone-contacts-search" className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
 
             {invalidCount > 0 && (
@@ -904,20 +879,8 @@ function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
               {filteredRows.map((row) => {
                 const checked = row.valid && selected.has(row.key);
                 return (
-                  <label
-                    key={row.key}
-                    className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${
-                      row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50 cursor-not-allowed"
-                    } ${checked ? "bg-blue-50" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={!row.valid}
-                      onChange={() => toggle(row.key)}
-                      className="w-4 h-4 accent-blue-600"
-                      data-testid={`phone-contacts-checkbox-${row.key}`}
-                    />
+                  <label key={row.key} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 ${row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50 cursor-not-allowed"} ${checked ? "bg-blue-50" : ""}`}>
+                    <input type="checkbox" checked={checked} disabled={!row.valid} onChange={() => toggle(row.key)} className="w-4 h-4 accent-blue-600" data-testid={`phone-contacts-checkbox-${row.key}`} />
                     <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600 shrink-0">
                       {`${row.first_name}${row.last_name}`.slice(0, 2).toUpperCase() || "?"}
                     </div>
@@ -933,16 +896,8 @@ function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
             <div className="mt-5 flex items-center justify-between shrink-0">
               <div className="text-sm text-gray-500">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</div>
               <div className="flex gap-2">
-                <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={submit}
-                  disabled={importing || selected.size === 0}
-                  data-testid="phone-contacts-submit"
-                  className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-                >
+                <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button>
+                <button type="button" onClick={submit} disabled={importing || selected.size === 0} data-testid="phone-contacts-submit" className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
                   {importing ? "Import…" : `Importer ${selected.size} contact(s)`}
                 </button>
               </div>
@@ -955,8 +910,6 @@ function PhoneContactsImportModal({ onClose, onDone, onQuota }) {
 }
 
 
-
-
 // ============================================================
 // WHATSAPP IMPORT MODAL
 // ============================================================
@@ -967,886 +920,207 @@ function WhatsAppImportModal({
   onQuota,
 }) {
 
-  const [
-    status,
-    setStatus,
-  ] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [contactsReady, setContactsReady] = useState(false);
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
+  const [startingSession, setStartingSession] = useState(false);
 
+  const startWhatsAppSession = async () => {
+    if (startingSession) return;
+    setStartingSession(true);
+    try {
+      await api.post("/whatsapp/session/start");
+    } catch (err) {
+      console.error("Erreur démarrage WhatsApp :", err);
+    } finally {
+      setStartingSession(false);
+    }
+  };
 
-  const [
-    contacts,
-    setContacts,
-  ] = useState([]);
+  const loadStatus = async () => {
+    try {
+      const { data } = await api.get("/whatsapp/status");
+      setStatus(data);
 
-
-  const [
-    selected,
-    setSelected,
-  ] = useState(
-    new Set()
-  );
-
-
-  const [
-    search,
-    setSearch,
-  ] = useState("");
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-
-  const [
-    importing,
-    setImporting,
-  ] = useState(false);
-
-
-  const [
-    contactsReady,
-    setContactsReady,
-  ] = useState(false);
-
-
-  const [
-    loadingSeconds,
-    setLoadingSeconds,
-  ] = useState(0);
-
-
-  const [
-    startingSession,
-    setStartingSession,
-  ] = useState(false);
-
-
-  // ==========================================================
-  // DÉMARRER SESSION
-  // ==========================================================
-
-  const startWhatsAppSession =
-    async () => {
-
-      if (
-        startingSession
-      ) {
-
+      if (!data.connected) {
+        setContactsReady(false);
+        setLoading(false);
+        if (!data.hasQR && !data.starting) {
+          await startWhatsAppSession();
+        }
         return;
-
       }
 
-
-      setStartingSession(
-        true
-      );
-
+      setLoading(false);
 
       try {
-
-        await api.post(
-          "/whatsapp/session/start"
-        );
-
-
-      } catch (err) {
-
-        console.error(
-          "Erreur démarrage WhatsApp :",
-          err
-        );
-
-      } finally {
-
-        setStartingSession(
-          false
-        );
-
+        const { data: loadedContacts } = await api.get("/whatsapp/contacts");
+        const safeContacts = Array.isArray(loadedContacts) ? loadedContacts : [];
+        setContacts(safeContacts);
+        setContactsReady(true);
+      } catch (contactsError) {
+        console.error("Erreur récupération contacts :", contactsError);
+        setContactsReady(true);
       }
-
-    };
-
-
-  // ==========================================================
-  // STATUS + CONTACTS
-  // ==========================================================
-
-  const loadStatus =
-    async () => {
-
-      try {
-
-        const {
-          data,
-        } =
-          await api.get(
-            "/whatsapp/status"
-          );
-
-
-        setStatus(
-          data
-        );
-
-
-        // ------------------------------------------------------
-        // WHATSAPP NON CONNECTÉ
-        // ------------------------------------------------------
-
-        if (
-          !data.connected
-        ) {
-
-          setContactsReady(
-            false
-          );
-
-          setLoading(
-            false
-          );
-
-
-          // ----------------------------------------------------
-          // Si aucun QR n'est encore disponible, on laisse
-          // le backend démarrer/générer la session.
-          // ----------------------------------------------------
-
-          if (
-            !data.hasQR
-            &&
-            !data.starting
-          ) {
-
-            await startWhatsAppSession();
-
-          }
-
-
-          return;
-
-        }
-
-
-        // ------------------------------------------------------
-        // WHATSAPP CONNECTÉ
-        // ------------------------------------------------------
-
-        setLoading(
-          false
-        );
-
-
-        // ------------------------------------------------------
-        // RÉCUPÉRER CONTACTS
-        // ------------------------------------------------------
-
-        try {
-
-          const {
-            data:
-              loadedContacts,
-          } =
-            await api.get(
-              "/whatsapp/contacts"
-            );
-
-
-          const safeContacts =
-            Array.isArray(
-              loadedContacts
-            )
-              ? loadedContacts
-              : [];
-
-
-          setContacts(
-            safeContacts
-          );
-
-
-          // IMPORTANT :
-          // WhatsApp est connecté même si 0 contact.
-          // On ne bloque donc plus l'interface.
-          setContactsReady(
-            true
-          );
-
-
-        } catch (contactsError) {
-
-          console.error(
-            "Erreur récupération contacts :",
-            contactsError
-          );
-
-
-          // Si WhatsApp vient juste de passer
-          // connecté, on considère quand même
-          // la connexion comme prête.
-          setContactsReady(
-            true
-          );
-
-        }
-
-
-      } catch (err) {
-
-        console.error(
-          "Erreur statut WhatsApp :",
-          err
-        );
-
-
-        // Ne pas afficher une erreur toast
-        // toutes les 2 secondes si le service
-        // est simplement en train de démarrer.
-
-        const statusCode =
-          err.response?.status;
-
-
-        if (
-          statusCode !== 400 &&
-          statusCode !== 503
-        ) {
-
-          toast.error(
-            formatApiError(
-              err.response?.data?.detail
-            ) ||
-            "Impossible de contacter WhatsApp."
-          );
-
-        }
-
-
-        setLoading(
-          false
-        );
-
+    } catch (err) {
+      console.error("Erreur statut WhatsApp :", err);
+      const statusCode = err.response?.status;
+      if (statusCode !== 400 && statusCode !== 503) {
+        toast.error(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp.");
       }
+      setLoading(false);
+    }
+  };
 
-    };
+  useEffect(() => {
+    startWhatsAppSession();
+    loadStatus();
+    const interval = setInterval(loadStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
+  useEffect(() => {
+    if (!status?.connected || contactsReady) {
+      setLoadingSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setLoadingSeconds((previous) => previous + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [status?.connected, contactsReady]);
 
-  // ==========================================================
-  // INITIALISATION
-  // ==========================================================
+  const toggle = (id) => {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-  useEffect(
-    () => {
-
-      startWhatsAppSession();
-
-      loadStatus();
-
-
-      const interval =
-        setInterval(
-          loadStatus,
-          2000
-        );
-
-
-      return () =>
-        clearInterval(
-          interval
-        );
-
-    },
-    []
-  );
-
-
-  // ==========================================================
-  // TIMER SYNCHRONISATION
-  // ==========================================================
-
-  useEffect(
-    () => {
-
-      if (
-        !status?.connected ||
-        contactsReady
-      ) {
-
-        setLoadingSeconds(
-          0
-        );
-
-        return;
-
+  const importContacts = async () => {
+    if (selected.size === 0) {
+      toast.error("Sélectionnez au moins un contact.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const { data } = await api.post("/whatsapp/import", { contacts: Array.from(selected) });
+      if (data.quota_hit) {
+        onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`);
+      } else {
+        toast.success(`${data.created} intervenant(s) ajouté(s).`);
       }
-
-
-      const interval =
-        setInterval(
-          () => {
-
-            setLoadingSeconds(
-              (previous) =>
-                previous + 1
-            );
-
-          },
-          1000
-        );
-
-
-      return () =>
-        clearInterval(
-          interval
-        );
-
-    },
-    [
-      status?.connected,
-      contactsReady,
-    ]
-  );
-
-
-  // ==========================================================
-  // SÉLECTION
-  // ==========================================================
-
-  const toggle =
-    (id) => {
-
-      setSelected(
-        (previous) => {
-
-          const next =
-            new Set(
-              previous
-            );
-
-
-          if (
-            next.has(id)
-          ) {
-
-            next.delete(
-              id
-            );
-
-          } else {
-
-            next.add(
-              id
-            );
-
-          }
-
-
-          return next;
-
-        }
-      );
-
-    };
-
-
-  // ==========================================================
-  // IMPORT
-  // ==========================================================
-
-  const importContacts =
-    async () => {
-
-      if (
-        selected.size === 0
-      ) {
-
-        toast.error(
-          "Sélectionnez au moins un contact."
-        );
-
-        return;
-
-      }
-
-
-      setImporting(
-        true
-      );
-
-
-      try {
-
-        const {
-          data,
-        } =
-          await api.post(
-            "/whatsapp/import",
-            {
-              contacts:
-                Array.from(
-                  selected
-                ),
-            }
-          );
-
-
-        if (
-          data.quota_hit
-        ) {
-
-          onQuota(
-            `${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`
-          );
-
-        } else {
-
-          toast.success(
-            `${data.created} intervenant(s) ajouté(s).`
-          );
-
-        }
-
-
-        onDone();
-
+      onDone();
+      onClose();
+    } catch (err) {
+      const statusCode = err.response?.status;
+      const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import WhatsApp.";
+      if (statusCode === 402) {
+        onQuota(detail);
         onClose();
-
-
-      } catch (err) {
-
-        const statusCode =
-          err.response?.status;
-
-
-        const detail =
-          formatApiError(
-            err.response?.data?.detail
-          ) ||
-          "Erreur pendant l'import WhatsApp.";
-
-
-        if (
-          statusCode === 402
-        ) {
-
-          onQuota(
-            detail
-          );
-
-          onClose();
-
-        } else {
-
-          toast.error(
-            detail
-          );
-
-        }
-
-      } finally {
-
-        setImporting(
-          false
-        );
-
+      } else {
+        toast.error(detail);
       }
+    } finally {
+      setImporting(false);
+    }
+  };
 
-    };
-
-
-  // ==========================================================
-  // FILTRAGE
-  // ==========================================================
-
-  const filteredContacts =
-    contacts.filter(
-      (contact) => {
-
-        const value =
-          `${contact.name || ""} ${
-            contact.number || ""
-          }`.toLowerCase();
-
-
-        return value.includes(
-          search.toLowerCase()
-        );
-
-      }
-    );
-
-
-  // ==========================================================
-  // RENDER
-  // ==========================================================
+  const filteredContacts = contacts.filter((contact) => {
+    const value = `${contact.name || ""} ${contact.number || ""}`.toLowerCase();
+    return value.includes(search.toLowerCase());
+  });
 
   return (
-
-    <div
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-
-      <div
-        onClick={(event) =>
-          event.stopPropagation()
-        }
-        className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto"
-      >
-
-        {/* ================================================== */}
-        {/* HEADER */}
-        {/* ================================================== */}
-
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(event) => event.stopPropagation()} className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-
           <div>
-
-            <h3 className="font-display font-bold text-xl">
-              Importer depuis WhatsApp
-            </h3>
-
-
-            <p className="text-sm text-gray-500 mt-1">
-              Sélectionnez les contacts à ajouter à vos intervenants.
-            </p>
-
+            <h3 className="font-display font-bold text-xl">Importer depuis WhatsApp</h3>
+            <p className="text-sm text-gray-500 mt-1">Sélectionnez les contacts à ajouter à vos intervenants.</p>
           </div>
-
-
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
         </div>
 
-
-        {/* ================================================== */}
-        {/* ÉTAT : CONNEXION */}
-        {/* ================================================== */}
-
         {!status?.connected && (
-
           <div className="mt-6">
-
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
-
-              {/* -------------------------------------------- */}
-              {/* QR DISPONIBLE */}
-              {/* -------------------------------------------- */}
-
-              {status?.hasQR &&
-              status?.qr ? (
-
+              {status?.hasQR && status?.qr ? (
                 <>
-
                   <Smartphone className="w-8 h-8 mx-auto mb-3 text-gray-700" />
-
-
-                  <h4 className="font-semibold text-lg">
-                    Connectez votre WhatsApp
-                  </h4>
-
-
-                  <p className="text-sm text-gray-500 mt-2">
-                    WhatsApp → Paramètres → Appareils connectés → Connecter un appareil
-                  </p>
-
-
+                  <h4 className="font-semibold text-lg">Connectez votre WhatsApp</h4>
+                  <p className="text-sm text-gray-500 mt-2">WhatsApp → Paramètres → Appareils connectés → Connecter un appareil</p>
                   <div className="mt-5 flex justify-center">
-
-                    <img
-                      src={
-                        status.qr
-                      }
-                      alt="QR code WhatsApp"
-                      className="w-64 h-64 border rounded-lg"
-                    />
-
+                    <img src={status.qr} alt="QR code WhatsApp" className="w-64 h-64 border rounded-lg" />
                   </div>
-
-
-                  <p className="text-xs text-gray-400 mt-4">
-                    Le QR code se met automatiquement à jour.
-                  </p>
-
+                  <p className="text-xs text-gray-400 mt-4">Le QR code se met automatiquement à jour.</p>
                 </>
-
               ) : (
-
-                /* ------------------------------------------ */
-                /* EN ATTENTE DU QR */
-                /* ------------------------------------------ */
-
                 <>
-
                   <RefreshCw className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" />
-
-
-                  <h4 className="font-semibold">
-                    Préparation de WhatsApp...
-                  </h4>
-
-
-                  <p className="text-sm text-gray-500 mt-2">
-                    Nous préparons votre session WhatsApp.
-                  </p>
-
-
-                  {status?.starting && (
-
-                    <p className="text-xs text-gray-400 mt-3">
-                      Connexion au service en cours...
-                    </p>
-
-                  )}
-
+                  <h4 className="font-semibold">Préparation de WhatsApp...</h4>
+                  <p className="text-sm text-gray-500 mt-2">Nous préparons votre session WhatsApp.</p>
+                  {status?.starting && <p className="text-xs text-gray-400 mt-3">Connexion au service en cours...</p>}
                 </>
-
               )}
-
             </div>
-
           </div>
-
         )}
-
-
-        {/* ================================================== */}
-        {/* ÉTAT : CONNECTÉ */}
-        {/* ================================================== */}
 
         {status?.connected && (
-
           <div className="mt-6">
-
-            {/* ---------------------------------------------- */}
-            {/* HEADER CONTACTS */}
-            {/* ---------------------------------------------- */}
-
             <div className="flex items-center justify-between mb-4">
-
               <div>
-
-                <div className="flex items-center gap-2 text-green-700 font-medium">
-
-                  <Check className="w-4 h-4" />
-
-                  WhatsApp connecté
-
-                </div>
-
-
-                <p className="text-sm text-gray-500 mt-1">
-
-                  {contacts.length} contact{
-                    contacts.length > 1
-                      ? "s"
-                      : ""
-                  } disponibles
-
-                </p>
-
+                <div className="flex items-center gap-2 text-green-700 font-medium"><Check className="w-4 h-4" />WhatsApp connecté</div>
+                <p className="text-sm text-gray-500 mt-1">{contacts.length} contact{contacts.length > 1 ? "s" : ""} disponibles</p>
               </div>
-
-
-              <button
-                type="button"
-                onClick={
-                  loadStatus
-                }
-                className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm"
-              >
-
-                <RefreshCw className="w-4 h-4" />
-
-                Actualiser
-
+              <button type="button" onClick={loadStatus} className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm">
+                <RefreshCw className="w-4 h-4" />Actualiser
               </button>
-
             </div>
 
-
-            {/* ---------------------------------------------- */}
-            {/* RECHERCHE */}
-            {/* ---------------------------------------------- */}
-
-            <input
-              value={
-                search
-              }
-              onChange={(event) =>
-                setSearch(
-                  event.target.value
-                )
-              }
-              placeholder="Rechercher un contact..."
-              className="w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-
-            {/* ---------------------------------------------- */}
-            {/* LISTE CONTACTS */}
-            {/* ---------------------------------------------- */}
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un contact..." className="w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
 
             <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
-
               <div className="max-h-[400px] overflow-y-auto">
-
                 {filteredContacts.length === 0 && (
-
-                  <div className="p-8 text-center text-gray-500">
-
-                    {contacts.length === 0
-                      ? "Aucun contact disponible pour le moment."
-                      : "Aucun contact trouvé."
-                    }
-
-                  </div>
-
+                  <div className="p-8 text-center text-gray-500">{contacts.length === 0 ? "Aucun contact disponible pour le moment." : "Aucun contact trouvé."}</div>
                 )}
-
-
-                {filteredContacts.map(
-                  (contact) => {
-
-                    const checked =
-                      selected.has(
-                        contact.id
-                      );
-
-
-                    return (
-
-                      <label
-                        key={
-                          contact.id
-                        }
-                        className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
-                          checked
-                            ? "bg-blue-50"
-                            : ""
-                        }`}
-                      >
-
-                        <input
-                          type="checkbox"
-                          checked={
-                            checked
-                          }
-                          onChange={() =>
-                            toggle(
-                              contact.id
-                            )
-                          }
-                          className="w-4 h-4 accent-blue-600"
-                        />
-
-
-                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">
-
-                          {(
-                            contact.name ||
-                            "?"
-                          )
-                            .slice(
-                              0,
-                              2
-                            )
-                            .toUpperCase()}
-
-                        </div>
-
-
-                        <div className="flex-1 min-w-0">
-
-                          <div className="font-medium truncate">
-                            {contact.name}
-                          </div>
-
-
-                          <div className="text-sm text-gray-500">
-                            +{contact.number}
-                          </div>
-
-                        </div>
-
-                      </label>
-
-                    );
-
-                  }
-                )}
-
+                {filteredContacts.map((contact) => {
+                  const checked = selected.has(contact.id);
+                  return (
+                    <label key={contact.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggle(contact.id)} className="w-4 h-4 accent-blue-600" />
+                      <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{(contact.name || "?").slice(0, 2).toUpperCase()}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{contact.name}</div>
+                        <div className="text-sm text-gray-500">+{contact.number}</div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
-
             </div>
-
-
-            {/* ---------------------------------------------- */}
-            {/* FOOTER */}
-            {/* ---------------------------------------------- */}
 
             <div className="mt-5 flex items-center justify-between">
-
-              <div className="text-sm text-gray-500">
-                {selected.size} sélectionné{
-                  selected.size > 1
-                    ? "s"
-                    : ""
-                }
-              </div>
-
-
+              <div className="text-sm text-gray-500">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</div>
               <div className="flex gap-2">
-
-                <button
-                  type="button"
-                  onClick={
-                    onClose
-                  }
-                  className="px-4 py-2 rounded-md border border-gray-300"
-                >
-                  Annuler
-                </button>
-
-
-                <button
-                  type="button"
-                  onClick={
-                    importContacts
-                  }
-                  disabled={
-                    importing ||
-                    selected.size === 0
-                  }
-                  className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-                >
-
-                  {importing
-                    ? "Import..."
-                    : `Importer ${selected.size} contact(s)`}
-
-                </button>
-
+                <button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button>
+                <button type="button" onClick={importContacts} disabled={importing || selected.size === 0} className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">{importing ? "Import..." : `Importer ${selected.size} contact(s)`}</button>
               </div>
-
             </div>
-
           </div>
-
         )}
-
       </div>
-
     </div>
-
   );
-
 }
 
 
@@ -1854,47 +1128,79 @@ function WhatsAppImportModal({
 // PAGE WORKERS
 // ============================================================
 
+function AddWorkersChoiceModal({ onClose, onPickWhatsapp, onPickPhone, onPickManual }) {
+  const options = [
+    {
+      key: "whatsapp",
+      icon: MessageCircle,
+      iconClass: "bg-green-50 text-green-600",
+      title: "Depuis WhatsApp",
+      desc: "Connectez votre WhatsApp une fois et importez vos contacts existants en quelques clics.",
+      onClick: onPickWhatsapp,
+      testId: "add-choice-whatsapp",
+    },
+    {
+      key: "phone",
+      icon: Smartphone,
+      iconClass: "bg-blue-50 text-blue-600",
+      title: "Depuis le répertoire du téléphone",
+      badge: "Mobile uniquement",
+      desc: "Ouvrez le carnet de contacts natif de votre téléphone et cochez qui ajouter.",
+      onClick: onPickPhone,
+      testId: "add-choice-phone",
+    },
+    {
+      key: "manual",
+      icon: UserPlus,
+      iconClass: "bg-gray-100 text-gray-700",
+      title: "Manuellement",
+      desc: "Renseignez vous-même le nom, le téléphone et les compétences d'un intervenant.",
+      onClick: onPickManual,
+      testId: "add-choice-manual",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl" data-testid="add-workers-choice-modal">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-display font-bold text-xl text-gray-900">Ajouter des intervenants</h3>
+            <p className="text-sm text-gray-500 mt-1">Choisissez comment vous voulez procéder.</p>
+          </div>
+          <button onClick={onClose} aria-label="Fermer" data-testid="add-choice-close"><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {options.map((opt) => (
+            <button key={opt.key} type="button" onClick={opt.onClick} data-testid={opt.testId} className="w-full flex items-start gap-4 p-4 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50/40 transition-colors text-left group">
+              <div className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${opt.iconClass}`}><opt.icon className="w-5 h-5" /></div>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-gray-900 flex items-center gap-2 flex-wrap">{opt.title}{opt.badge && <span className="text-[10px] uppercase tracking-wide font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">{opt.badge}</span>}</div>
+                <div className="text-sm text-gray-500 mt-0.5 leading-snug">{opt.desc}</div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-500 shrink-0 mt-1" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function Workers() {
 
-  const [
-    workers,
-    setWorkers,
-  ] = useState([]);
-
-
-  const [
-    q,
-    setQ,
-  ] = useState("");
-
-
-  const [
-    skillFilter,
-    setSkillFilter,
-  ] = useState("");
-
-
-  const [
-    editing,
-    setEditing,
-  ] = useState(null);
-
-
-  const [
-    creating,
-    setCreating,
-  ] = useState(false);
-
-
-  const [
-    phoneContactsOpen,
-    setPhoneContactsOpen,
-  ] = useState(false);
-
-  const [
-    phoneContactsUnsupported,
-    setPhoneContactsUnsupported,
-  ] = useState(false);
+  const [workers, setWorkers] = useState([]);
+  const [q, setQ] = useState("");
+  const [skillFilter, setSkillFilter] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [phoneContactsOpen, setPhoneContactsOpen] = useState(false);
+  const [addChoiceOpen, setAddChoiceOpen] = useState(false);
+  const [phoneContactsUnsupported, setPhoneContactsUnsupported] = useState(false);
+  const [upgrade, setUpgrade] = useState(null);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
 
   const openPhoneContacts = () => {
     if (isContactPickerSupported()) {
@@ -1904,538 +1210,101 @@ export default function Workers() {
     }
   };
 
+  const load = async () => {
+    const params = {};
+    if (q) params.q = q;
+    if (skillFilter) params.skill = skillFilter;
+    const { data } = await api.get("/workers", { params });
+    setWorkers(data);
+  };
 
-  const [
-    upgrade,
-    setUpgrade,
-  ] = useState(null);
+  useEffect(() => {
+    load();
+  }, [q, skillFilter]);
 
-
-  const [
-    whatsappOpen,
-    setWhatsappOpen,
-  ] = useState(false);
-
-
-  // ==========================================================
-  // LOAD WORKERS
-  // ==========================================================
-
-  const load =
-    async () => {
-
-      const params = {};
-
-
-      if (
-        q
-      ) {
-
-        params.q =
-          q;
-
-      }
-
-
-      if (
-        skillFilter
-      ) {
-
-        params.skill =
-          skillFilter;
-
-      }
-
-
-      const {
-        data,
-      } =
-        await api.get(
-          "/workers",
-          {
-            params,
-          }
-        );
-
-
-      setWorkers(
-        data
-      );
-
-    };
-
-
-  useEffect(
-    () => {
-
-      load();
-
-    },
-    [
-      q,
-      skillFilter,
-    ]
-  );
-
-
-  // ==========================================================
-  // DELETE
-  // ==========================================================
-
-  const remove =
-    async (
-      id
-    ) => {
-
-      if (
-        !window.confirm(
-          "Supprimer cet intervenant ?"
-        )
-      ) {
-
-        return;
-
-      }
-
-
-      await api.delete(
-        `/workers/${id}`
-      );
-
-
-      toast.success(
-        "Supprimé"
-      );
-
-
-      load();
-
-    };
-
-
-  // ==========================================================
-  // RENDER
-  // ==========================================================
+  const remove = async (id) => {
+    if (!window.confirm("Supprimer cet intervenant ?")) return;
+    await api.delete(`/workers/${id}`);
+    toast.success("Supprimé");
+    load();
+  };
 
   return (
+    <div data-testid="workers-page">
+      <Toaster position="top-right" richColors />
 
-    <div
-      data-testid="workers-page"
-    >
-
-      <Toaster
-        position="top-right"
-        richColors
-      />
-
-
-      <UpgradeModal
-        open={
-          !!upgrade
-        }
-        onClose={() =>
-          setUpgrade(
-            null
-          )
-        }
-        message={
-          upgrade
-        }
-      />
-
+      <UpgradeModal open={!!upgrade} onClose={() => setUpgrade(null)} message={upgrade} />
 
       <div className="flex items-end justify-between gap-2">
-
         <div>
-
-          <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">
-            Intervenants
-          </div>
-
-
-          <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">
-            Votre équipe
-          </h1>
-
+          <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Intervenants</div>
+          <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Votre équipe</h1>
         </div>
-
 
         <div className="flex gap-2">
-
-          <button
-            onClick={openPhoneContacts}
-            data-testid="phone-contacts-import-btn"
-            className="hidden sm:inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 px-4 py-2.5 rounded-md font-medium"
-          >
-
-            <Smartphone className="w-4 h-4" />
-
-            Importer les contacts
-
-          </button>
-
-
-          <button
-            type="button"
-            onClick={() =>
-              setWhatsappOpen(
-                true
-              )
-            }
-            className="px-4 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2"
-            data-testid="whatsapp-import-button"
-          >
-
-            <MessageCircle className="w-4 h-4" />
-
-            Importer depuis WhatsApp
-
-          </button>
-
-
-          <button
-            onClick={() =>
-              setCreating(
-                true
-              )
-            }
-            data-testid="add-worker-btn"
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-md font-medium"
-          >
-
+          <button onClick={() => setAddChoiceOpen(true)} data-testid="add-worker-btn" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-md font-medium">
             <Plus className="w-4 h-4" />
-
-            Ajouter
-
+            Ajouter des intervenants
           </button>
-
         </div>
-
       </div>
 
-
-      <div className="mt-4 sm:hidden">
-
-        <button
-          onClick={openPhoneContacts}
-          data-testid="phone-contacts-import-btn-mobile"
-          className="w-full inline-flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-800 px-4 py-2.5 rounded-md font-medium"
-        >
-
-          <Smartphone className="w-4 h-4" />
-
-          Importer les contacts
-
-        </button>
-
-      </div>
-
-
-      <div
-        className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2"
-        data-testid="workers-hint"
-      >
-
+      <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2" data-testid="workers-hint">
         <Info className="w-4 h-4 mt-0.5 shrink-0" />
-
-        <div>
-
-          <strong>
-            Astuce :
-          </strong>{" "}
-
-          pour ajouter plusieurs intervenants
-          d'un coup depuis ton téléphone, utilisez{" "}
-
-          <strong>
-            Importer les contacts
-          </strong>{" "}
-
-          (répertoire natif, disponible uniquement sur mobile).
-
-        </div>
-
+        <div><strong>Astuce :</strong>{" "}pour ajouter plusieurs intervenants d'un coup, préférez WhatsApp ou le répertoire de votre téléphone à la saisie manuelle.</div>
       </div>
-
 
       <div className="mt-6 flex flex-col sm:flex-row gap-3">
-
         <div className="flex-1 relative">
-
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-
-          <input
-            data-testid="workers-search"
-            value={
-              q
-            }
-            onChange={(event) =>
-              setQ(
-                event.target.value
-              )
-            }
-            placeholder="Rechercher un intervenant…"
-            className="w-full h-11 pl-10 pr-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          />
-
+          <input data-testid="workers-search" value={q} onChange={(event) => setQ(event.target.value)} placeholder="Rechercher un intervenant…" className="w-full h-11 pl-10 pr-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
         </div>
-
-
-        <select
-          data-testid="workers-skill-filter"
-          value={
-            skillFilter
-          }
-          onChange={(event) =>
-            setSkillFilter(
-              event.target.value
-            )
-          }
-          className="h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-
-          <option value="">
-            Toutes compétences
-          </option>
-
-
-          {SKILLS.map(
-            (skill) => (
-
-              <option
-                key={skill}
-                value={skill}
-              >
-                {skill}
-              </option>
-
-            )
-          )}
-
+        <select data-testid="workers-skill-filter" value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)} className="h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="">Toutes compétences</option>
+          {SKILLS.map((skill) => <option key={skill} value={skill}>{skill}</option>)}
         </select>
-
       </div>
-
 
       <div className="mt-6 bg-white border border-gray-200 rounded-xl overflow-hidden">
-
         {workers.length === 0 ? (
-
-          <div className="p-10 text-center text-gray-500">
-            Aucun intervenant.
-          </div>
-
+          <div className="p-10 text-center text-gray-500">Aucun intervenant.</div>
         ) : (
-
           <ul className="divide-y divide-gray-100">
-
-            {workers.map(
-              (worker) => (
-
-                <li
-                  key={
-                    worker.id
-                  }
-                  data-testid={`worker-row-${worker.id}`}
-                  className="px-6 py-4 flex items-center justify-between gap-3"
-                >
-
-                  <div>
-
-                    <div className="font-medium text-gray-900">
-
-                      {worker.first_name}{" "}
-                      {worker.last_name}
-
-                    </div>
-
-
-                    <div className="text-xs text-gray-500">
-
-                      {worker.phone}
-
-                      {worker.email
-                        ? ` · ${worker.email}`
-                        : ""}
-
-                    </div>
-
-
-                    <div className="mt-1 flex gap-1 flex-wrap">
-
-                      {worker.skills.map(
-                        (skill) => (
-
-                          <span
-                            key={
-                              skill
-                            }
-                            className="text-[10px] uppercase tracking-widest bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded"
-                          >
-                            {skill}
-                          </span>
-
-                        )
-                      )}
-
-
-                      {!worker.active && (
-
-                        <span className="text-[10px] uppercase tracking-widest bg-red-50 text-red-700 px-1.5 py-0.5 rounded">
-                          Inactif
-                        </span>
-
-                      )}
-
-                    </div>
-
+            {workers.map((worker) => (
+              <li key={worker.id} data-testid={`worker-row-${worker.id}`} className="px-6 py-4 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium text-gray-900">{worker.first_name} {worker.last_name}</div>
+                  <div className="text-xs text-gray-500">{worker.phone}{worker.email ? ` · ${worker.email}` : ""}</div>
+                  <div className="mt-1 flex gap-1 flex-wrap">
+                    {worker.skills.map((skill) => <span key={skill} className="text-[10px] uppercase tracking-widest bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{skill}</span>)}
+                    {!worker.active && <span className="text-[10px] uppercase tracking-widest bg-red-50 text-red-700 px-1.5 py-0.5 rounded">Inactif</span>}
                   </div>
-
-
-                  <div className="flex gap-1">
-
-                    <button
-                      onClick={() =>
-                        setEditing(
-                          worker
-                        )
-                      }
-                      data-testid={`edit-worker-${worker.id}`}
-                      className="p-2 rounded hover:bg-gray-100 text-gray-600"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-
-
-                    <button
-                      onClick={() =>
-                        remove(
-                          worker.id
-                        )
-                      }
-                      data-testid={`delete-worker-${worker.id}`}
-                      className="p-2 rounded hover:bg-red-50 text-red-600"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-
-                  </div>
-
-                </li>
-
-              )
-            )}
-
+                </div>
+                <div className="flex gap-1">
+                  <button onClick={() => setEditing(worker)} data-testid={`edit-worker-${worker.id}`} className="p-2 rounded hover:bg-gray-100 text-gray-600"><Edit2 className="w-4 h-4" /></button>
+                  <button onClick={() => remove(worker.id)} data-testid={`delete-worker-${worker.id}`} className="p-2 rounded hover:bg-red-50 text-red-600"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              </li>
+            ))}
           </ul>
-
         )}
-
       </div>
 
+      {creating && <WorkerForm onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} onQuota={(message) => setUpgrade(message)} />}
+      {editing && <WorkerForm initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} onQuota={(message) => setUpgrade(message)} />}
 
-      {/* ================================================== */}
-      {/* MODALS */}
-      {/* ================================================== */}
-
-      {creating && (
-
-        <WorkerForm
-          onClose={() =>
-            setCreating(
-              false
-            )
-          }
-          onSaved={() => {
-
-            setCreating(
-              false
-            );
-
-            load();
-
-          }}
-          onQuota={(message) =>
-            setUpgrade(
-              message
-            )
-          }
+      {addChoiceOpen && (
+        <AddWorkersChoiceModal
+          onClose={() => setAddChoiceOpen(false)}
+          onPickWhatsapp={() => { setAddChoiceOpen(false); setWhatsappOpen(true); }}
+          onPickPhone={() => { setAddChoiceOpen(false); openPhoneContacts(); }}
+          onPickManual={() => { setAddChoiceOpen(false); setCreating(true); }}
         />
-
       )}
 
-
-      {editing && (
-
-        <WorkerForm
-          initial={
-            editing
-          }
-          onClose={() =>
-            setEditing(
-              null
-            )
-          }
-          onSaved={() => {
-
-            setEditing(
-              null
-            );
-
-            load();
-
-          }}
-          onQuota={(message) =>
-            setUpgrade(
-              message
-            )
-          }
-        />
-
-      )}
-
-
-      {phoneContactsOpen && (
-
-        <PhoneContactsImportModal
-          onClose={() => setPhoneContactsOpen(false)}
-          onDone={load}
-          onQuota={(message) => setUpgrade(message)}
-        />
-
-      )}
-
-
-      {phoneContactsUnsupported && (
-
-        <PhoneContactsUnsupportedModal
-          onClose={() => setPhoneContactsUnsupported(false)}
-        />
-
-      )}
-
-
-      {whatsappOpen && (
-
-        <WhatsAppImportModal
-          onClose={() =>
-            setWhatsappOpen(
-              false
-            )
-          }
-          onDone={
-            load
-          }
-          onQuota={(message) =>
-            setUpgrade(
-              message
-            )
-          }
-        />
-
-      )}
-
+      {phoneContactsOpen && <PhoneContactsImportModal onClose={() => setPhoneContactsOpen(false)} onDone={load} onQuota={(message) => setUpgrade(message)} />}
+      {phoneContactsUnsupported && <PhoneContactsUnsupportedModal onClose={() => setPhoneContactsUnsupported(false)} />}
+      {whatsappOpen && <WhatsAppImportModal onClose={() => setWhatsappOpen(false)} onDone={load} onQuota={(message) => setUpgrade(message)} />}
     </div>
-
   );
-
 }
