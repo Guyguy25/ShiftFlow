@@ -47,13 +47,16 @@ function getSession(sessionId) {
 
 function hasAuthFiles(state) {
     const dir = sessionPath(state.id);
-    try {
-        return fs.existsSync(path.join(dir, "creds.json"));
-    } catch (_) { return false; }
+    try { return fs.existsSync(path.join(dir, "creds.json")); }
+    catch (_) { return false; }
 }
 
 function normalizeNumber(value) {
-    return String(value || "").replace(/@s\.whatsapp\.net/g, "").replace(/@c\.us/g, "").replace(/@lid/g, "").replace(/\D/g, "");
+    return String(value || "")
+        .replace(/@s\.whatsapp\.net/g, "")
+        .replace(/@c\.us/g, "")
+        .replace(/@lid/g, "")
+        .replace(/\D/g, "");
 }
 
 function normalizeSendNumber(value) {
@@ -65,12 +68,37 @@ function normalizeSendNumber(value) {
     return "";
 }
 
+// Contact import must only use real phone-number JIDs.
+// @lid values are WhatsApp Linked IDs, not phone numbers, and must never be exposed as contacts.
 function isPersonJid(jid) {
-    const value = String(jid || "");
-    return value.endsWith("@s.whatsapp.net") || value.endsWith("@lid");
+    return String(jid || "").endsWith("@s.whatsapp.net");
 }
 
-function contactName(contact) { return String(contact?.name || contact?.shortName || "").trim(); }
+function looksLikePhoneName(value) {
+    const name = String(value || "").trim();
+    if (!name) return true;
+    const digits = (name.match(/\d/g) || []).length;
+    const letters = (name.match(/[A-Za-zÀ-ÖØ-öø-ÿ]/g) || []).length;
+    const compact = name.replace(/[\s+()._-]/g, "");
+    return digits >= 6 && digits >= letters;
+}
+
+function contactName(contact) {
+    // `name` is the address-book name. The other fields are only fallbacks when
+    // WhatsApp/Baileys failed to populate that name correctly.
+    const candidates = [
+        contact?.name,
+        contact?.shortName,
+        contact?.notify,
+        contact?.pushName,
+        contact?.verifiedName,
+    ];
+    for (const candidate of candidates) {
+        const value = String(candidate || "").trim();
+        if (value && !looksLikePhoneName(value)) return value;
+    }
+    return "";
+}
 
 function normalizeContact(contact) {
     if (!contact) return null;
@@ -90,7 +118,8 @@ function upsertContacts(state, list) {
         if (!contact) continue;
         const existing = state.contacts.get(contact.number);
         if (!existing || existing.id !== contact.id || existing.name !== contact.name) {
-            state.contacts.set(contact.number, contact); changed++;
+            state.contacts.set(contact.number, contact);
+            changed++;
         }
     }
     return changed;
@@ -266,12 +295,8 @@ async function startSession(state) {
             const changed = upsertContacts(state, Array.isArray(list) ? list : []);
             if (changed > 0) await saveContactsCache(state);
         });
-        sock.ev.on("messaging-history.set", async event => {
-            const list = event?.contacts || [];
-            if (!Array.isArray(list)) return;
-            const changed = upsertContacts(state, list);
-            if (changed > 0) await saveContactsCache(state);
-        });
+        // Do NOT import contacts from messaging-history.set. History can contain
+        // people who merely sent a message and are not in the phone address book.
         console.log(`✅ Socket Baileys créé [${state.id}].`);
     } catch (error) {
         state.connected = false;
@@ -435,6 +460,6 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 bootstrap().catch(error => {
-    console.error("❌ Erreur fatale :", error);
+    console.error("❌ Échec du démarrage du service WhatsApp :", error);
     process.exit(1);
 });
