@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const nav = [
@@ -9,6 +9,7 @@ const nav = [
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
+  { to: "/app/tutorial", label: "Tutoriel", icon: PlayCircle, id: "nav-tutorial", highlight: true },
   { to: "/app/settings", label: "Paramètres", icon: Settings, id: "nav-settings" },
 ];
 
@@ -38,16 +39,24 @@ export default function Layout({ children }) {
               key={n.to}
               to={n.to}
               data-testid={n.id}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
+              className={({ isActive }) => {
+                if (n.highlight) {
+                  return `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition-colors border ${
+                    isActive
+                      ? "bg-amber-100 text-amber-900 border-amber-300"
+                      : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                  }`;
+                }
+                return `flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-blue-50 text-blue-700"
                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`
-              }
+                }`;
+              }}
             >
               <n.icon className="w-4 h-4" aria-hidden="true" />
               {n.label}
+              {n.highlight && <span className="ml-auto text-[10px] uppercase tracking-wider font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded">Guide</span>}
             </NavLink>
           ))}
         </nav>
@@ -94,14 +103,20 @@ export default function Layout({ children }) {
                 to={n.to}
                 onClick={() => setOpen(false)}
                 data-testid={`mobile-${n.id}`}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-3 rounded-md text-base font-medium ${
+                className={({ isActive }) => {
+                  if (n.highlight) {
+                    return `flex items-center gap-3 px-3 py-3 rounded-md text-base font-semibold border ${
+                      isActive ? "bg-amber-100 text-amber-900 border-amber-300" : "bg-amber-50 text-amber-800 border-amber-200"
+                    }`;
+                  }
+                  return `flex items-center gap-3 px-3 py-3 rounded-md text-base font-medium ${
                     isActive ? "bg-blue-50 text-blue-700" : "text-gray-700"
-                  }`
-                }
+                  }`;
+                }}
               >
                 <n.icon className="w-5 h-5" />
                 {n.label}
+                {n.highlight && <span className="ml-auto text-[10px] uppercase tracking-wider font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded">Guide</span>}
               </NavLink>
             ))}
             <button
