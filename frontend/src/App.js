@@ -17,6 +17,7 @@ import Workers from "@/pages/Workers";
 import History from "@/pages/History";
 import Settings from "@/pages/Settings";
 import Calendar from "@/pages/Calendar";
+import Tutorial from "@/pages/Tutorial";
 import PublicConfirm from "@/pages/PublicConfirm";
 import Onboarding from "@/pages/Onboarding";
 import PaymentSuccess from "@/pages/PaymentSuccess";
@@ -44,6 +45,7 @@ function AppRoutes() {
         <Route path="workers" element={<Workers />} />
         <Route path="calendar" element={<Calendar />} />
         <Route path="history" element={<History />} />
+        <Route path="tutorial" element={<Tutorial />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
