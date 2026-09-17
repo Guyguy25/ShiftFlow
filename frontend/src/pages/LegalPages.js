@@ -25,7 +25,7 @@ function LegalShell({ title, subtitle, children }) {
           <p className="mt-3 text-xs text-slate-400">Version du {LEGAL_VERSION}</p>
         </div>
 
-        <div className="mt-10 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm prose prose-slate max-w-none prose-headings:font-display prose-a:text-blue-600">
+        <div className="legal-copy mt-10 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm">
           {children}
         </div>
       </main>
@@ -40,8 +40,8 @@ function LegalShell({ title, subtitle, children }) {
 
 function MissingBusinessInfoNotice() {
   return (
-    <div className="not-prose mb-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-      <strong>Informations administratives à compléter avant publication définitive :</strong> l'adresse de domiciliation de l'entreprise ainsi que le numéro SIREN/SIRET n'ont pas été trouvés dans le projet et ne sont donc pas inventés.
+    <div className="mb-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+      <strong>Informations administratives à compléter avant publication définitive :</strong> l'adresse officielle de domiciliation de l'entreprise et le numéro d'immatriculation applicable ne sont pas encore renseignés. Aucune adresse personnelle n'est publiée tant qu'une adresse professionnelle de domiciliation n'a pas été confirmée.
     </div>
   );
 }
@@ -52,14 +52,14 @@ export function LegalNotice() {
       <MissingBusinessInfoNotice />
       <h2>1. Éditeur du site</h2>
       <p>
-        Le site <strong>{LEGAL.website}</strong> et le service ShiftFlow sont édités par <strong>{LEGAL.editorName}</strong>,
+        Le site <strong>{LEGAL.website}</strong> et le service ShiftFlow sont édités par <strong>{LEGAL.legalIdentity}</strong>,
         exerçant sous le nom commercial <strong>{LEGAL.tradingName}</strong>, sous le statut <strong>{LEGAL.legalForm}</strong>.
       </p>
       <ul>
-        <li>Adresse de l'entreprise : <strong>{LEGAL.businessAddress}</strong></li>
-        <li>SIREN / SIRET : <strong>{LEGAL.registrationNumber}</strong></li>
-        <li>Email : <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a></li>
-        <li>Téléphone : <a href="tel:+33661139861">{LEGAL.phone}</a></li>
+        <li>Adresse officielle de domiciliation : <strong>{LEGAL.businessAddress}</strong></li>
+        <li>Immatriculation : <strong>{LEGAL.registrationNumber}</strong></li>
+        <li>Email professionnel : <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a></li>
+        <li>Téléphone de contact : <a href="tel:+33661139861">{LEGAL.phone}</a></li>
         <li>Directeur de la publication : {LEGAL.editorName}</li>
       </ul>
 
@@ -76,7 +76,7 @@ export function LegalNotice() {
       </p>
 
       <h2>4. Contact</h2>
-      <p>Pour toute demande relative au service : <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a> ou {LEGAL.phone}.</p>
+      <p>Pour toute demande générale relative au service, privilégiez l'adresse professionnelle <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>.</p>
     </LegalShell>
   );
 }
@@ -84,7 +84,6 @@ export function LegalNotice() {
 export function Terms() {
   return (
     <LegalShell title="Conditions générales d'utilisation et de vente" subtitle="Conditions applicables à l'accès et à l'utilisation de ShiftFlow par des clients professionnels.">
-      <MissingBusinessInfoNotice />
       <h2>1. Objet</h2>
       <p>
         Les présentes conditions générales d'utilisation et de vente (« CGUV ») encadrent l'accès au service SaaS ShiftFlow,
@@ -207,11 +206,10 @@ export function Terms() {
 export function Privacy() {
   return (
     <LegalShell title="Politique de confidentialité" subtitle="Comment ShiftFlow traite les données personnelles liées aux comptes, aux intervenants et à l'utilisation du service.">
-      <MissingBusinessInfoNotice />
       <h2>1. Responsable du traitement</h2>
       <p>
-        Pour les traitements liés à la gestion des comptes clients, à la facturation, au support, à la sécurité et au fonctionnement de ShiftFlow,
-        le responsable du traitement est {LEGAL.editorName}, {LEGAL.legalForm}, joignable à <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>.
+        Pour les traitements liés à la gestion des comptes clients, à la facturation, au support, à la sécurité et au fonctionnement du service,
+        le responsable du traitement est l'éditeur de ShiftFlow identifié dans les <Link to="/mentions-legales">mentions légales</Link>. Le contact privilégié pour les demandes de confidentialité est <a href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>.
       </p>
 
       <h2>2. Données traitées</h2>
@@ -323,12 +321,11 @@ export function Cookies() {
 export function DPA() {
   return (
     <LegalShell title="Accord de traitement des données (DPA)" subtitle="Clauses applicables lorsque ShiftFlow traite des données personnelles pour le compte d'une agence cliente.">
-      <MissingBusinessInfoNotice />
       <h2>1. Parties et rôle</h2>
       <p>
         Le présent accord de traitement des données (« DPA ») complète les CGUV. L'agence cliente agit comme <strong>responsable du traitement</strong>
-        pour les données personnelles qu'elle importe ou saisit dans ShiftFlow pour gérer ses intervenants. ShiftFlow agit comme <strong>sous-traitant</strong>
-        lorsqu'il traite ces données uniquement pour fournir le service selon les instructions du client.
+        pour les données personnelles qu'elle importe ou saisit dans ShiftFlow pour gérer ses intervenants. <strong>ShiftFlow</strong>, exploité par l'éditeur identifié dans les mentions légales,
+        agit comme <strong>sous-traitant</strong> lorsqu'il traite ces données uniquement pour fournir le service selon les instructions du client.
       </p>
 
       <h2>2. Objet, durée, nature et finalités</h2>
