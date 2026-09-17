@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import PublicOnlyRoute from "@/components/PublicOnlyRoute";
 import Layout from "@/components/Layout";
+import PublicLegalBar from "@/components/PublicLegalBar";
 import Landing from "@/pages/Landing";
 import Pricing from "@/pages/Pricing";
 import Login from "@/pages/Login";
@@ -62,13 +63,16 @@ function AppRoutes() {
 // need Outlet
 import { Outlet, useLocation } from "react-router-dom";
 
-// Le chatbot d'aide s'affiche partout SAUF sur la page publique de confirmation
-// de mission (/m/:token) : cette page est ouverte par des intervenants externes
-// qui n'ont pas de compte ShiftFlow, ce n'est pas le bon contexte pour eux.
 function ChatbotGate() {
   const location = useLocation();
   if (location.pathname.startsWith("/m/")) return null;
   return <HelpChatbot />;
+}
+
+function PublicLegalGate() {
+  const location = useLocation();
+  if (!["/", "/pricing", "/login", "/register"].includes(location.pathname)) return null;
+  return <PublicLegalBar />;
 }
 
 function App() {
@@ -77,6 +81,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <AppRoutes />
+          <PublicLegalGate />
           <ChatbotGate />
           <Toaster position="top-right" richColors />
         </AuthProvider>
