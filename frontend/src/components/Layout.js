@@ -26,14 +26,14 @@ export default function Layout({ children }) {
   return (
     <div className="min-h-screen bg-[#F9FAFB] flex">
       {/* Sidebar desktop */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-white border-r border-gray-200">
-        <div className="px-6 py-6 flex items-center gap-2 border-b border-gray-200">
+      <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-64 flex-col bg-white border-r border-gray-200">
+        <div className="px-6 py-6 flex items-center gap-2 border-b border-gray-200 shrink-0">
           <div className="w-8 h-8 rounded-md bg-blue-600 flex items-center justify-center">
             <Zap className="w-4 h-4 text-white" aria-hidden="true" />
           </div>
           <span className="font-display font-bold text-lg tracking-tight">ShiftFlow</span>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
           {nav.map((n) => (
             <NavLink
               key={n.to}
@@ -60,7 +60,7 @@ export default function Layout({ children }) {
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-gray-200 p-4">
+        <div className="border-t border-gray-200 p-4 shrink-0 bg-white">
           {user?.plan !== "pro" && (
             <NavLink to="/pricing" data-testid="nav-upgrade-cta"
               className="mb-3 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-700 text-white text-sm font-semibold transition-all shadow-sm">
@@ -131,7 +131,7 @@ export default function Layout({ children }) {
         </div>
       )}
 
-      <main className="flex-1 min-w-0 pt-14 lg:pt-0">
+      <main className="flex-1 min-w-0 pt-14 lg:pt-0 lg:ml-64">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-8">
           {children}
         </div>
