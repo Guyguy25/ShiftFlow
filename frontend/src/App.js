@@ -25,6 +25,7 @@ import PaymentSuccess from "@/pages/PaymentSuccess";
 import PaymentCancel from "@/pages/PaymentCancel";
 import { LegalNotice, Terms, Privacy, Cookies, DPA } from "@/pages/LegalPages";
 import HelpChatbot from "@/components/HelpChatbot";
+import MetaPixel from "@/components/MetaPixel";
 import { Toaster } from "sonner";
 
 function AppRoutes() {
@@ -83,6 +84,7 @@ function App() {
           <AppRoutes />
           <PublicLegalGate />
           <ChatbotGate />
+          <MetaPixel />
           <Toaster position="top-right" richColors />
         </AuthProvider>
       </BrowserRouter>
