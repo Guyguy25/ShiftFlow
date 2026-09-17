@@ -1,5 +1,5 @@
 import React from "react";
-import { PlayCircle, MessageCircle, CalendarClock, Users, CheckCircle2 } from "lucide-react";
+import { MessageCircle, CalendarClock, Users, CheckCircle2 } from "lucide-react";
 
 const steps = [
   { icon: CalendarClock, title: "Créer une mission", text: "Ajoutez les dates, horaires, le nombre de personnes nécessaires et les informations utiles pour votre équipe." },
@@ -17,14 +17,17 @@ export default function Tutorial() {
         Une courte vidéo pour comprendre le fonctionnement de ShiftFlow : créer une mission, connecter WhatsApp, sélectionner les intervenants et lancer la cascade.
       </p>
 
-      <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-gray-950 shadow-sm">
-        <div className="aspect-video flex flex-col items-center justify-center text-center px-6 bg-gradient-to-br from-gray-900 to-gray-800">
-          <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center border border-white/10">
-            <PlayCircle className="w-9 h-9 text-white" />
-          </div>
-          <div className="mt-4 text-white font-semibold text-lg">Vidéo tutoriel à venir</div>
-          <div className="mt-1 text-sm text-gray-400">Emplacement temporaire pour tester la page.</div>
-        </div>
+      <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
+        <video
+          className="block w-full aspect-video bg-black object-contain"
+          src="/shiftflow-tutorial.mp4"
+          controls
+          preload="metadata"
+          playsInline
+          aria-label="Tutoriel de prise en main de ShiftFlow"
+        >
+          Votre navigateur ne permet pas de lire cette vidéo.
+        </video>
       </div>
 
       <div className="mt-8 grid sm:grid-cols-2 gap-4">
