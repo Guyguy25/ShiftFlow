@@ -75,6 +75,7 @@ export default function Register() {
         ...form,
         onboarding_answers: answers,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "account" },
+        meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
       });
       localStorage.setItem("shiftflow_legal_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, scope: "account" }));
       nav("/app/dashboard");
@@ -151,8 +152,8 @@ export default function Register() {
                 <input required data-testid="register-name-input" className={inputCls} value={form.name} onChange={setF("name")} placeholder="Tanguy Dupont"/></div>
               <div><label className="text-sm font-medium">Email *</label>
                 <input type="email" name="email" autoComplete="username" required data-testid="register-email-input" className={inputCls} value={form.email} onChange={setF("email")} placeholder="vous@agence.com"/></div>
-              <div><label className="text-sm font-medium">Téléphone</label>
-                <input data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
+              <div><label className="text-sm font-medium">Téléphone *</label>
+                <input required data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
                 {phoneError && <div className="text-xs text-red-600 mt-1" data-testid="register-phone-error">{phoneError}</div>}
               </div>
               <div><label className="text-sm font-medium">Mot de passe *</label>
