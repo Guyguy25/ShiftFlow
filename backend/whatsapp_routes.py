@@ -1,4 +1,5 @@
 import os
+import re
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,32 @@ router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 WHATSAPP_SERVICE_URL = os.environ.get("WHATSAPP_SERVICE_URL", "http://localhost:3001").rstrip("/")
 WHATSAPP_TIMEOUT = float(os.environ.get("WHATSAPP_SERVICE_TIMEOUT", "90"))
 FOLLOWUP_DEFAULT_HOURS = max(1, int(os.environ.get("WHATSAPP_FOLLOWUP_HOURS", "2")))
+
+MESSAGE_TEMPLATE_MAX_CHARS = 500
+MESSAGE_TEMPLATE_MAX_LINES = 10
+MESSAGE_TEMPLATE_ALLOWED = {
+    "{prenom}",
+    "{nom}",
+    "{mission}",
+    "{date}",
+    "{heure_debut}",
+    "{heure_fin}",
+    "{lieu}",
+    "{tarif}",
+    "{agence}",
+    "{lien}",
+}
+MESSAGE_TEMPLATE_REQUIRED = {"{prenom}", "{mission}", "{date}", "{lien}"}
+DEFAULT_INVITE_TEMPLATE = (
+    "Bonjour {prenom} 👋\n\n"
+    "{agence} vous propose la mission « {mission} » le {date}, de {heure_debut} à {heure_fin}, à {lieu}.\n"
+    "Rémunération : {tarif}€/h.\n\n"
+    "Pour accepter ou refuser : {lien}"
+)
+URL_LIKE_RE = re.compile(
+    r"(?i)(?:https?://|www\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s]*)?)"
+)
+PLACEHOLDER_RE = re.compile(r"\{[^{}]+\}")
 
 
 def session_id_for_user(user):
@@ -41,13 +68,87 @@ async def send_whatsapp_text(session_user: dict, to: str, body: str) -> dict:
     return await whatsapp_request("POST", "/send", session_user, json={"to": to, "message": body})
 
 
-def build_invite_message(worker: dict, shift: dict, mission: dict, agency_name: str, url: str) -> str:
-    return (
-        f"Bonjour {worker['first_name']}, {agency_name} vous propose la mission "
-        f"« {mission['name']} » le {shift['date']} de {shift['start_time']} à {shift['end_time']} "
-        f"à {mission['location']}. Rémunération : {shift['rate_hourly']}€/h. "
-        f"Répondez ici : {url}"
-    )
+def validate_invite_template(raw_template: str) -> str:
+    if not isinstance(raw_template, str):
+        raise HTTPException(status_code=400, detail="Le message doit être du texte.")
+
+    template = raw_template.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not template:
+        raise HTTPException(status_code=400, detail="Le message WhatsApp ne peut pas être vide.")
+    if len(template) > MESSAGE_TEMPLATE_MAX_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Le message est limité à {MESSAGE_TEMPLATE_MAX_CHARS} caractères.",
+        )
+    if len(template.split("\n")) > MESSAGE_TEMPLATE_MAX_LINES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Le message est limité à {MESSAGE_TEMPLATE_MAX_LINES} lignes.",
+        )
+
+    placeholders = set(PLACEHOLDER_RE.findall(template))
+    unknown = sorted(placeholders - MESSAGE_TEMPLATE_ALLOWED)
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Variable inconnue : {', '.join(unknown)}.",
+        )
+
+    missing = [token for token in ("{prenom}", "{mission}", "{date}", "{lien}") if token not in template]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Variables obligatoires manquantes : {', '.join(missing)}.",
+        )
+
+    if template.count("{lien}") != 1:
+        raise HTTPException(status_code=400, detail="La variable {lien} doit apparaître exactement une fois.")
+
+    without_link_placeholder = template.replace("{lien}", "")
+    if URL_LIKE_RE.search(without_link_placeholder):
+        raise HTTPException(
+            status_code=400,
+            detail="N'ajoutez pas d'autre lien dans ce message. ShiftFlow ajoute automatiquement le lien sécurisé via {lien}.",
+        )
+
+    return template
+
+
+def active_invite_template(agency: dict) -> str:
+    if agency.get("plan") != "pro":
+        return DEFAULT_INVITE_TEMPLATE
+    custom = agency.get("whatsapp_invite_template")
+    if not custom:
+        return DEFAULT_INVITE_TEMPLATE
+    try:
+        return validate_invite_template(custom)
+    except HTTPException:
+        server_module.logger.warning(f"Invalid WhatsApp template stored for agency={agency.get('id')}; using default")
+        return DEFAULT_INVITE_TEMPLATE
+
+
+def render_invite_template(template: str, worker: dict, shift: dict, mission: dict, agency: dict, url: str) -> str:
+    values = {
+        "{prenom}": str(worker.get("first_name") or ""),
+        "{nom}": str(worker.get("last_name") or ""),
+        "{mission}": str(mission.get("name") or ""),
+        "{date}": str(shift.get("date") or ""),
+        "{heure_debut}": str(shift.get("start_time") or ""),
+        "{heure_fin}": str(shift.get("end_time") or ""),
+        "{lieu}": str(mission.get("location") or ""),
+        "{tarif}": str(shift.get("rate_hourly") or ""),
+        "{agence}": str(agency.get("agency_name") or "Votre agence"),
+        "{lien}": url,
+    }
+    body = template
+    for token, value in values.items():
+        body = body.replace(token, value)
+    return body
+
+
+def build_invite_message(worker: dict, shift: dict, mission: dict, agency: dict, url: str) -> str:
+    template = active_invite_template(agency)
+    return render_invite_template(template, worker, shift, mission, agency, url)
 
 
 async def _insert_notification(**doc):
@@ -76,7 +177,7 @@ def usable_contact(contact: dict) -> bool:
 
 async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: dict, agency: dict) -> dict:
     url = f"{server_module.FRONTEND_URL}/m/{slot['token']}" if server_module.FRONTEND_URL else f"/m/{slot['token']}"
-    body = build_invite_message(worker, shift, mission, agency.get("agency_name", "Votre agence"), url)
+    body = build_invite_message(worker, shift, mission, agency, url)
     to = server_module.normalize_phone(worker.get("phone", ""))
 
     if not to:
@@ -259,6 +360,64 @@ server_module.send_owner_alert_sms = send_owner_alert_whatsapp
 server_module.cascade_next_for_shift = cascade_all_selected_for_shift
 server_module._run_reminders = run_whatsapp_reminders
 server_module.twilio_ready = lambda: False
+
+
+@router.get("/message-template")
+async def get_message_template(user=Depends(get_current_user)):
+    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0, "plan": 1, "whatsapp_invite_template": 1})
+    plan = (agency or {}).get("plan", "free")
+    stored = (agency or {}).get("whatsapp_invite_template")
+    template = stored if plan == "pro" and stored else DEFAULT_INVITE_TEMPLATE
+    try:
+        template = validate_invite_template(template)
+    except HTTPException:
+        template = DEFAULT_INVITE_TEMPLATE
+    return {
+        "template": template,
+        "default_template": DEFAULT_INVITE_TEMPLATE,
+        "can_edit": plan == "pro",
+        "max_chars": MESSAGE_TEMPLATE_MAX_CHARS,
+        "max_lines": MESSAGE_TEMPLATE_MAX_LINES,
+        "required": ["{prenom}", "{mission}", "{date}", "{lien}"],
+        "variables": [
+            {"token": "{prenom}", "label": "Prénom de l'intervenant", "required": True},
+            {"token": "{nom}", "label": "Nom de l'intervenant", "required": False},
+            {"token": "{mission}", "label": "Nom de la mission", "required": True},
+            {"token": "{date}", "label": "Date du shift", "required": True},
+            {"token": "{heure_debut}", "label": "Heure de début", "required": False},
+            {"token": "{heure_fin}", "label": "Heure de fin", "required": False},
+            {"token": "{lieu}", "label": "Lieu", "required": False},
+            {"token": "{tarif}", "label": "Tarif horaire", "required": False},
+            {"token": "{agence}", "label": "Nom de l'agence", "required": False},
+            {"token": "{lien}", "label": "Lien accepter / refuser", "required": True},
+        ],
+    }
+
+
+@router.put("/message-template")
+async def update_message_template(payload: dict, user=Depends(get_current_user)):
+    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0, "plan": 1})
+    if not agency or agency.get("plan") != "pro":
+        raise HTTPException(status_code=403, detail="La personnalisation du message WhatsApp est réservée au plan Pro.")
+
+    template = validate_invite_template(payload.get("template"))
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"whatsapp_invite_template": template, "whatsapp_invite_template_updated_at": iso(now_utc())}},
+    )
+    return {"ok": True, "template": template}
+
+
+@router.delete("/message-template")
+async def reset_message_template(user=Depends(get_current_user)):
+    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0, "plan": 1})
+    if not agency or agency.get("plan") != "pro":
+        raise HTTPException(status_code=403, detail="La personnalisation du message WhatsApp est réservée au plan Pro.")
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$unset": {"whatsapp_invite_template": "", "whatsapp_invite_template_updated_at": ""}},
+    )
+    return {"ok": True, "template": DEFAULT_INVITE_TEMPLATE}
 
 
 @router.get("/status")
