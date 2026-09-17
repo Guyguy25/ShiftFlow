@@ -1,15 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { MessageCircle, X, Send, ArrowLeft } from "lucide-react";
+import { MessageCircle, X, Send, ArrowLeft, ExternalLink } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// Chatbot d'aide 100% gratuit et 100% "sur rails" : pas d'API, pas de coût,
-// pas d'hallucination possible — il ne peut répondre qu'avec ce qui est
-// écrit dans KB ci-dessous. Si rien ne correspond, il le dit et propose les
-// sujets qu'il connaît + un contact humain.
-// Remplace SUPPORT_CONTACT par ton adresse e-mail officielle une fois que tu
-// auras ton nom de domaine — en attendant ça pointe vers ton Calendly.
-// ---------------------------------------------------------------------------
-const SUPPORT_CONTACT = "https://calendly.com/tanguybois/appel";
+const SUPPORT_WHATSAPP = "33661139861";
+const SUPPORT_WHATSAPP_DISPLAY = "+33 6 61 13 98 61";
+const SUPPORT_WHATSAPP_URL = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent("Bonjour, j'ai une question à propos de ShiftFlow.")}`;
 
 const KB = [
   {
@@ -17,63 +11,63 @@ const KB = [
     label: "Créer une mission",
     keywords: ["creer", "creation", "nouvelle", "mission", "ajouter mission"],
     answer:
-      "Va dans « Missions » puis clique sur « Nouvelle mission ». Renseigne le nom, la date, les horaires et le nombre de personnes nécessaires. Tu peux activer l'option « cascade » pour que ShiftFlow relance automatiquement l'intervenant suivant si quelqu'un ne confirme pas à temps.",
+      "Va dans « Missions » puis « Nouvelle mission ». Renseigne le lieu, les créneaux, le nombre de personnes nécessaires et les informations utiles. Une fois la mission créée, choisis les intervenants dans l'ordre de priorité et lance la cascade.",
   },
   {
     id: "invite-worker",
     label: "Ajouter un intervenant",
     keywords: ["intervenant", "worker", "equipe", "ajouter", "inviter", "contact"],
     answer:
-      "Rends-toi sur la page « Intervenants » pour ajouter un équipier : nom et téléphone sont obligatoires, l'email et les compétences (montage, démontage, technique, électricité, manutention) sont optionnels mais utiles pour filtrer. Tu peux ensuite l'assigner à une mission depuis la création de la mission ou depuis sa fiche détail.",
+      "Dans « Intervenants », tu peux ajouter quelqu'un manuellement ou importer ton équipe depuis WhatsApp. Sur les navigateurs mobiles compatibles, l'import depuis le répertoire du téléphone est aussi disponible.",
   },
   {
-    id: "sms-confirm",
-    label: "Comment marchent les SMS ?",
-    keywords: ["sms", "confirmation", "confirmer", "lien", "texto", "message"],
+    id: "whatsapp",
+    label: "Connecter WhatsApp",
+    keywords: ["whatsapp", "qr", "qr code", "connecter", "appareil", "appareils connectes"],
     answer:
-      "Dès qu'un intervenant est assigné à une mission, il reçoit un SMS avec un lien unique pour accepter ou refuser. Tu vois en temps réel qui a confirmé sur la fiche de la mission et sur le calendrier. Un rappel automatique est aussi envoyé ~24h avant le shift à ceux qui ont confirmé.",
+      "Pour connecter WhatsApp, ouvre WhatsApp sur ton téléphone puis va dans Paramètres / menu ⋮ → Appareils connectés → Connecter un appareil. Scanne ensuite le QR affiché par ShiftFlow avec le scanner intégré à WhatsApp, pas avec l'appareil photo classique.",
+  },
+  {
+    id: "messages-confirm",
+    label: "Comment partent les messages ?",
+    keywords: ["message", "confirmation", "confirmer", "lien", "whatsapp", "envoi"],
+    answer:
+      "Quand tu lances une cascade, ShiftFlow utilise ton compte WhatsApp connecté pour contacter les intervenants dans l'ordre choisi. Ils reçoivent un lien pour accepter ou refuser sans avoir besoin d'un compte ShiftFlow.",
   },
   {
     id: "cascade",
-    label: "C'est quoi la cascade de relance ?",
+    label: "C'est quoi la cascade ?",
     keywords: ["cascade", "relance", "no-show", "refus", "remplacant", "annulation"],
     answer:
-      "Si un intervenant refuse ou ne répond pas dans le délai que tu as fixé, ShiftFlow relance automatiquement la personne suivante sur la liste — pas besoin de relancer toi-même par téléphone. Tu actives/désactives cette option à la création de la mission.",
+      "La cascade contacte les intervenants selon ton ordre de priorité jusqu'à remplir les places nécessaires. Si quelqu'un refuse, annule ou doit être remplacé, ShiftFlow peut poursuivre avec la personne suivante sans que tu aies à relancer tout le monde manuellement.",
   },
   {
     id: "calendar",
     label: "Voir le calendrier",
     keywords: ["calendrier", "planning", "vue", "jour", "semaine"],
     answer:
-      "La page « Calendrier » te donne une vue d'ensemble de toutes tes missions planifiées, jour par jour, avec le taux de confirmation de chaque créneau en un coup d'œil.",
+      "La page « Calendrier » regroupe tes missions et tes créneaux pour voir rapidement ce qui arrive et où en sont les confirmations.",
   },
   {
     id: "history",
     label: "Retrouver une mission passée",
     keywords: ["historique", "passee", "ancienne", "archive"],
     answer:
-      "Toutes tes missions terminées sont classées dans « Historique », consultables à tout moment avec le détail des confirmations et refus.",
+      "Tes missions passées restent consultables dans « Historique » avec leur état et les intervenants associés.",
   },
   {
-    id: "settings-sms-log",
-    label: "Voir les SMS envoyés",
-    keywords: ["journal", "log", "envoyes", "parametres", "compte", "agence"],
+    id: "settings-log",
+    label: "Voir les envois WhatsApp",
+    keywords: ["journal", "log", "envoyes", "parametres", "compte", "agence", "erreur"],
     answer:
-      "Dans « Paramètres », tu retrouves les infos de ton agence, la configuration de l'envoi SMS, et le journal des 30 derniers SMS envoyés pour vérifier que tout part bien.",
+      "Dans « Paramètres », le journal des envois WhatsApp permet de vérifier les messages partis et les éventuels échecs. Si WhatsApp s'est déconnecté, reconnecte la session avant de relancer l'envoi.",
   },
   {
     id: "pricing",
     label: "Tarifs & abonnement",
     keywords: ["tarif", "prix", "abonnement", "payer", "pro", "gratuit", "plan"],
     answer:
-      "Le compte gratuit permet de gérer 1 mission. Pour des missions illimitées, tu passes au plan Pro depuis le bouton « Passer au Pro » dans le menu de gauche ou la page Tarifs.",
-  },
-  {
-    id: "login-session",
-    label: "Je suis déconnecté trop souvent",
-    keywords: ["connexion", "deconnecte", "login", "session", "mot de passe"],
-    answer:
-      "Ta session reste active automatiquement tant que tu reviens au moins une fois tous les 90 jours — tu n'as normalement pas besoin de te reconnecter à chaque visite. Si le problème persiste, essaie de te reconnecter une fois pour rafraîchir ta session.",
+      "Le plan gratuit inclut 1 mission active et jusqu'à 10 intervenants. Le plan Pro est à 49 €/mois pour lever ces limites et continuer à utiliser ShiftFlow sans engagement.",
   },
 ];
 
@@ -102,10 +96,10 @@ function findAnswer(text) {
 }
 
 const FALLBACK =
-  "Je n'ai pas de réponse précise à te donner là-dessus, je préfère ne pas te dire n'importe quoi. Choisis un sujet ci-dessous, ou écris-nous directement.";
+  "Je n'ai pas de réponse assez précise pour te répondre sans risque de t'induire en erreur. Pour un problème spécifique, contacte directement le support WhatsApp.";
 
 const WELCOME =
-  "Bonjour 👋 Je suis l'assistant ShiftFlow. Choisis un sujet ou écris ta question, je ne réponds que sur l'utilisation de l'app.";
+  "Bonjour 👋 Je suis l'assistant ShiftFlow. Choisis un sujet ou écris ta question. Si ton problème est spécifique, tu peux aussi contacter directement le support WhatsApp.";
 
 export default function HelpChatbot() {
   const [open, setOpen] = useState(false);
@@ -132,20 +126,19 @@ export default function HelpChatbot() {
     pushUser(text);
     setInput("");
     const match = findAnswer(text);
-    if (match) {
-      pushBot(match.answer);
-    } else {
-      pushBot(`${FALLBACK}\n\nOu prends directement rendez-vous ici : ${SUPPORT_CONTACT}`);
-    }
+    pushBot(match ? match.answer : FALLBACK);
   };
 
   return (
     <div className="fixed bottom-5 right-5 z-50" data-testid="help-chatbot">
       {open && (
-        <div className="mb-3 w-80 sm:w-96 h-[28rem] bg-white rounded-xl border border-gray-200 shadow-[0_12px_40px_rgba(0,0,0,0.15)] flex flex-col overflow-hidden">
-          <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between shrink-0">
-            <span className="font-display font-semibold text-sm">Assistant ShiftFlow</span>
-            <button onClick={() => setOpen(false)} aria-label="Fermer" data-testid="help-chatbot-close">
+        <div className="mb-3 w-[calc(100vw-2.5rem)] sm:w-96 h-[31rem] bg-white rounded-2xl border border-gray-200 shadow-[0_18px_60px_rgba(15,23,42,0.18)] flex flex-col overflow-hidden">
+          <div className="bg-gray-950 text-white px-4 py-3.5 flex items-center justify-between shrink-0">
+            <div>
+              <div className="font-display font-semibold text-sm">Assistant ShiftFlow</div>
+              <div className="text-[11px] text-gray-400 mt-0.5">Aide rapide + support humain</div>
+            </div>
+            <button onClick={() => setOpen(false)} aria-label="Fermer" data-testid="help-chatbot-close" className="p-1 rounded hover:bg-white/10">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -153,13 +146,7 @@ export default function HelpChatbot() {
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-gray-50">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.from === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[85%] px-3 py-2 rounded-lg text-sm whitespace-pre-line ${
-                    m.from === "user"
-                      ? "bg-blue-600 text-white rounded-br-sm"
-                      : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm"
-                  }`}
-                >
+                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm whitespace-pre-line ${m.from === "user" ? "bg-blue-600 text-white rounded-br-sm" : "bg-white text-gray-800 border border-gray-200 rounded-bl-sm"}`}>
                   {m.text}
                 </div>
               </div>
@@ -167,45 +154,32 @@ export default function HelpChatbot() {
 
             <div className="flex flex-wrap gap-1.5 pt-1">
               {KB.map((entry) => (
-                <button
-                  key={entry.id}
-                  onClick={() => askTopic(entry)}
-                  data-testid={`help-chatbot-topic-${entry.id}`}
-                  className="text-xs px-2.5 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                >
+                <button key={entry.id} onClick={() => askTopic(entry)} data-testid={`help-chatbot-topic-${entry.id}`} className="text-xs px-2.5 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
                   {entry.label}
                 </button>
               ))}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3">
+              <div className="text-xs font-semibold text-green-900">Un problème spécifique ?</div>
+              <div className="mt-1 text-xs text-green-800">Écris directement sur WhatsApp au {SUPPORT_WHATSAPP_DISPLAY}.</div>
+              <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-green-800 hover:text-green-950">
+                Contacter le support <ExternalLink className="w-3 h-3" />
+              </a>
             </div>
             <div ref={bottomRef} />
           </div>
 
           <form onSubmit={handleSend} className="border-t border-gray-200 p-2 flex items-center gap-2 shrink-0 bg-white">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Pose ta question…"
-              data-testid="help-chatbot-input"
-              className="flex-1 h-9 px-3 text-sm rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              data-testid="help-chatbot-send"
-              className="w-9 h-9 shrink-0 rounded-md bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"
-              aria-label="Envoyer"
-            >
+            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Pose ta question…" data-testid="help-chatbot-input" className="flex-1 h-9 px-3 text-sm rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button type="submit" data-testid="help-chatbot-send" className="w-9 h-9 shrink-0 rounded-md bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center" aria-label="Envoyer">
               <Send className="w-4 h-4" />
             </button>
           </form>
         </div>
       )}
 
-      <button
-        onClick={() => setOpen((o) => !o)}
-        data-testid="help-chatbot-toggle"
-        aria-label="Ouvrir l'assistant"
-        className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105"
-      >
+      <button onClick={() => setOpen((o) => !o)} data-testid="help-chatbot-toggle" aria-label="Ouvrir l'assistant" className="w-14 h-14 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-transform hover:scale-105">
         {open ? <ArrowLeft className="w-5 h-5" /> : <MessageCircle className="w-6 h-6" />}
       </button>
     </div>
