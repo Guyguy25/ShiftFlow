@@ -263,7 +263,7 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=8)
     name: str
     agency_name: str
-    phone: str = ""
+    phone: str = Field(min_length=1)
     onboarding_answers: Optional[dict] = None
     meta_consent: bool = False
 
@@ -281,7 +281,7 @@ class RegisterIn(BaseModel):
         import re
         v = (v or "").strip()
         if not v:
-            return v
+            raise ValueError("Le numéro de téléphone est obligatoire.")
         digits = re.sub(r"[\s\.\-\(\)]", "", v)
         ok = False
         if digits.startswith("+33"):
