@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send, ArrowLeft, ExternalLink } from "lucide-react";
 
-const SUPPORT_WHATSAPP = "33661139861";
-const SUPPORT_WHATSAPP_DISPLAY = "+33 6 61 13 98 61";
-const SUPPORT_WHATSAPP_URL = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent("Bonjour, j'ai une question à propos de ShiftFlow.")}`;
+const SUPPORT_EMAIL = "contact@shiftflow.io";
+const SUPPORT_EMAIL_URL = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Question à propos de ShiftFlow")}`;
 
 const KB = [
   {
@@ -96,10 +95,10 @@ function findAnswer(text) {
 }
 
 const FALLBACK =
-  "Je n'ai pas de réponse assez précise pour te répondre sans risque de t'induire en erreur. Pour un problème spécifique, contacte directement le support WhatsApp.";
+  "Je n'ai pas de réponse assez précise pour te répondre sans risque de t'induire en erreur. Pour un problème spécifique, contacte directement le support par email.";
 
 const WELCOME =
-  "Bonjour 👋 Je suis l'assistant ShiftFlow. Choisis un sujet ou écris ta question. Si ton problème est spécifique, tu peux aussi contacter directement le support WhatsApp.";
+  "Bonjour 👋 Je suis l'assistant ShiftFlow. Choisis un sujet ou écris ta question. Si ton problème est spécifique, tu peux aussi contacter directement le support par email.";
 
 export default function HelpChatbot() {
   const [open, setOpen] = useState(false);
@@ -160,10 +159,10 @@ export default function HelpChatbot() {
               ))}
             </div>
 
-            <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3">
-              <div className="text-xs font-semibold text-green-900">Un problème spécifique ?</div>
-              <div className="mt-1 text-xs text-green-800">Écris directement sur WhatsApp au {SUPPORT_WHATSAPP_DISPLAY}.</div>
-              <a href={SUPPORT_WHATSAPP_URL} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-green-800 hover:text-green-950">
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <div className="text-xs font-semibold text-blue-900">Un problème spécifique ?</div>
+              <div className="mt-1 text-xs text-blue-800">Écris-nous à {SUPPORT_EMAIL}.</div>
+              <a href={SUPPORT_EMAIL_URL} className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-800 hover:text-blue-950">
                 Contacter le support <ExternalLink className="w-3 h-3" />
               </a>
             </div>
