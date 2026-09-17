@@ -4,6 +4,7 @@ import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, Arr
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
+import WhatsAppQrGuide from "../components/WhatsAppQrGuide";
 
 const TYPE_LABEL = {
   montage: "Montage", demontage: "Démontage", montage_demontage: "Montage + Démontage",
@@ -69,7 +70,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl">
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-widest text-green-700 font-bold">WhatsApp requis</div>
@@ -86,14 +87,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
             WhatsApp est connecté. Lancement de la cascade…
           </div>
         ) : status?.hasQR && status?.qr ? (
-          <div className="mt-5 text-center">
-            <div className="text-sm font-medium text-gray-900">Scannez ce QR code avec WhatsApp</div>
-            <div className="mt-2 text-xs text-gray-500">WhatsApp → Paramètres → Appareils connectés → Connecter un appareil</div>
-            <div className="mt-4 flex justify-center">
-              <img src={status.qr} alt="QR code WhatsApp" className="w-64 h-64 border rounded-lg" />
-            </div>
-            <div className="mt-3 text-xs text-gray-400">La fenêtre détectera automatiquement la connexion.</div>
-          </div>
+          <WhatsAppQrGuide qr={status.qr} />
         ) : (
           <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
             <RefreshCw className="w-7 h-7 mx-auto text-gray-400 animate-spin" />
