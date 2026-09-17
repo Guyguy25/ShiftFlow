@@ -1,11 +1,13 @@
 export const LEGAL_VERSION = "2026-09-17";
 
 export const LEGAL = {
+  publicName: "ShiftFlow",
   editorName: "Tanguy Bois",
+  legalIdentity: "Tanguy Bois EI",
   tradingName: "ShiftFlow",
   legalForm: "Entrepreneur individuel (micro-entreprise)",
-  businessAddress: "À COMPLÉTER : adresse de domiciliation de la micro-entreprise",
-  registrationNumber: "À COMPLÉTER : SIREN / SIRET",
+  businessAddress: "À COMPLÉTER : adresse officielle de domiciliation de l'entreprise",
+  registrationNumber: "À COMPLÉTER : SIREN / immatriculation RNE applicable",
   email: "contact@shiftflow.io",
   phone: "+33 6 61 13 98 61",
   website: "https://www.shiftflow.io",
