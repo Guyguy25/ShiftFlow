@@ -93,6 +93,7 @@ export default function Pricing() {
         lookup_key: lookup,
         origin_url: window.location.origin,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "pro_subscription" },
+        meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
       });
       window.location.href = data.checkout_url;
     } catch (err) {
