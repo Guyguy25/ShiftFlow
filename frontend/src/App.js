@@ -22,6 +22,7 @@ import PublicConfirm from "@/pages/PublicConfirm";
 import Onboarding from "@/pages/Onboarding";
 import PaymentSuccess from "@/pages/PaymentSuccess";
 import PaymentCancel from "@/pages/PaymentCancel";
+import { LegalNotice, Terms, Privacy, Cookies, DPA } from "@/pages/LegalPages";
 import HelpChatbot from "@/components/HelpChatbot";
 import { Toaster } from "sonner";
 
@@ -30,6 +31,11 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/mentions-legales" element={<LegalNotice />} />
+      <Route path="/conditions" element={<Terms />} />
+      <Route path="/confidentialite" element={<Privacy />} />
+      <Route path="/cookies" element={<Cookies />} />
+      <Route path="/dpa" element={<DPA />} />
       <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
       <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
       <Route path="/m/:token" element={<PublicConfirm />} />
