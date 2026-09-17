@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, Link, useNavigate } from "react-router-dom";
 import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -78,6 +78,11 @@ export default function Layout({ children }) {
             <LogOut className="w-4 h-4" aria-hidden="true" />
             Déconnexion
           </button>
+          <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-400">
+            <Link to="/conditions" className="hover:text-gray-700">Conditions</Link>
+            <Link to="/confidentialite" className="hover:text-gray-700">Confidentialité</Link>
+            <Link to="/mentions-legales" className="hover:text-gray-700">Mentions légales</Link>
+          </div>
         </div>
       </aside>
 
@@ -119,6 +124,11 @@ export default function Layout({ children }) {
                 {n.highlight && <span className="ml-auto text-[10px] uppercase tracking-wider font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded">Guide</span>}
               </NavLink>
             ))}
+            <div className="mt-4 pt-4 border-t border-gray-100 grid gap-2 text-sm text-gray-600">
+              <Link to="/conditions" onClick={() => setOpen(false)}>Conditions</Link>
+              <Link to="/confidentialite" onClick={() => setOpen(false)}>Confidentialité</Link>
+              <Link to="/mentions-legales" onClick={() => setOpen(false)}>Mentions légales</Link>
+            </div>
             <button
               onClick={handleLogout}
               data-testid="mobile-logout-btn"
