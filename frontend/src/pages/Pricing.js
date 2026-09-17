@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Check, Zap, ArrowLeft, Loader2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { LEGAL_VERSION } from "../constants/legal";
 
 const PLANS = [
   {
@@ -10,7 +11,7 @@ const PLANS = [
     name: "Free",
     price: "0 €",
     period: "toujours",
-    features: ["1 mission active", "Jusqu'à 10 intervenants", "Cascade automatique", "SMS Twilio", "Historique"],
+    features: ["1 mission active", "Jusqu'à 10 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
     cta: "Commencer",
     href: "/register",
     highlighted: false,
@@ -23,7 +24,7 @@ const PLANS = [
     period: "/mois",
     subtitle: "TVA non applicable, art. 293 B du CGI",
     lookup: "shiftflow_pro_monthly",
-    features: ["Missions illimitées", "Intervenants illimités", "Cascade & relances", "Rappels 24h SMS", "Historique complet", "Support prioritaire"],
+    features: ["Missions illimitées", "Intervenants illimités", "Cascade & relances", "Rappels 24h WhatsApp", "Message de cascade personnalisable", "Historique complet", "Support prioritaire"],
     cta: "Passer au Pro",
     highlighted: true,
     testid: "pricing-monthly-cta",
@@ -34,14 +35,22 @@ export default function Pricing() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
+  const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
 
   const startCheckout = async (lookup) => {
     if (!user) { window.location.href = "/register"; return; }
+    if (!acceptedPaidTerms) {
+      setError("Veuillez accepter les Conditions de vente et le DPA avant de souscrire au plan Pro.");
+      return;
+    }
     setLoading(lookup); setError("");
+    const acceptedAt = new Date().toISOString();
+    localStorage.setItem("shiftflow_paid_terms_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, plan: lookup }));
     try {
       const { data } = await api.post("/payments/checkout", {
         lookup_key: lookup,
         origin_url: window.location.origin,
+        legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "pro_subscription" },
       });
       window.location.href = data.checkout_url;
     } catch (err) {
@@ -120,8 +129,18 @@ export default function Pricing() {
           ))}
         </div>
 
+        {!isPro && (
+          <label className="mt-6 max-w-4xl mx-auto flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 cursor-pointer" data-testid="pricing-legal-consent">
+            <input type="checkbox" checked={acceptedPaidTerms} onChange={(e)=>setAcceptedPaidTerms(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+            <span>
+              Avant de souscrire au Pro, j'accepte les <Link to="/conditions" target="_blank" className="text-blue-600 font-medium hover:underline">Conditions générales d'utilisation et de vente</Link>,
+              {" "}la <Link to="/confidentialite" target="_blank" className="text-blue-600 font-medium hover:underline">Politique de confidentialité</Link> et le <Link to="/dpa" target="_blank" className="text-blue-600 font-medium hover:underline">DPA</Link>.
+            </span>
+          </label>
+        )}
+
         <p className="mt-10 text-center text-xs text-gray-500">
-          Paiement sécurisé via Stripe · Annulation à tout moment · TVA gérée automatiquement
+          Paiement sécurisé via Stripe · Renouvellement mensuel · Résiliation à tout moment · Pas de remboursement au prorata d'une période commencée, sauf obligation légale ou erreur de facturation
         </p>
       </div>
     </div>
