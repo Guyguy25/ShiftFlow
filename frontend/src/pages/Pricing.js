@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Zap, ArrowLeft, Loader2 } from "lucide-react";
+import { Check, Zap, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { LEGAL_VERSION } from "../constants/legal";
@@ -36,13 +36,18 @@ export default function Pricing() {
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
   const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
+  const [highlightConsent, setHighlightConsent] = useState(false);
+  const consentRef = useRef(null);
 
   const startCheckout = async (lookup) => {
     if (!user) { window.location.href = "/register"; return; }
     if (!acceptedPaidTerms) {
-      setError("Veuillez accepter les Conditions de vente et le DPA avant de souscrire au plan Pro.");
+      setError("");
+      setHighlightConsent(true);
+      requestAnimationFrame(() => consentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
       return;
     }
+    setHighlightConsent(false);
     setLoading(lookup); setError("");
     const acceptedAt = new Date().toISOString();
     localStorage.setItem("shiftflow_paid_terms_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, plan: lookup }));
@@ -56,6 +61,15 @@ export default function Pricing() {
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
       setLoading(null);
+    }
+  };
+
+  const handleTermsChange = (e) => {
+    const checked = e.target.checked;
+    setAcceptedPaidTerms(checked);
+    if (checked) {
+      setHighlightConsent(false);
+      setError("");
     }
   };
 
@@ -130,13 +144,36 @@ export default function Pricing() {
         </div>
 
         {!isPro && (
-          <label className="mt-6 max-w-4xl mx-auto flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 cursor-pointer" data-testid="pricing-legal-consent">
-            <input type="checkbox" checked={acceptedPaidTerms} onChange={(e)=>setAcceptedPaidTerms(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-            <span>
-              Avant de souscrire au Pro, j'accepte les <Link to="/conditions" target="_blank" className="text-blue-600 font-medium hover:underline">Conditions générales d'utilisation et de vente</Link>,
-              {" "}la <Link to="/confidentialite" target="_blank" className="text-blue-600 font-medium hover:underline">Politique de confidentialité</Link> et le <Link to="/dpa" target="_blank" className="text-blue-600 font-medium hover:underline">DPA</Link>.
-            </span>
-          </label>
+          <div ref={consentRef} className="max-w-4xl mx-auto mt-6">
+            {highlightConsent && (
+              <div className="mb-2 flex items-center justify-center gap-2 text-sm font-semibold text-red-600" role="alert">
+                <AlertCircle className="h-4 w-4" />
+                Une dernière étape : cochez la case ci-dessous pour continuer.
+              </div>
+            )}
+            <label className={`flex items-start gap-3 rounded-xl p-4 text-sm cursor-pointer transition-all duration-200 ${
+              highlightConsent
+                ? "border-2 border-red-500 bg-red-50 text-red-950 shadow-[0_0_0_4px_rgba(239,68,68,0.10)]"
+                : acceptedPaidTerms
+                  ? "border-2 border-green-400 bg-green-50 text-gray-800"
+                  : "border border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+            }`} data-testid="pricing-legal-consent">
+              <input
+                type="checkbox"
+                checked={acceptedPaidTerms}
+                onChange={handleTermsChange}
+                aria-invalid={highlightConsent ? "true" : "false"}
+                className={`mt-0.5 h-5 w-5 shrink-0 rounded cursor-pointer ${highlightConsent ? "border-red-500 text-red-600 focus:ring-red-500" : "border-gray-300 text-blue-600 focus:ring-blue-500"}`}
+              />
+              <span>
+                <span className="font-semibold">J'accepte les conditions nécessaires pour souscrire au Pro.</span>{" "}
+                <span className={highlightConsent ? "text-red-800" : "text-gray-600"}>
+                  J'ai lu et j'accepte les <Link to="/conditions" target="_blank" className="text-blue-600 font-medium hover:underline">Conditions générales d'utilisation et de vente</Link>,
+                  {" "}la <Link to="/confidentialite" target="_blank" className="text-blue-600 font-medium hover:underline">Politique de confidentialité</Link> et le <Link to="/dpa" target="_blank" className="text-blue-600 font-medium hover:underline">DPA</Link>.
+                </span>
+              </span>
+            </label>
+          </div>
         )}
 
         <p className="mt-10 text-center text-xs text-gray-500">
