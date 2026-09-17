@@ -62,12 +62,14 @@
 
 .sf-shine:hover::after { transform: translateX(120%); }
 
-.legal-copy {
+.legal-copy,
+.prose {
   color: #475569;
   line-height: 1.75;
 }
 
-.legal-copy h2 {
+.legal-copy h2,
+.prose h2 {
   margin-top: 2rem;
   margin-bottom: .75rem;
   color: #0f172a;
@@ -76,20 +78,26 @@
   font-weight: 700;
 }
 
-.legal-copy h2:first-child { margin-top: 0; }
-.legal-copy p { margin: .8rem 0; }
-.legal-copy ul {
+.legal-copy h2:first-child,
+.prose h2:first-child { margin-top: 0; }
+.legal-copy p,
+.prose p { margin: .8rem 0; }
+.legal-copy ul,
+.prose ul {
   margin: .8rem 0;
   padding-left: 1.35rem;
   list-style: disc;
 }
-.legal-copy li { margin: .35rem 0; }
-.legal-copy a {
+.legal-copy li,
+.prose li { margin: .35rem 0; }
+.legal-copy a,
+.prose a {
   color: #2563eb;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.legal-copy strong {
+.legal-copy strong,
+.prose strong {
   color: #0f172a;
   font-weight: 600;
 }
