@@ -11,6 +11,7 @@ logger = logging.getLogger("shiftflow.meta")
 META_PIXEL_ID = os.environ.get("META_PIXEL_ID", "").strip()
 META_CAPI_ACCESS_TOKEN = os.environ.get("META_CAPI_ACCESS_TOKEN", "").strip()
 META_GRAPH_API_VERSION = os.environ.get("META_GRAPH_API_VERSION", "v23.0").strip()
+META_CAPI_TEST_EVENT_CODE = os.environ.get("META_CAPI_TEST_EVENT_CODE", "").strip()
 
 
 def meta_capi_ready() -> bool:
@@ -119,10 +120,14 @@ async def send_meta_event(
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
+            payload = {"data": [event]}
+            if META_CAPI_TEST_EVENT_CODE:
+                payload["test_event_code"] = META_CAPI_TEST_EVENT_CODE
+
             response = await client.post(
                 endpoint,
                 params={"access_token": META_CAPI_ACCESS_TOKEN},
-                json={"data": [event]},
+                json=payload,
             )
             response.raise_for_status()
         logger.info("Meta CAPI event sent: %s id=%s", event_name, event_id)
