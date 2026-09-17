@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Zap, ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
@@ -37,7 +37,44 @@ export default function Pricing() {
   const [error, setError] = useState("");
   const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
   const [highlightConsent, setHighlightConsent] = useState(false);
+  const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null });
   const consentRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPlan = async () => {
+      if (!user) {
+        setPlanState({ loading: false, plan: "free", subscriptionStatus: null });
+        return;
+      }
+
+      try {
+        const { data } = await api.get("/plan/quota", {
+          headers: { "Cache-Control": "no-cache" },
+          params: { _ts: Date.now() },
+        });
+        if (!cancelled) {
+          setPlanState({
+            loading: false,
+            plan: data?.plan || "free",
+            subscriptionStatus: data?.subscription_status || null,
+          });
+        }
+      } catch (_) {
+        if (!cancelled) {
+          setPlanState({
+            loading: false,
+            plan: user?.plan || "free",
+            subscriptionStatus: user?.subscription_status || null,
+          });
+        }
+      }
+    };
+
+    loadPlan();
+    return () => { cancelled = true; };
+  }, [user?.id, user?.plan, user?.subscription_status]);
 
   const startCheckout = async (lookup) => {
     if (!user) { window.location.href = "/register"; return; }
@@ -73,7 +110,7 @@ export default function Pricing() {
     }
   };
 
-  const isPro = user?.plan === "pro";
+  const isPro = planState.plan === "pro" && planState.subscriptionStatus === "active";
 
   return (
     <div className="min-h-screen bg-[#F9FAFB]">
@@ -93,7 +130,7 @@ export default function Pricing() {
         <div className="text-center">
           <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight">Un tarif simple, sans surprise.</h1>
           <p className="mt-4 text-gray-600 text-lg">Testez gratuitement, passez au Pro quand vous en avez besoin.</p>
-          {isPro && (
+          {!planState.loading && isPro && (
             <div className="mt-6 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-full px-4 py-2 text-sm font-medium" data-testid="pricing-current-plan">
               <Check className="w-4 h-4"/> Vous êtes déjà abonné Pro
             </div>
@@ -131,19 +168,19 @@ export default function Pricing() {
                   {user ? "Continuer" : p.cta}
                 </Link>
               ) : (
-                <button onClick={()=>startCheckout(p.lookup)} disabled={loading === p.lookup || isPro} data-testid={p.testid}
+                <button onClick={()=>startCheckout(p.lookup)} disabled={loading === p.lookup || planState.loading || isPro} data-testid={p.testid}
                   className={`mt-6 flex items-center justify-center gap-2 w-full py-2.5 rounded-md font-medium transition-colors ${
                     p.highlighted ? "bg-blue-500 hover:bg-blue-400 text-white" : "bg-gray-900 hover:bg-gray-800 text-white"
                   } disabled:opacity-40 disabled:cursor-not-allowed`}>
-                  {loading === p.lookup && <Loader2 className="w-4 h-4 animate-spin"/>}
-                  {isPro ? "Déjà Pro" : loading === p.lookup ? "Redirection…" : p.cta}
+                  {(loading === p.lookup || planState.loading) && <Loader2 className="w-4 h-4 animate-spin"/>}
+                  {isPro ? "Déjà Pro" : loading === p.lookup ? "Redirection…" : planState.loading ? "Vérification…" : p.cta}
                 </button>
               )}
             </div>
           ))}
         </div>
 
-        {!isPro && (
+        {!planState.loading && !isPro && (
           <div ref={consentRef} className="max-w-4xl mx-auto mt-6">
             {highlightConsent && (
               <div className="mb-2 flex items-center justify-center gap-2 text-sm font-semibold text-red-600" role="alert">
