@@ -62,6 +62,38 @@
 
 .sf-shine:hover::after { transform: translateX(120%); }
 
+.legal-copy {
+  color: #475569;
+  line-height: 1.75;
+}
+
+.legal-copy h2 {
+  margin-top: 2rem;
+  margin-bottom: .75rem;
+  color: #0f172a;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.legal-copy h2:first-child { margin-top: 0; }
+.legal-copy p { margin: .8rem 0; }
+.legal-copy ul {
+  margin: .8rem 0;
+  padding-left: 1.35rem;
+  list-style: disc;
+}
+.legal-copy li { margin: .35rem 0; }
+.legal-copy a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-copy strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sf-float,
   .sf-float-delayed,
