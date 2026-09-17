@@ -60,6 +60,7 @@ export default function MissionCreate() {
     try {
       const payload = {
         ...mission,
+        meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
         followup_hours: Number(mission.followup_hours),
         shifts: shifts.map(s => ({
           ...s,
