@@ -18,6 +18,8 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from meta_capi import send_meta_event
+
 # Twilio (optional — fallback to demo if not configured)
 try:
     from twilio.rest import Client as TwilioClient
@@ -263,6 +265,7 @@ class RegisterIn(BaseModel):
     agency_name: str
     phone: str = ""
     onboarding_answers: Optional[dict] = None
+    meta_consent: bool = False
 
     @field_validator("password")
     @classmethod
@@ -390,6 +393,7 @@ class MissionIn(BaseModel):
     cascade_enabled: bool = True
     followup_hours: int = 2
     shifts: List[ShiftIn] = Field(min_length=1)
+    meta_consent: bool = False
 
 
 class MissionUpdateIn(BaseModel):
@@ -461,7 +465,7 @@ async def update_shift_and_mission_status(shift_id: str):
 
 # ---------------- Auth ----------------
 @api.post("/auth/register")
-async def register(payload: RegisterIn, response: Response):
+async def register(payload: RegisterIn, request: Request, response: Response):
     email = payload.email.lower().strip()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
@@ -472,6 +476,19 @@ async def register(payload: RegisterIn, response: Response):
             "onboarding_answers": payload.onboarding_answers or None,
             "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None}
     await db.users.insert_one(user)
+
+    if payload.meta_consent:
+        origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
+        await send_meta_event(
+            event_name="CompleteRegistration",
+            event_id=f"registration_{user['id']}",
+            event_source_url=f"{origin}/register" if origin else "/register",
+            email=user.get("email"),
+            phone=user.get("phone"),
+            external_id=user.get("id"),
+            client_user_agent=request.headers.get("user-agent"),
+        )
+
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
@@ -693,8 +710,9 @@ async def list_missions(user=Depends(get_current_user)):
 
 
 @api.post("/missions")
-async def create_mission(payload: MissionIn, user=Depends(get_current_user)):
+async def create_mission(payload: MissionIn, request: Request, user=Depends(get_current_user)):
     await check_quota_or_raise(user, "mission")  # noqa: F821 (defined later)
+    is_first_mission = await db.missions.count_documents({"agency_id": user["id"]}) == 0
     mission = {
         "id": new_id(),
         "agency_id": user["id"],
@@ -721,6 +739,19 @@ async def create_mission(payload: MissionIn, user=Depends(get_current_user)):
         await db.shifts.insert_one(shift)
         shift.pop("_id", None)
     mission.pop("_id", None)
+
+    if is_first_mission and payload.meta_consent:
+        origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
+        await send_meta_event(
+            event_name="StartTrial",
+            event_id=f"trial_{user['id']}",
+            event_source_url=f"{origin}/app/missions/new" if origin else "/app/missions/new",
+            email=user.get("email"),
+            phone=user.get("phone"),
+            external_id=user.get("id"),
+            client_user_agent=request.headers.get("user-agent"),
+        )
+
     return await mission_with_shifts({**mission}, include_slots=True)
 
 
@@ -1379,10 +1410,46 @@ async def get_quota(user=Depends(get_current_user)):
 class CheckoutIn(BaseModel):
     lookup_key: str
     origin_url: str
+    meta_consent: bool = False
+
+
+async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optional[str] = None):
+    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not record or not record.get("meta_consent") or record.get("meta_subscribe_sent_at"):
+        return
+
+    user = await db.users.find_one({"id": record.get("user_id")}, {"_id": 0})
+    if not user:
+        return
+
+    sub_id = subscription_id or record.get("stripe_subscription_id")
+    event_id = f"subscribe_{sub_id or session_id}"
+    origin = (record.get("origin_url") or FRONTEND_URL).rstrip("/")
+    custom_data = {
+        "currency": str(record.get("currency") or "eur").upper(),
+        "value": float(record.get("amount") or 0) / 100,
+    }
+
+    sent = await send_meta_event(
+        event_name="Subscribe",
+        event_id=event_id,
+        event_source_url=f"{origin}/pricing" if origin else "/pricing",
+        email=user.get("email"),
+        phone=user.get("phone"),
+        external_id=user.get("id"),
+        client_user_agent=record.get("client_user_agent"),
+        custom_data=custom_data,
+        subscription_id=sub_id,
+    )
+    if sent:
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"meta_subscribe_sent_at": iso(now_utc()), "meta_subscribe_event_id": event_id}},
+        )
 
 
 @api.post("/payments/checkout")
-async def create_checkout(payload: CheckoutIn, user=Depends(get_current_user)):
+async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
     prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
     if not prices:
         raise HTTPException(status_code=400, detail=f"Prix inconnu: {payload.lookup_key}")
@@ -1404,8 +1471,27 @@ async def create_checkout(payload: CheckoutIn, user=Depends(get_current_user)):
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
         "lookup_key": payload.lookup_key, "amount": (price.unit_amount or 0),
         "currency": price.currency, "status": "initiated", "payment_status": "pending",
+        "origin_url": origin,
+        "client_user_agent": request.headers.get("user-agent"),
+        "meta_consent": payload.meta_consent,
         "created_at": iso(now_utc()), "updated_at": iso(now_utc()),
     })
+
+    if payload.meta_consent:
+        await send_meta_event(
+            event_name="InitiateCheckout",
+            event_id=f"checkout_{session.id}",
+            event_source_url=f"{origin}/pricing",
+            email=user.get("email"),
+            phone=user.get("phone"),
+            external_id=user.get("id"),
+            client_user_agent=request.headers.get("user-agent"),
+            custom_data={
+                "currency": str(price.currency or "eur").upper(),
+                "value": float(price.unit_amount or 0) / 100,
+            },
+        )
+
     return {"checkout_url": session.url, "session_id": session.id}
 
 
@@ -1429,6 +1515,8 @@ async def payment_status_endpoint(session_id: str):
                         "plan": "pro", "subscription_status": "active",
                         "stripe_customer_id": s.customer, "stripe_subscription_id": s.subscription,
                     }})
+                if s.payment_status == "paid":
+                    await _send_subscribe_meta_if_needed(session_id, s.subscription)
                 record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
         except stripe_lib.error.StripeError:
             pass
@@ -1460,6 +1548,8 @@ async def stripe_webhook(request: Request):
                 "stripe_customer_id": obj.get("customer"),
                 "stripe_subscription_id": obj.get("subscription"),
             }})
+        if obj.get("payment_status") == "paid":
+            await _send_subscribe_meta_if_needed(obj["id"], obj.get("subscription"))
     elif t == "customer.subscription.deleted":
         await db.users.update_one({"stripe_customer_id": obj.get("customer")}, {"$set": {
             "plan": "free", "subscription_status": "canceled",
