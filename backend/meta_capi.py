@@ -7,6 +7,8 @@ from typing import Optional
 import httpx
 
 logger = logging.getLogger("shiftflow.meta")
+# Prevent httpx INFO logs from printing request URLs containing the Meta access token.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 META_PIXEL_ID = os.environ.get("META_PIXEL_ID", "").strip()
 META_CAPI_ACCESS_TOKEN = os.environ.get("META_CAPI_ACCESS_TOKEN", "").strip()
