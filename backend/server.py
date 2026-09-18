@@ -742,14 +742,30 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
 
     if is_first_mission and payload.meta_consent:
         origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
+        event_source_url = f"{origin}/app/missions/new" if origin else "/app/missions/new"
+
+        # Keep Meta's standard trial event for campaign/funnel reporting.
         await send_meta_event(
             event_name="StartTrial",
             event_id=f"trial_{user['id']}",
-            event_source_url=f"{origin}/app/missions/new" if origin else "/app/missions/new",
+            event_source_url=event_source_url,
             email=user.get("email"),
             phone=user.get("phone"),
             external_id=user.get("id"),
             client_user_agent=request.headers.get("user-agent"),
+        )
+
+        # Custom activation event: the account has actually used ShiftFlow by creating
+        # its first mission, rather than only completing registration.
+        await send_meta_event(
+            event_name="FirstMissionCreated",
+            event_id=f"first_mission_{user['id']}",
+            event_source_url=event_source_url,
+            email=user.get("email"),
+            phone=user.get("phone"),
+            external_id=user.get("id"),
+            client_user_agent=request.headers.get("user-agent"),
+            custom_data={"mission_id": mission["id"]},
         )
 
     return await mission_with_shifts({**mission}, include_slots=True)
