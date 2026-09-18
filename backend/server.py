@@ -1462,6 +1462,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
         customer_email=user.get("email"),
+        allow_promotion_codes=True,
         metadata={"user_id": user["id"], "lookup_key": payload.lookup_key},
         custom_text={
             "submit": {"message": "TVA non applicable, art. 293 B du CGI"},
