@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CalendarClock, MapPin, Euro, CheckCircle2, XCircle, Zap, AlertTriangle, Hammer } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
@@ -22,7 +22,7 @@ export default function PublicConfirm() {
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const { data } = await api.get(`/public/mission/${token}`);
       setData(data);
@@ -30,8 +30,9 @@ export default function PublicConfirm() {
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || "Lien invalide");
     }
-  };
-  useEffect(() => { load(); }, [token]);
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
 
   const accept = async () => {
     setLoading(true);
