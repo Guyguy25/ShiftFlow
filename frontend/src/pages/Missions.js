@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, CalendarClock, Copy } from "lucide-react";
+import { Plus, CalendarClock, Copy, Archive } from "lucide-react";
 import { api } from "../lib/api";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
@@ -9,15 +9,16 @@ import UpgradeModal from "../components/UpgradeModal";
 export default function Missions() {
   const [missions, setMissions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   const [upgrade, setUpgrade] = useState(null);
   const nav = useNavigate();
 
   const load = () => {
     setLoading(true);
-    api.get("/missions").then((r) => setMissions(r.data)).finally(() => setLoading(false));
+    api.get("/missions", { params: { archived: showArchived } }).then((r) => setMissions(r.data)).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [showArchived]);
 
   const duplicate = async (e, id) => {
     e.preventDefault(); e.stopPropagation();
@@ -45,17 +46,25 @@ export default function Missions() {
           <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Missions</div>
           <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Toutes vos missions</h1>
         </div>
-        <Link to="/app/missions/new" data-testid="missions-new-btn"
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-md font-medium transition-colors">
-          <Plus className="w-4 h-4"/> Nouvelle mission
-        </Link>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setShowArchived((v) => !v)}
+            className="inline-flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-md font-medium transition-colors">
+            <Archive className="w-4 h-4"/> {showArchived ? "Missions actives" : "Archives"}
+          </button>
+          {!showArchived && (
+            <Link to="/app/missions/new" data-testid="missions-new-btn"
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-md font-medium transition-colors">
+              <Plus className="w-4 h-4"/> Nouvelle mission
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="mt-8">
         {loading ? <div className="text-gray-500">Chargement…</div> :
          missions.length === 0 ? (
           <div className="bg-white border border-dashed border-gray-300 rounded-xl p-10 text-center text-gray-500">
-            Aucune mission. <Link to="/app/missions/new" className="text-blue-600 font-medium">Créez-en une</Link>.
+            {showArchived ? "Aucune mission archivée." : <>Aucune mission. <Link to="/app/missions/new" className="text-blue-600 font-medium">Créez-en une</Link>.</>}
           </div>
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
@@ -90,9 +99,11 @@ export default function Missions() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={(e)=>duplicate(e, m.id)} data-testid={`duplicate-mission-${m.id}`} className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600" title="Dupliquer">
-                        <Copy className="w-3.5 h-3.5"/> Dupliquer
-                      </button>
+                      {!showArchived && (
+                        <button onClick={(e)=>duplicate(e, m.id)} data-testid={`duplicate-mission-${m.id}`} className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600" title="Dupliquer">
+                          <Copy className="w-3.5 h-3.5"/> Dupliquer
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
