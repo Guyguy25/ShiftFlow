@@ -108,6 +108,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
 }
 
 function ShiftSelector({ mission, shift, workers, onSelected }) {
+  const nav = useNavigate();
   const [selected, setSelected] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -162,6 +163,29 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
     setWaitingForWhatsApp(false);
     sendSelection();
   }, [connectOpen, sendSelection, waitingForWhatsApp]);
+
+  if (workers.length === 0) {
+    const returnTo = `/app/missions/${mission.id}`;
+    return (
+      <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-6 py-8 text-center" data-testid={`shift-empty-workers-${shift.id}`}>
+        <div className="mx-auto w-12 h-12 rounded-full bg-white border border-blue-100 flex items-center justify-center shadow-sm">
+          <Users className="w-5 h-5 text-blue-600" />
+        </div>
+        <h3 className="mt-4 text-base font-semibold text-gray-900">Ajoutez vos premiers intervenants</h3>
+        <p className="mt-1 text-sm text-gray-600 max-w-md mx-auto">
+          Votre équipe est encore vide. Importez vos contacts depuis WhatsApp, votre téléphone, ou ajoutez-les manuellement avant de lancer la cascade.
+        </p>
+        <button
+          type="button"
+          onClick={() => nav(`/app/workers?add=1&returnTo=${encodeURIComponent(returnTo)}`)}
+          data-testid={`shift-add-first-workers-${shift.id}`}
+          className="mt-5 inline-flex items-center gap-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-medium transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Ajouter mes premiers intervenants
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
