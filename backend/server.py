@@ -702,8 +702,9 @@ async def mission_with_shifts(mission: dict, include_slots: bool = False) -> dic
 
 
 @api.get("/missions")
-async def list_missions(user=Depends(get_current_user)):
-    missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+async def list_missions(archived: bool = False, user=Depends(get_current_user)):
+    query = {"agency_id": user["id"], "archived": True if archived else {"$ne": True}}
+    missions = await db.missions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for m in missions:
         await mission_with_shifts(m, include_slots=False)
     return missions
@@ -790,14 +791,30 @@ async def update_mission(mission_id: str, payload: MissionUpdateIn, user=Depends
 
 @api.delete("/missions/{mission_id}")
 async def delete_mission(mission_id: str, user=Depends(get_current_user)):
-    res = await db.missions.delete_one({"id": mission_id, "agency_id": user["id"]})
-    if res.deleted_count == 0:
+    mission = await db.missions.find_one(
+        {"id": mission_id, "agency_id": user["id"], "archived": {"$ne": True}},
+        {"_id": 0},
+    )
+    if not mission:
         raise HTTPException(status_code=404, detail="Mission introuvable")
-    shift_ids = [s["id"] for s in await db.shifts.find({"mission_id": mission_id}, {"_id": 0}).to_list(500)]
-    await db.shifts.delete_many({"mission_id": mission_id})
-    if shift_ids:
-        await db.mission_workers.delete_many({"shift_id": {"$in": shift_ids}})
-    return {"ok": True}
+
+    # "Delete" is intentionally a soft delete. Keeping the mission prevents a
+    # free account from repeatedly deleting its one free mission to create more.
+    archived_at = iso(now_utc())
+    await db.missions.update_one(
+        {"id": mission_id, "agency_id": user["id"]},
+        {"$set": {
+            "archived": True,
+            "archived_at": archived_at,
+            "status_before_archive": mission.get("status"),
+            "status": "cancelled",
+        }},
+    )
+    await db.shifts.update_many(
+        {"mission_id": mission_id, "status": {"$ne": "cancelled"}},
+        {"$set": {"status": "cancelled"}},
+    )
+    return {"ok": True, "archived": True, "archived_at": archived_at}
 
 
 @api.post("/missions/{mission_id}/cancel")
@@ -1054,7 +1071,10 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
 
 @api.get("/dashboard/summary")
 async def dashboard_summary(user=Depends(get_current_user)):
-    missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(2000)
+    missions = await db.missions.find(
+        {"agency_id": user["id"], "archived": {"$ne": True}},
+        {"_id": 0},
+    ).to_list(2000)
     for m in missions:
         await mission_with_shifts(m, include_slots=False)
     workers_count = await db.workers.count_documents({"agency_id": user["id"]})
@@ -1359,7 +1379,10 @@ async def _get_plan(user_id: str) -> str:
 
 async def _active_missions_count(user_id: str) -> int:
     today = now_utc().date().isoformat()
-    ms = await db.missions.find({"agency_id": user_id, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(2000)
+    ms = await db.missions.find(
+        {"agency_id": user_id, "status": {"$ne": "cancelled"}, "archived": {"$ne": True}},
+        {"_id": 0},
+    ).to_list(2000)
     count = 0
     for m in ms:
         shifts = await db.shifts.find({"mission_id": m["id"]}, {"_id": 0}).to_list(500)
@@ -1372,13 +1395,19 @@ async def _active_missions_count(user_id: str) -> int:
     return count
 
 
+async def _missions_created_count(user_id: str) -> int:
+    # The free offer is one mission total, not one simultaneously active mission.
+    # Archived/cancelled/past missions still consume the single free mission.
+    return await db.missions.count_documents({"agency_id": user_id})
+
+
 async def check_quota_or_raise(user, kind: str):
     if (await _get_plan(user["id"])) == "pro":
         return
     if kind == "mission":
-        if (await _active_missions_count(user["id"])) >= FREE_MISSION_LIMIT:
+        if (await _missions_created_count(user["id"])) >= FREE_MISSION_LIMIT:
             raise HTTPException(status_code=402,
-                detail=f"Limite plan gratuit atteinte ({FREE_MISSION_LIMIT} mission active max). Passez au Pro pour créer des missions illimitées.")
+                detail=f"Limite plan gratuit atteinte ({FREE_MISSION_LIMIT} mission gratuite au total). Passez au Pro pour créer des missions illimitées.")
     elif kind == "worker":
         if (await db.workers.count_documents({"agency_id": user["id"]})) >= FREE_WORKER_LIMIT:
             raise HTTPException(status_code=402,
@@ -1411,11 +1440,13 @@ async def submit_onboarding(payload: OnboardingIn, user=Depends(get_current_user
 async def get_quota(user=Depends(get_current_user)):
     plan = await _get_plan(user["id"])
     missions = await _active_missions_count(user["id"])
+    missions_used = await _missions_created_count(user["id"])
     workers = await db.workers.count_documents({"agency_id": user["id"]})
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     return {
         "plan": plan,
         "active_missions": missions,
+        "missions_used": missions_used,
         "mission_limit": None if plan == "pro" else FREE_MISSION_LIMIT,
         "workers": workers,
         "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
