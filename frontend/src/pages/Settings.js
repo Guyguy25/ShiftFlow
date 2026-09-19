@@ -150,7 +150,7 @@ export default function Settings() {
               {isPro ? (
                 <>Missions et intervenants <strong>illimités</strong>. Merci pour votre soutien !</>
               ) : (
-                <>Missions actives : <strong>{quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong></>
+                <>Mission gratuite utilisée : <strong>{quota.missions_used ?? quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong></>
               )}
             </div>
           )}
