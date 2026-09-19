@@ -21,7 +21,7 @@ let shuttingDown = false;
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function safeSessionId(value) { const raw = String(value || DEFAULT_SESSION_ID).trim(); return raw.replace(/[^a-zA-Z0-9_-]/g, "_") || "default"; }
 function sessionPath(sessionId) { return path.join(SESSION_ROOT, safeSessionId(sessionId)); }
-function createSessionState(sessionId) { return { id: safeSessionId(sessionId), sock: null, connected: false, qr: null, qrText: null, contacts: new Map(), pendingLidContacts: new Map(), lidToPhone: new Map(), contactsLoading: false, initialSyncDone: false, starting: false, reconnectTimer: null, refreshPromise: null, resetPromise: null, lastRefreshAt: 0, generation: 0, lastConnectionError: null, sendQueue: Promise.resolve(), sendQueueLength: 0, lastSendAt: 0 }; }
+function createSessionState(sessionId) { return { id: safeSessionId(sessionId), sock: null, connected: false, qr: null, qrText: null, contacts: new Map(), pendingLidContacts: new Map(), lidToPhone: new Map(), historyFallbackCandidates: new Map(), historyFallbackTimer: null, contactsLoading: false, initialSyncDone: false, starting: false, reconnectTimer: null, refreshPromise: null, resetPromise: null, lastRefreshAt: 0, generation: 0, lastConnectionError: null, sendQueue: Promise.resolve(), sendQueueLength: 0, lastSendAt: 0 }; }
 function getSession(sessionId) { const id = safeSessionId(sessionId); let state = sessions.get(id); if (!state) { state = createSessionState(id); sessions.set(id, state); } return state; }
 function hasAuthFiles(state) { try { return fs.existsSync(path.join(sessionPath(state.id), "creds.json")); } catch (_) { return false; } }
 function normalizeNumber(value) { return String(value || "").replace(/@s\.whatsapp\.net/g, "").replace(/@c\.us/g, "").replace(/@lid/g, "").replace(/\D/g, ""); }
@@ -61,7 +61,12 @@ async function upsertContacts(state, list, source = "address_book") {
         const contact = await normalizeContact(state, raw, source);
         if (!contact) continue;
         state.pendingLidContacts.delete(contact.id);
+
         const existing = state.contacts.get(contact.number);
+        // Never let the conservative history fallback overwrite a contact
+        // that WhatsApp explicitly emitted as an address-book contact.
+        if (existing?.source === "address_book" && source !== "address_book") continue;
+
         if (!existing || existing.id !== contact.id || existing.name !== contact.name || existing.source !== contact.source) {
             state.contacts.set(contact.number, contact);
             changed++;
@@ -70,10 +75,61 @@ async function upsertContacts(state, list, source = "address_book") {
     return changed;
 }
 
+function isVisibleContactSource(source) {
+    return source === "address_book" || source === "history_display_name";
+}
+
 function sortedContacts(state) {
     return Array.from(state.contacts.values())
-        .filter(contact => contact.source === "address_book")
+        .filter(contact => isVisibleContactSource(contact.source))
         .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+}
+
+function addressBookContactCount(state) {
+    let count = 0;
+    for (const contact of state.contacts.values()) {
+        if (contact.source === "address_book") count++;
+    }
+    return count;
+}
+
+function clearHistoryFallback(state) {
+    if (state.historyFallbackTimer) {
+        clearTimeout(state.historyFallbackTimer);
+        state.historyFallbackTimer = null;
+    }
+    state.historyFallbackCandidates.clear();
+    let removed = 0;
+    for (const [number, contact] of Array.from(state.contacts.entries())) {
+        if (contact.source === "history_display_name") {
+            state.contacts.delete(number);
+            removed++;
+        }
+    }
+    return removed;
+}
+
+function scheduleHistoryFallback(state, generation) {
+    if (state.historyFallbackTimer) clearTimeout(state.historyFallbackTimer);
+    state.historyFallbackTimer = setTimeout(async () => {
+        state.historyFallbackTimer = null;
+        if (generation !== state.generation || !state.connected) return;
+        if (addressBookContactCount(state) > 0) {
+            state.historyFallbackCandidates.clear();
+            return;
+        }
+
+        const candidates = Array.from(state.historyFallbackCandidates.values());
+        state.historyFallbackCandidates.clear();
+        if (!candidates.length) return;
+
+        const changed = await upsertContacts(state, candidates, "history_display_name");
+        if (changed > 0) {
+            await resolvePendingLids(state);
+            await saveContactsCache(state);
+            console.log(`🧩 Fallback contacts utilisé [${state.id}] : ${sortedContacts(state).length} contact(s) depuis displayName`);
+        }
+    }, 6000);
 }
 
 function contactsFile(state) { return path.join(sessionPath(state.id), "contacts.json"); }
@@ -87,7 +143,7 @@ async function loadContactsCache(state) {
 
         // Older ShiftFlow versions cached chat/history push-names as if they
         // were phonebook contacts. Never re-import that polluted cache.
-        const trusted = data.filter(contact => contact?.source === "address_book");
+        const trusted = data.filter(contact => isVisibleContactSource(contact?.source));
         if (trusted.length !== data.length) {
             state.contacts.clear();
             await fs.promises.rm(file, { force: true });
@@ -96,8 +152,10 @@ async function loadContactsCache(state) {
         }
 
         state.contacts.clear();
-        await upsertContacts(state, trusted, "address_book");
-        console.log(`📂 ${state.contacts.size} contacts carnet chargés [${state.id}]`);
+        for (const source of ["address_book", "history_display_name"]) {
+            await upsertContacts(state, trusted.filter(contact => contact.source === source), source);
+        }
+        console.log(`📂 ${sortedContacts(state).length} contacts fiables chargés [${state.id}]`);
     } catch (error) {
         console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message);
     }
@@ -114,6 +172,7 @@ function clearSessionMemory(state) {
     state.contacts.clear();
     state.pendingLidContacts.clear();
     state.lidToPhone.clear();
+    clearHistoryFallback(state);
     state.contactsLoading = false;
     state.initialSyncDone = false;
     state.refreshPromise = null;
@@ -255,16 +314,47 @@ async function startSession(state) { if (shuttingDown || state.starting || state
     await applyLidMapping(state, update);
 });
 
+sock.ev.on("messaging-history.set", async event => {
+    if (generation !== state.generation) return;
+
+    // Baileys' history contact list is derived from conversations, so importing
+    // it wholesale is what produced hundreds of "~ Name" pseudo-contacts.
+    // We only keep the much stronger chat.displayName signal as a fallback,
+    // and only use it if no real address-book contacts arrive within 6 seconds.
+    for (const chat of (Array.isArray(event?.chats) ? event.chats : [])) {
+        const id = String(chat?.id || "");
+        const displayName = String(chat?.displayName || "").trim();
+        if ((!isPersonJid(id) && !isLidJid(id)) || !displayName) continue;
+        if (displayName.startsWith("~") || looksLikePhoneName(displayName)) continue;
+
+        const candidate = {
+            id,
+            name: displayName,
+            phoneNumber: chat?.pnJid || chat?.phoneNumber || chat?.number,
+            lid: chat?.lidJid || chat?.accountLid,
+        };
+        state.historyFallbackCandidates.set(id, candidate);
+    }
+
+    if (state.historyFallbackCandidates.size > 0 && addressBookContactCount(state) === 0) {
+        scheduleHistoryFallback(state, generation);
+    }
+});
+
 sock.ev.on("contacts.upsert", async list => {
     if (generation !== state.generation) return;
     const changed = await upsertContacts(state, Array.isArray(list) ? list : [], "address_book");
-    if (changed > 0) await saveContactsCache(state);
+    if (addressBookContactCount(state) > 0) {
+        const removed = clearHistoryFallback(state);
+        if (changed > 0 || removed > 0) await saveContactsCache(state);
+    } else if (changed > 0) {
+        await saveContactsCache(state);
+    }
     await resolvePendingLids(state);
 });
 
 // contacts.update is also emitted for message push-names. It must never create
 // a new contact, otherwise every conversation can leak into the address book.
-// Saved-contact changes are delivered again through contacts.upsert/app-state sync.
 sock.ev.on("contacts.update", async () => {
     if (generation !== state.generation) return;
 });
