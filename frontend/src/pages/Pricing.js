@@ -74,7 +74,7 @@ export default function Pricing() {
 
     loadPlan();
     return () => { cancelled = true; };
-  }, [user?.id, user?.plan, user?.subscription_status]);
+  }, [user]);
 
   const startCheckout = async (lookup) => {
     if (!user) { window.location.href = "/register"; return; }
