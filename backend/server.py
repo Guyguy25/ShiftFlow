@@ -1366,7 +1366,7 @@ async def root():
 
 # ---------------- Stripe / Plan / Onboarding ----------------
 import stripe as stripe_lib
-stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY") or "sk_test_emergent"
+stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 FREE_MISSION_LIMIT = 1
 FREE_WORKER_LIMIT = 10
