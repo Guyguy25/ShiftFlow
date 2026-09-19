@@ -32,9 +32,19 @@ function nameFromChat(chat) {
 }
 
 function phoneFromChat(chat) {
-  for (const value of [chat?.phoneNumber, chat?.number, chat?.pn, chat?.jid, chat?.id]) {
+  // Explicit PN fields are safe to use for both normal JIDs and LIDs.
+  for (const value of [chat?.phoneNumber, chat?.number, chat?.pn]) {
     const raw = String(value || "");
     const digits = raw.replace(/\D/g, "");
+    if (/^\d{10,15}$/.test(digits)) return digits;
+  }
+
+  // A @lid identifier is NOT a phone number even though it is numeric.
+  // Only normal WhatsApp person JIDs may use the JID digits as a fallback.
+  for (const value of [chat?.jid, chat?.id]) {
+    const raw = String(value || "");
+    if (!raw.endsWith("@s.whatsapp.net")) continue;
+    const digits = raw.split("@")[0].replace(/\D/g, "");
     if (/^\d{10,15}$/.test(digits)) return digits;
   }
   return "";
