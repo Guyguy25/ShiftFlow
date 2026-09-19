@@ -7,6 +7,7 @@ import { toast, Toaster } from "sonner";
 
 const URL_LIKE_RE = /(?:https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/i;
 const PLACEHOLDER_RE = /\{[^{}]+\}/g;
+const DEFAULT_REQUIRED_TOKENS = ["{prenom}", "{mission}", "{date}", "{lien}"];
 
 export default function Settings() {
   const { user, refresh } = useAuth();
@@ -61,8 +62,8 @@ export default function Settings() {
   const isPro = user?.plan === "pro";
   const maxChars = messageConfig?.max_chars || 500;
   const maxLines = messageConfig?.max_lines || 10;
-  const variables = messageConfig?.variables || [];
-  const requiredTokens = messageConfig?.required || ["{prenom}", "{mission}", "{date}", "{lien}"];
+  const variables = useMemo(() => messageConfig?.variables || [], [messageConfig?.variables]);
+  const requiredTokens = useMemo(() => messageConfig?.required || DEFAULT_REQUIRED_TOKENS, [messageConfig?.required]);
   const allowedTokens = useMemo(() => new Set(variables.map((v) => v.token)), [variables]);
 
   const messageValidation = useMemo(() => {
