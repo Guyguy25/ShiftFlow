@@ -11,7 +11,7 @@ const PLANS = [
     name: "Free",
     price: "0 €",
     period: "toujours",
-    features: ["1 mission active", "Jusqu'à 10 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
+    features: ["1 mission gratuite", "Jusqu'à 10 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
     cta: "Commencer",
     href: "/register",
     highlighted: false,
