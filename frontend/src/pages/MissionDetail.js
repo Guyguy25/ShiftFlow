@@ -355,8 +355,9 @@ export default function MissionDetail() {
     await load();
   };
   const deleteMission = async () => {
-    if (!window.confirm("Supprimer cette mission ? (irréversible)")) return;
+    if (!window.confirm("Archiver cette mission ? Elle restera consultable dans la section Archives.")) return;
     await api.delete(`/missions/${id}`);
+    toast.success("Mission archivée");
     nav("/app/missions");
   };
   const duplicateMission = async () => {
