@@ -8,34 +8,42 @@ export default function PaymentSuccess() {
   const [sp] = useSearchParams();
   const sessionId = sp.get("session_id");
   const [status, setStatus] = useState("polling");
-  const [attempts, setAttempts] = useState(0);
   const { refresh } = useAuth();
 
   useEffect(() => {
-    if (!sessionId) { setStatus("error"); return; }
+    if (!sessionId) { setStatus("error"); return undefined; }
+
     let cancelled = false;
+    let attempts = 0;
+    let timer;
+
     const poll = async () => {
       try {
         const { data } = await api.get(`/payments/status/${sessionId}`);
         if (cancelled) return;
+
         if (data.payment_status === "paid") {
           setStatus("paid");
-          refresh();
+          await refresh();
         } else if (data.payment_status === "expired" || data.status === "expired") {
           setStatus("expired");
         } else if (attempts >= 20) {
           setStatus("timeout");
         } else {
-          setAttempts(a => a + 1);
-          setTimeout(poll, 2000);
+          attempts += 1;
+          timer = window.setTimeout(poll, 2000);
         }
       } catch (e) {
         if (!cancelled) setStatus("error");
       }
     };
+
     poll();
-    return () => { cancelled = true; };
-  }, [sessionId]);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [refresh, sessionId]);
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] flex items-center justify-center px-6">
