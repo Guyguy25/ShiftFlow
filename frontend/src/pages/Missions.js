@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Plus, CalendarClock, Copy, Archive } from "lucide-react";
 import { api } from "../lib/api";
@@ -13,12 +13,12 @@ export default function Missions() {
   const [upgrade, setUpgrade] = useState(null);
   const nav = useNavigate();
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     api.get("/missions", { params: { archived: showArchived } }).then((r) => setMissions(r.data)).finally(() => setLoading(false));
-  };
+  }, [showArchived]);
 
-  useEffect(() => { load(); }, [showArchived]);
+  useEffect(() => { load(); }, [load]);
 
   const duplicate = async (e, id) => {
     e.preventDefault(); e.stopPropagation();
