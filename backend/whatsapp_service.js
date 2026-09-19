@@ -32,11 +32,76 @@ function looksLikePhoneName(value) { const name = String(value || "").trim(); if
 function explicitPhoneNumber(contact) { const candidates = [contact?.phoneNumber, contact?.number]; for (const candidate of candidates) { const number = normalizeNumber(candidate); if (/^\d{10,15}$/.test(number)) return number; } return ""; }
 function contactName(contact) { const addressBookName = String(contact?.name || contact?.shortName || "").trim(); if (addressBookName && !looksLikePhoneName(addressBookName)) return addressBookName; const fallbacks = [contact?.notify, contact?.pushName, contact?.verifiedName]; for (const candidate of fallbacks) { const value = String(candidate || "").trim(); if (value && !looksLikePhoneName(value)) return value; } return ""; }
 async function resolveLidPhone(state, lid, contact) { const explicit = explicitPhoneNumber(contact); const lidDigits = normalizeNumber(lid); if (explicit && explicit !== lidDigits) return explicit; const cached = state.lidToPhone.get(lid); if (cached && cached !== lidDigits) return cached; const mapping = state.sock?.signalRepository?.lidMapping; if (mapping && typeof mapping.getPNForLID === "function") { try { const pn = await mapping.getPNForLID(lid); const number = normalizeNumber(pn); if (/^\d{10,15}$/.test(number) && number !== lidDigits) { state.lidToPhone.set(lid, number); return number; } } catch (_) {} } return ""; }
-async function normalizeContact(state, contact) { if (!contact) return null; const id = String(contact.id || contact.jid || ""); if (!id || (!isPersonJid(id) && !isLidJid(id))) return null; const name = contactName(contact); if (!name) return null; let number = ""; if (isPersonJid(id)) { number = normalizeNumber(contact?.number || contact?.phoneNumber || id.split("@")[0]); if (!/^\d{10,15}$/.test(number)) return null; } else { number = await resolveLidPhone(state, id, contact); if (!number) { state.pendingLidContacts.set(id, { ...contact, id }); return null; } } return { id, name, number }; }
-async function upsertContacts(state, list) { if (!Array.isArray(list)) return 0; let changed = 0; for (const raw of list) { const contact = await normalizeContact(state, raw); if (!contact) continue; state.pendingLidContacts.delete(contact.id); const existing = state.contacts.get(contact.number); if (!existing || existing.id !== contact.id || existing.name !== contact.name) { state.contacts.set(contact.number, contact); changed++; } } return changed; }
-function sortedContacts(state) { return Array.from(state.contacts.values()).sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" })); }
+async function normalizeContact(state, contact, source = "address_book") {
+    if (!contact) return null;
+    const id = String(contact.id || contact.jid || "");
+    if (!id || (!isPersonJid(id) && !isLidJid(id))) return null;
+    const name = contactName(contact);
+    if (!name) return null;
+
+    let number = "";
+    if (isPersonJid(id)) {
+        number = normalizeNumber(contact?.number || contact?.phoneNumber || id.split("@")[0]);
+        if (!/^\d{10,15}$/.test(number)) return null;
+    } else {
+        number = await resolveLidPhone(state, id, contact);
+        if (!number) {
+            state.pendingLidContacts.set(id, { ...contact, id, _shiftflowSource: source });
+            return null;
+        }
+    }
+
+    return { id, name, number, source };
+}
+
+async function upsertContacts(state, list, source = "address_book") {
+    if (!Array.isArray(list)) return 0;
+    let changed = 0;
+    for (const raw of list) {
+        const contact = await normalizeContact(state, raw, source);
+        if (!contact) continue;
+        state.pendingLidContacts.delete(contact.id);
+        const existing = state.contacts.get(contact.number);
+        if (!existing || existing.id !== contact.id || existing.name !== contact.name || existing.source !== contact.source) {
+            state.contacts.set(contact.number, contact);
+            changed++;
+        }
+    }
+    return changed;
+}
+
+function sortedContacts(state) {
+    return Array.from(state.contacts.values())
+        .filter(contact => contact.source === "address_book")
+        .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+}
+
 function contactsFile(state) { return path.join(sessionPath(state.id), "contacts.json"); }
-async function loadContactsCache(state) { try { const file = contactsFile(state); if (!fs.existsSync(file)) return; const data = JSON.parse(await fs.promises.readFile(file, "utf8")); if (!Array.isArray(data)) return; const before = data.length; state.contacts.clear(); await upsertContacts(state, data); console.log(`📂 ${state.contacts.size} contacts cache chargés [${state.id}]`); if (state.contacts.size !== before) await saveContactsCache(state); } catch (error) { console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message); } }
+
+async function loadContactsCache(state) {
+    try {
+        const file = contactsFile(state);
+        if (!fs.existsSync(file)) return;
+        const data = JSON.parse(await fs.promises.readFile(file, "utf8"));
+        if (!Array.isArray(data)) return;
+
+        // Older ShiftFlow versions cached chat/history push-names as if they
+        // were phonebook contacts. Never re-import that polluted cache.
+        const trusted = data.filter(contact => contact?.source === "address_book");
+        if (trusted.length !== data.length) {
+            state.contacts.clear();
+            await fs.promises.rm(file, { force: true });
+            console.log(`🧹 Ancien cache contacts ignoré [${state.id}] (${data.length} entrées non fiables)`);
+            return;
+        }
+
+        state.contacts.clear();
+        await upsertContacts(state, trusted, "address_book");
+        console.log(`📂 ${state.contacts.size} contacts carnet chargés [${state.id}]`);
+    } catch (error) {
+        console.error(`❌ Cache contacts illisible [${state.id}] :`, error.message);
+    }
+}
 async function saveContactsCache(state) { try { await fs.promises.mkdir(sessionPath(state.id), { recursive: true }); await fs.promises.writeFile(contactsFile(state), JSON.stringify(sortedContacts(state), null, 2), "utf8"); } catch (error) { console.error(`❌ Sauvegarde contacts impossible [${state.id}] :`, error.message); } }
 async function generateQR(state, qr) { state.qrText = qr; try { state.qr = await QRCode.toDataURL(qr); } catch (error) { console.error(`❌ Erreur génération QR [${state.id}] :`, error.message); state.qr = null; } console.log(`📱 NOUVEAU QR CODE [${state.id}]`); try { qrcode.generate(qr, { small: true }); } catch (_) {} }
 function statusCodeFrom(error) { try { return new Boom(error)?.output?.statusCode; } catch (_) { return undefined; } }
@@ -85,8 +150,33 @@ async function resetSessionForNewLogin(state, restart = true) {
 }
 function enqueueSend(state, task) { state.sendQueueLength++; const run = state.sendQueue.then(async () => { if (state.lastSendAt) { const wait = SEND_INTERVAL_MS - (Date.now() - state.lastSendAt); if (wait > 0) await sleep(wait); } try { return await task(); } finally { state.lastSendAt = Date.now(); } }); state.sendQueue = run.catch(() => {}); return run.finally(() => { state.sendQueueLength = Math.max(0, state.sendQueueLength - 1); }); }
 async function sendText(state, to, message) { if (!state.sock || !state.connected) throw new Error("WhatsApp n'est pas connecté."); const number = normalizeSendNumber(to); if (!number) throw new Error("Numéro de téléphone invalide."); const jid = `${number}@s.whatsapp.net`; return enqueueSend(state, async () => { if (!state.sock || !state.connected) throw new Error("WhatsApp n'est pas connecté."); console.log(`📤 Envoi WhatsApp [${state.id}] → ${number}`); const result = await state.sock.sendMessage(jid, { text: String(message || "") }); const messageId = result?.key?.id || null; if (!messageId) throw new Error("WhatsApp n'a pas retourné d'identifiant de message."); console.log(`✅ Message WhatsApp envoyé [${state.id}] → ${number} (${messageId})`); return { messageId, jid }; }); }
-async function applyLidMapping(state, update) { const lid = String(update?.lid || ""); const pn = String(update?.pn || ""); const number = normalizeNumber(pn); if (!isLidJid(lid) || !/^\d{10,15}$/.test(number)) return; state.lidToPhone.set(lid, number); const pending = state.pendingLidContacts.get(lid); if (!pending) return; const changed = await upsertContacts(state, [{ ...pending, phoneNumber: number }]); state.pendingLidContacts.delete(lid); if (changed > 0) await saveContactsCache(state); }
-async function resolvePendingLids(state) { let changed = 0; for (const [lid, raw] of Array.from(state.pendingLidContacts.entries())) { const number = await resolveLidPhone(state, lid, raw); if (!number) continue; const result = await upsertContacts(state, [{ ...raw, phoneNumber: number }]); changed += result; state.pendingLidContacts.delete(lid); } if (changed > 0) await saveContactsCache(state); return changed; }
+async function applyLidMapping(state, update) {
+    const lid = String(update?.lid || "");
+    const pn = String(update?.pn || "");
+    const number = normalizeNumber(pn);
+    if (!isLidJid(lid) || !/^\d{10,15}$/.test(number)) return;
+    state.lidToPhone.set(lid, number);
+
+    const pending = state.pendingLidContacts.get(lid);
+    if (!pending) return;
+    const source = pending._shiftflowSource || "address_book";
+    const changed = await upsertContacts(state, [{ ...pending, phoneNumber: number }], source);
+    state.pendingLidContacts.delete(lid);
+    if (changed > 0) await saveContactsCache(state);
+}
+
+async function resolvePendingLids(state) {
+    let changed = 0;
+    for (const [lid, raw] of Array.from(state.pendingLidContacts.entries())) {
+        const number = await resolveLidPhone(state, lid, raw);
+        if (!number) continue;
+        const source = raw._shiftflowSource || "address_book";
+        changed += await upsertContacts(state, [{ ...raw, phoneNumber: number }], source);
+        state.pendingLidContacts.delete(lid);
+    }
+    if (changed > 0) await saveContactsCache(state);
+    return changed;
+}
 function messagePhoneCandidates(msg) {
     const key = msg?.key || {};
     const values = [
@@ -160,33 +250,26 @@ async function applyChatContact(state, chat) {
     return changed;
 }
 
-async function startSession(state) { if (shuttingDown || state.starting || state.sock) return; state.starting = true; state.generation += 1; const generation = state.generation; try { const dir = sessionPath(state.id); await fs.promises.mkdir(dir, { recursive: true }); const existingAuth = hasAuthFiles(state); console.log(`${existingAuth ? "🔐 SESSION EXISTANTE" : "🆕 AUCUNE SESSION"} [${state.id}] → ${dir}`); console.log(`🔄 Initialisation Baileys [${state.id}]...`); const { state: authState, saveCreds } = await useMultiFileAuthState(dir); const sock = makeWASocket({ auth: authState, printQRInTerminal: false, browser: ["ShiftFlow", "Chrome", "1.0.0"], markOnlineOnConnect: false, syncFullHistory: false, connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 30000 }); state.sock = sock; state.lastConnectionError = null; sock.ev.on("creds.update", saveCreds); sock.ev.on("connection.update", async update => { if (generation !== state.generation) return; const { connection, qr, lastDisconnect } = update; if (qr) { state.connected = false; state.initialSyncDone = false; await generateQR(state, qr); } if (connection === "open") { state.connected = true; state.qr = null; state.qrText = null; state.initialSyncDone = true; state.lastConnectionError = null; await resolvePendingLids(state); console.log(`✅ WHATSAPP CONNECTÉ [${state.id}]`); } if (connection === "close") { state.connected = false; const code = statusCodeFrom(lastDisconnect?.error); state.lastConnectionError = code ?? null; console.log(`❌ CONNEXION WHATSAPP FERMÉE [${state.id}] — code ${code ?? "inconnu"}`); if (code === DisconnectReason.loggedOut) { console.log(`🚪 Logout réel détecté → réinitialisation complète [${state.id}]`); await resetSessionForNewLogin(state, true); return; } if (!shuttingDown && generation === state.generation) { if (state.reconnectTimer) clearTimeout(state.reconnectTimer); state.reconnectTimer = setTimeout(async () => { state.reconnectTimer = null; await destroySocket(state); if (!shuttingDown) startSession(state).catch(error => console.error(`❌ Reconnexion [${state.id}] :`, error)); }, 3000); console.log(`🔄 Reconnexion automatique dans 3 secondes... [${state.id}]`); } } }); sock.ev.on("lid-mapping.update", async update => { await applyLidMapping(state, update); });
-sock.ev.on("messaging-history.set", async event => {
-    try {
-        const contacts = Array.isArray(event?.contacts) ? event.contacts : [];
-        const chats = Array.isArray(event?.chats) ? event.chats : [];
-        let changed = await upsertContacts(state, contacts);
-        for (const chat of chats) {
-            try { changed += await applyChatContact(state, chat); } catch (_) {}
-        }
-        await resolvePendingLids(state);
-        if (changed > 0) await saveContactsCache(state);
-        console.log(`📚 Historique WhatsApp synchronisé [${state.id}] : ${contacts.length} contacts, ${chats.length} chats, ${state.contacts.size} exploitables`);
-    } catch (error) {
-        console.log(`⚠️ Synchronisation historique contacts impossible [${state.id}] : ${error.message}`);
-    }
+async function startSession(state) { if (shuttingDown || state.starting || state.sock) return; state.starting = true; state.generation += 1; const generation = state.generation; try { const dir = sessionPath(state.id); await fs.promises.mkdir(dir, { recursive: true }); const existingAuth = hasAuthFiles(state); console.log(`${existingAuth ? "🔐 SESSION EXISTANTE" : "🆕 AUCUNE SESSION"} [${state.id}] → ${dir}`); console.log(`🔄 Initialisation Baileys [${state.id}]...`); const { state: authState, saveCreds } = await useMultiFileAuthState(dir); const sock = makeWASocket({ auth: authState, printQRInTerminal: false, browser: ["ShiftFlow", "Chrome", "1.0.0"], markOnlineOnConnect: false, syncFullHistory: false, connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 30000 }); state.sock = sock; state.lastConnectionError = null; sock.ev.on("creds.update", async () => { if (generation !== state.generation) return; await saveCreds(); }); sock.ev.on("connection.update", async update => { if (generation !== state.generation) return; const { connection, qr, lastDisconnect } = update; if (qr) { state.connected = false; state.initialSyncDone = false; await generateQR(state, qr); } if (connection === "open") { state.connected = true; state.qr = null; state.qrText = null; state.initialSyncDone = true; state.lastConnectionError = null; await resolvePendingLids(state); console.log(`✅ WHATSAPP CONNECTÉ [${state.id}]`); } if (connection === "close") { state.connected = false; const code = statusCodeFrom(lastDisconnect?.error); state.lastConnectionError = code ?? null; console.log(`❌ CONNEXION WHATSAPP FERMÉE [${state.id}] — code ${code ?? "inconnu"}`); if (code === DisconnectReason.loggedOut) { console.log(`🚪 Logout réel détecté → réinitialisation complète [${state.id}]`); await resetSessionForNewLogin(state, true); return; } if (!shuttingDown && generation === state.generation) { if (state.reconnectTimer) clearTimeout(state.reconnectTimer); state.reconnectTimer = setTimeout(async () => { state.reconnectTimer = null; await destroySocket(state); if (!shuttingDown) startSession(state).catch(error => console.error(`❌ Reconnexion [${state.id}] :`, error)); }, 3000); console.log(`🔄 Reconnexion automatique dans 3 secondes... [${state.id}]`); } } }); sock.ev.on("lid-mapping.update", async update => {
+    if (generation !== state.generation) return;
+    await applyLidMapping(state, update);
 });
-sock.ev.on("messages.upsert", async event => { const messages = Array.isArray(event?.messages) ? event.messages : []; for (const msg of messages) { try { await applyMessageContact(state, msg); } catch (error) { console.log(`⚠️ Résolution contact depuis message impossible [${state.id}] : ${error.message}`); } } }); sock.ev.on("chats.upsert", async list => {
-    for (const chat of (Array.isArray(list) ? list : [])) {
-        try { await applyChatContact(state, chat); } catch (_) {}
-    }
+
+sock.ev.on("contacts.upsert", async list => {
+    if (generation !== state.generation) return;
+    const changed = await upsertContacts(state, Array.isArray(list) ? list : [], "address_book");
+    if (changed > 0) await saveContactsCache(state);
+    await resolvePendingLids(state);
 });
-sock.ev.on("chats.update", async list => {
-    for (const chat of (Array.isArray(list) ? list : [])) {
-        try { await applyChatContact(state, chat); } catch (_) {}
-    }
+
+// contacts.update is also emitted for message push-names. It must never create
+// a new contact, otherwise every conversation can leak into the address book.
+// Saved-contact changes are delivered again through contacts.upsert/app-state sync.
+sock.ev.on("contacts.update", async () => {
+    if (generation !== state.generation) return;
 });
-sock.ev.on("contacts.set", async event => { const changed = await upsertContacts(state, event?.contacts || []); if (changed > 0) await saveContactsCache(state); await resolvePendingLids(state); }); sock.ev.on("contacts.upsert", async list => { const changed = await upsertContacts(state, Array.isArray(list) ? list : []); if (changed > 0) await saveContactsCache(state); await resolvePendingLids(state); }); sock.ev.on("contacts.update", async list => { const changed = await upsertContacts(state, Array.isArray(list) ? list : []); if (changed > 0) await saveContactsCache(state); await resolvePendingLids(state); }); console.log(`✅ Socket Baileys créé [${state.id}].`); } catch (error) { state.connected = false; state.sock = null; console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error); if (!shuttingDown) setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000); } finally { state.starting = false; } }
+
+console.log(`✅ Socket Baileys créé [${state.id}].`); } catch (error) { state.connected = false; state.sock = null; console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error); if (!shuttingDown) setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000); } finally { state.starting = false; } }
 async function refreshContacts(state) { if (!state.connected || !state.sock) throw new Error("WhatsApp n'est pas connecté."); if (state.refreshPromise) return state.refreshPromise; const now = Date.now(); const elapsed = now - state.lastRefreshAt; if (state.lastRefreshAt && elapsed < REFRESH_COOLDOWN_MS) { const retryAfter = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000); const error = new Error(`Actualisation disponible dans ${retryAfter}s.`); error.statusCode = 429; error.retryAfter = retryAfter; throw error; } state.lastRefreshAt = now; state.contactsLoading = true; state.refreshPromise = (async () => { const before = state.contacts.size; if (typeof state.sock.resyncAppState === "function") { try { await state.sock.resyncAppState(["critical_unblock_low", "regular"], true); } catch (error) { console.log(`⚠️ Resync contacts incomplet [${state.id}] : ${error.message}`); } } await sleep(3000); await resolvePendingLids(state); await saveContactsCache(state); const after = state.contacts.size; return { count: after, added: Math.max(0, after - before), previousCount: before, refreshedAt: new Date().toISOString() }; })(); try { return await state.refreshPromise; } finally { state.refreshPromise = null; state.contactsLoading = false; } }
 function publicStatus(state) { const refreshRemaining = state.lastRefreshAt ? Math.max(0, Math.ceil((REFRESH_COOLDOWN_MS - (Date.now() - state.lastRefreshAt)) / 1000)) : 0; return { connected: state.connected, hasQR: !!state.qr, qr: state.qr, contactCount: state.contacts.size, contactsLoading: state.contactsLoading, contactsLoaded: state.contacts.size > 0, initialSyncDone: state.initialSyncDone, starting: state.starting, sessionId: state.id, lastConnectionError: state.lastConnectionError, sendQueueLength: state.sendQueueLength, refreshCooldown: refreshRemaining }; }
 function sessionFromRequest(req) { return safeSessionId(req.header("x-whatsapp-session") || req.query.sessionId || req.body?.sessionId || DEFAULT_SESSION_ID); }
