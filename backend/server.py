@@ -1406,6 +1406,24 @@ async def on_startup():
     await db.shifts.create_index("agency_id")
     await db.mission_workers.create_index("shift_id")
     await db.mission_workers.create_index("token", unique=True)
+
+    # Existing free accounts keep a full 30-day trial from this rollout.
+    # New registrations already receive explicit trial dates at creation.
+    rollout_start = now_utc()
+    await db.users.update_many(
+        {
+            "plan": {"$ne": "pro"},
+            "$or": [
+                {"trial_started_at": {"$exists": False}},
+                {"trial_ends_at": {"$exists": False}},
+            ],
+        },
+        {"$set": {
+            "trial_started_at": iso(rollout_start),
+            "trial_ends_at": iso(rollout_start + timedelta(days=FREE_TRIAL_DAYS)),
+        }},
+    )
+
     await seed_admin_and_demo()
     logger.info(f"Twilio ready: {twilio_ready()} (from={TWILIO_FROM or 'unset'})")
 
