@@ -27,7 +27,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
             <Crown className="w-6 h-6" />
           </div>
           <h2 className="mt-4 text-2xl font-display font-bold tracking-tight">
-            {title || "Limite du plan gratuit atteinte"}
+            {title || "Limite de l’essai gratuit atteinte"}
           </h2>
           <p className="mt-2 text-blue-100 text-sm">
             {message || "Passez au Pro pour un accès illimité aux missions et intervenants."}
@@ -45,7 +45,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
             </li>
             <li className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-              Rappels 24h par SMS
+              Rappels 24h par WhatsApp
             </li>
             <li className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
