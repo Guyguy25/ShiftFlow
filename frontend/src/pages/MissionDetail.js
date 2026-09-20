@@ -109,6 +109,8 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
 
 function ShiftSelector({ mission, shift, workers, onSelected }) {
   const nav = useNavigate();
+  const returnTo = `/app/missions/${mission.id}`;
+  const openAddWorkers = () => nav(`/app/workers?add=1&returnTo=${encodeURIComponent(returnTo)}`);
   const [selected, setSelected] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -165,77 +167,112 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
   }, [connectOpen, sendSelection, waitingForWhatsApp]);
 
   if (workers.length === 0) {
-    const returnTo = `/app/missions/${mission.id}`;
     return (
-      <div className="rounded-xl border border-blue-200 bg-blue-50/50 px-6 py-8 text-center" data-testid={`shift-empty-workers-${shift.id}`}>
-        <div className="mx-auto w-12 h-12 rounded-full bg-white border border-blue-100 flex items-center justify-center shadow-sm">
-          <Users className="w-5 h-5 text-blue-600" />
+      <div className="rounded-2xl border border-blue-200 bg-gradient-to-b from-blue-50/80 to-white px-6 py-9 text-center" data-testid={`shift-empty-workers-${shift.id}`}>
+        <div className="mx-auto w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm">
+          <Users className="w-5 h-5" />
         </div>
-        <h3 className="mt-4 text-base font-semibold text-gray-900">Ajoutez vos premiers intervenants</h3>
-        <p className="mt-1 text-sm text-gray-600 max-w-md mx-auto">
-          Votre équipe est encore vide. Importez vos contacts depuis WhatsApp, votre téléphone, ou ajoutez-les manuellement avant de lancer la cascade.
+        <h3 className="mt-4 text-lg font-semibold text-gray-900">Ajoutez vos premiers intervenants</h3>
+        <p className="mt-1.5 text-sm text-gray-600 max-w-md mx-auto leading-relaxed">
+          Importez votre équipe en quelques clics depuis WhatsApp, votre téléphone ou ajoutez quelqu’un manuellement.
         </p>
         <button
           type="button"
-          onClick={() => nav(`/app/workers?add=1&returnTo=${encodeURIComponent(returnTo)}`)}
+          onClick={openAddWorkers}
           data-testid={`shift-add-first-workers-${shift.id}`}
-          className="mt-5 inline-flex items-center gap-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-medium transition-colors"
+          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-semibold transition-colors shadow-sm"
         >
           <Plus className="w-4 h-4" /> Ajouter mes premiers intervenants
         </button>
+        <div className="mt-3 text-xs text-gray-400">Vous reviendrez automatiquement sur cette mission après l’ajout.</div>
       </div>
     );
   }
 
   return (
     <>
-      <div className="grid md:grid-cols-2 gap-6" data-testid={`shift-selector-${shift.id}`}>
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
-          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Disponibles</div>
-          <div className="border border-gray-200 rounded-md max-h-80 overflow-y-auto">
-            {workers.map((w) => {
-              const on = selected.includes(w.id);
-              return (
-                <button type="button" key={w.id} onClick={()=>toggle(w.id)}
-                  data-testid={`select-worker-${shift.id}-${w.id}`}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 border-b border-gray-100 last:border-0 text-left hover:bg-gray-50 ${on ? "bg-blue-50" : ""}`}>
-                  <div>
-                    <div className="text-sm font-medium">{w.first_name} {w.last_name}</div>
-                    <div className="text-xs text-gray-500">{w.phone}</div>
-                  </div>
-                  {on && <span className="text-xs font-bold text-blue-700">✓</span>}
-                </button>
-              );
-            })}
+          <div className="text-sm font-semibold text-gray-900">Composez votre équipe</div>
+          <div className="text-xs text-gray-500 mt-0.5">Sélectionnez les intervenants puis définissez l’ordre dans lequel ShiftFlow les contactera.</div>
+        </div>
+        <div className="text-xs text-gray-500"><span className="font-semibold text-gray-900">{selected.length}</span> sélectionné{selected.length > 1 ? "s" : ""}</div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-5" data-testid={`shift-selector-${shift.id}`}>
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Disponibles</div>
+            <span className="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{workers.length}</span>
+          </div>
+
+          <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+            <div className="max-h-80 overflow-y-auto">
+              {workers.map((w) => {
+                const on = selected.includes(w.id);
+                return (
+                  <button type="button" key={w.id} onClick={()=>toggle(w.id)}
+                    data-testid={`select-worker-${shift.id}-${w.id}`}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 last:border-0 text-left transition-colors ${on ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-gray-50"}`}>
+                    <div className="min-w-0">
+                      <div className={`text-sm font-medium truncate ${on ? "text-blue-900" : "text-gray-900"}`}>{w.first_name} {w.last_name}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{w.phone}</div>
+                    </div>
+                    <div className={`w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-colors ${on ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300 text-transparent"}`}>
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={openAddWorkers}
+              data-testid={`shift-add-more-workers-${shift.id}`}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50/70 hover:bg-blue-50 text-sm font-medium text-blue-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Ajouter des intervenants
+            </button>
           </div>
         </div>
+
         <div>
-          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Ordre de priorité ({selected.length})</div>
-          <div className="border border-gray-200 rounded-md min-h-[6rem]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Ordre de priorité</div>
+            <span className="text-[11px] text-gray-400">1 = contacté en premier</span>
+          </div>
+
+          <div className="border border-gray-200 rounded-xl min-h-[9rem] bg-white shadow-sm overflow-hidden">
             {selected.length === 0 ? (
-              <div className="p-6 text-sm text-gray-400 text-center">Aucun sélectionné</div>
+              <div className="min-h-[9rem] px-6 flex flex-col items-center justify-center text-center">
+                <Users className="w-5 h-5 text-gray-300" />
+                <div className="mt-2 text-sm font-medium text-gray-500">Aucun intervenant sélectionné</div>
+                <div className="mt-0.5 text-xs text-gray-400">Cliquez sur une personne à gauche pour l’ajouter.</div>
+              </div>
             ) : selected.map((wid, idx) => {
               const w = workers.find(x => x.id === wid);
               if (!w) return null;
               return (
-                <div key={wid} className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 last:border-0">
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">{idx + 1}</span>
-                    <div className="text-sm">{w.first_name} {w.last_name}</div>
+                <div key={wid} className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 last:border-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
+                    <div className="text-sm font-medium text-gray-900 truncate">{w.first_name} {w.last_name}</div>
                   </div>
-                  <div className="flex gap-1">
-                    <button onClick={()=>move(idx,-1)} className="p-1 hover:bg-gray-100 rounded"><ArrowUp className="w-4 h-4"/></button>
-                    <button onClick={()=>move(idx,1)} className="p-1 hover:bg-gray-100 rounded"><ArrowDown className="w-4 h-4"/></button>
-                    <button onClick={()=>toggle(wid)} className="p-1 hover:bg-red-50 text-red-600 rounded"><XCircle className="w-4 h-4"/></button>
+                  <div className="flex gap-1 shrink-0">
+                    <button type="button" onClick={()=>move(idx,-1)} disabled={idx === 0} title="Monter dans la priorité" className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed"><ArrowUp className="w-4 h-4"/></button>
+                    <button type="button" onClick={()=>move(idx,1)} disabled={idx === selected.length - 1} title="Descendre dans la priorité" className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed"><ArrowDown className="w-4 h-4"/></button>
+                    <button type="button" onClick={()=>toggle(wid)} title="Retirer" className="p-1.5 hover:bg-red-50 text-red-500 rounded-md"><XCircle className="w-4 h-4"/></button>
                   </div>
                 </div>
               );
             })}
           </div>
+
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <button onClick={submit} disabled={saving} data-testid={`submit-selection-${shift.id}`}
-            className="mt-3 w-full py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60 text-sm">
-            {saving ? "Envoi…" : `Lancer la cascade (${selected.length})`}
+          <button onClick={submit} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`}
+            className="mt-3 w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-sm transition-colors shadow-sm disabled:shadow-none">
+            {saving ? "Envoi…" : selected.length === 0 ? "Sélectionnez au moins un intervenant" : `Lancer la cascade (${selected.length})`}
           </button>
         </div>
       </div>
