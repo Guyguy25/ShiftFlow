@@ -527,10 +527,21 @@ async def register(payload: RegisterIn, request: Request, response: Response):
 
     if payload.meta_consent:
         origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
+        event_source_url = f"{origin}/register" if origin else "/register"
         await send_meta_event(
             event_name="CompleteRegistration",
             event_id=f"registration_{user['id']}",
-            event_source_url=f"{origin}/register" if origin else "/register",
+            event_source_url=event_source_url,
+            email=user.get("email"),
+            phone=user.get("phone"),
+            external_id=user.get("id"),
+            client_user_agent=request.headers.get("user-agent"),
+        )
+        # The 30-day trial now starts when the account is created.
+        await send_meta_event(
+            event_name="StartTrial",
+            event_id=f"trial_{user['id']}",
+            event_source_url=event_source_url,
             email=user.get("email"),
             phone=user.get("phone"),
             external_id=user.get("id"),
@@ -796,19 +807,8 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
         origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
         event_source_url = f"{origin}/app/missions/new" if origin else "/app/missions/new"
 
-        # Keep Meta's standard trial event for campaign/funnel reporting.
-        await send_meta_event(
-            event_name="StartTrial",
-            event_id=f"trial_{user['id']}",
-            event_source_url=event_source_url,
-            email=user.get("email"),
-            phone=user.get("phone"),
-            external_id=user.get("id"),
-            client_user_agent=request.headers.get("user-agent"),
-        )
-
-        # Custom activation event: the account has actually used ShiftFlow by creating
-        # its first mission, rather than only completing registration.
+        # Activation stays separate from trial start: this tells us the user
+        # actually used ShiftFlow rather than only creating an account.
         await send_meta_event(
             event_name="FirstMissionCreated",
             event_id=f"first_mission_{user['id']}",
