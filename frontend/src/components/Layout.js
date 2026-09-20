@@ -1,8 +1,37 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle, Clock3 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
+
+const formatTrialRemaining = (endsAt, nowMs) => {
+  if (!endsAt) return null;
+  const endMs = new Date(endsAt).getTime();
+  if (!Number.isFinite(endMs)) return null;
+  const remaining = Math.max(0, endMs - nowMs);
+
+  if (remaining <= 0) return { expired: true, label: "Essai terminé", remainingMs: 0 };
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const hourMs = 60 * 60 * 1000;
+  const minuteMs = 60 * 1000;
+
+  if (remaining < dayMs) {
+    const hours = Math.floor(remaining / hourMs);
+    const minutes = Math.max(0, Math.ceil((remaining % hourMs) / minuteMs));
+    const label = hours > 0
+      ? `${hours} h ${minutes} min restantes`
+      : `${minutes} min restantes`;
+    return { expired: false, label, remainingMs: remaining };
+  }
+
+  const days = Math.ceil(remaining / dayMs);
+  return {
+    expired: false,
+    label: `${days} jour${days > 1 ? "s" : ""} restant${days > 1 ? "s" : ""}`,
+    remainingMs: remaining,
+  };
+};
 
 const nav = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
@@ -18,6 +47,7 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [quota, setQuota] = useState(null);
+  const [clockNow, setClockNow] = useState(Date.now());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -31,6 +61,25 @@ export default function Layout({ children }) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [user]);
+
+  useEffect(() => {
+    if (!quota?.trial_ends_at || user?.plan === "pro") return undefined;
+    setClockNow(Date.now());
+    const interval = window.setInterval(() => setClockNow(Date.now()), 30 * 1000);
+    return () => window.clearInterval(interval);
+  }, [quota?.trial_ends_at, user?.plan]);
+
+  const trialCountdown = quota ? formatTrialRemaining(quota.trial_ends_at, clockNow) : null;
+  const trialExpired = !!(quota?.trial_expired || trialCountdown?.expired);
+
+  const trialProgress = (() => {
+    if (!quota?.trial_started_at || !quota?.trial_ends_at) return null;
+    const start = new Date(quota.trial_started_at).getTime();
+    const end = new Date(quota.trial_ends_at).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    const elapsed = Math.min(end - start, Math.max(0, clockNow - start));
+    return Math.round((elapsed / (end - start)) * 100);
+  })();
 
   const handleLogout = async () => {
     await logout();
@@ -75,10 +124,28 @@ export default function Layout({ children }) {
           ))}
         </nav>
         <div className="border-t border-gray-200 p-4 shrink-0 bg-white">
+          {user?.plan !== "pro" && quota && trialCountdown && (
+            <div className={`mb-3 rounded-xl border p-3 ${trialExpired ? "border-red-200 bg-red-50" : "border-blue-100 bg-blue-50/70"}`} data-testid="trial-countdown-card">
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${trialExpired ? "bg-red-100 text-red-700" : "bg-white text-blue-700"}`}>
+                  <Clock3 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className={`text-[10px] uppercase tracking-widest font-bold ${trialExpired ? "text-red-600" : "text-blue-600"}`}>Essai gratuit</div>
+                  <div className={`text-sm font-semibold truncate ${trialExpired ? "text-red-900" : "text-gray-900"}`}>{trialCountdown.label}</div>
+                </div>
+              </div>
+              {trialProgress !== null && !trialExpired && (
+                <div className="mt-2 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                  <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${trialProgress}%` }} />
+                </div>
+              )}
+            </div>
+          )}
           {user?.plan !== "pro" && (
             <NavLink to="/pricing" data-testid="nav-upgrade-cta"
               className="mb-3 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-700 text-white text-sm font-semibold transition-all shadow-sm">
-              <Crown className="w-4 h-4" /> {quota?.trial_expired ? "Essai terminé — Passer au Pro" : quota ? `${quota.trial_days_remaining} j restants · Pro` : "Passer au Pro"}
+              <Crown className="w-4 h-4" /> {trialExpired ? "Essai terminé — Passer au Pro" : "Passer au Pro"}
             </NavLink>
           )}
           <div className="text-xs text-gray-500">Connecté en tant que</div>
@@ -156,18 +223,24 @@ export default function Layout({ children }) {
       )}
 
       <main className="flex-1 min-w-0 pt-14 lg:pt-0 lg:ml-64">
-        {user?.plan !== "pro" && quota && (
-          <div className={`border-b ${quota.trial_expired ? "bg-red-50 border-red-200" : quota.trial_days_remaining <= 5 ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-100"}`}>
+        {user?.plan !== "pro" && quota && trialCountdown && (
+          <div className={`border-b ${trialExpired ? "bg-red-50 border-red-200" : trialCountdown.remainingMs < 5 * 24 * 60 * 60 * 1000 ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-100"}`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className={`text-sm ${quota.trial_expired ? "text-red-800" : quota.trial_days_remaining <= 5 ? "text-amber-900" : "text-blue-900"}`}>
-                {quota.trial_expired ? (
-                  <><strong>Votre essai de 30 jours est terminé.</strong> Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</>
+              <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${trialExpired ? "text-red-800" : trialCountdown.remainingMs < 5 * 24 * 60 * 60 * 1000 ? "text-amber-900" : "text-blue-900"}`}>
+                {trialExpired ? (
+                  <><strong>Votre essai de 30 jours est terminé.</strong> <span>Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</span></>
                 ) : (
-                  <><strong>{quota.trial_days_remaining} jour{quota.trial_days_remaining > 1 ? "s" : ""} restant{quota.trial_days_remaining > 1 ? "s" : ""}</strong> · {quota.missions_used}/{quota.mission_limit} missions · {quota.workers}/{quota.worker_limit} intervenants</>
+                  <>
+                    <span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="w-3.5 h-3.5" /> {trialCountdown.label}</span>
+                    <span className="opacity-40">·</span>
+                    <span>{quota.missions_used}/{quota.mission_limit} missions</span>
+                    <span className="opacity-40">·</span>
+                    <span>{quota.workers}/{quota.worker_limit} intervenants</span>
+                  </>
                 )}
               </div>
-              <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${quota.trial_expired ? "text-red-700 hover:text-red-900" : "text-blue-700 hover:text-blue-900"}`}>
-                {quota.trial_expired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
+              <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${trialExpired ? "text-red-700 hover:text-red-900" : "text-blue-700 hover:text-blue-900"}`}>
+                {trialExpired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
               </Link>
             </div>
           </div>
