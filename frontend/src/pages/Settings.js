@@ -142,7 +142,7 @@ export default function Settings() {
           <div className="flex items-center gap-2 font-semibold">
             <Crown className="w-5 h-5"/> Abonnement
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
-              {isPro ? "PRO ACTIF" : "GRATUIT"}
+              {isPro ? "PRO ACTIF" : quota?.trial_expired ? "ESSAI TERMINÉ" : "ESSAI GRATUIT"}
             </span>
           </div>
           {quota && (
@@ -150,7 +150,7 @@ export default function Settings() {
               {isPro ? (
                 <>Missions et intervenants <strong>illimités</strong>. Merci pour votre soutien !</>
               ) : (
-                <>Mission gratuite utilisée : <strong>{quota.missions_used ?? quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong></>
+                <>Missions : <strong>{quota.missions_used ?? quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong> · {quota.trial_expired ? <strong className="text-red-600">Essai terminé</strong> : <><strong>{quota.trial_days_remaining}</strong> jour{quota.trial_days_remaining > 1 ? "s" : ""} restant{quota.trial_days_remaining > 1 ? "s" : ""}</>}</>
               )}
             </div>
           )}
