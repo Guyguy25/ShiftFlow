@@ -1470,9 +1470,15 @@ async def _active_missions_count(user_id: str) -> int:
 
 
 async def _missions_created_count(user_id: str) -> int:
-    # Trial missions are counted for the lifetime of the trial. Archived,
-    # cancelled and past missions still consume one of the three slots.
-    return await db.missions.count_documents({"agency_id": user_id})
+    # Count only missions created during the current trial window. This matters
+    # for accounts that existed before the 30-day trial model was introduced:
+    # old test missions must not consume their fresh trial allowance.
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "trial_started_at": 1, "created_at": 1})
+    start = (user or {}).get("trial_started_at") or (user or {}).get("created_at")
+    query = {"agency_id": user_id}
+    if start:
+        query["created_at"] = {"$gte": start}
+    return await db.missions.count_documents(query)
 
 
 async def check_quota_or_raise(user, kind: str):
