@@ -259,6 +259,9 @@ async def cascade_all_selected_for_shift(shift_id: str):
     agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
     if not agency:
         return 0
+    if not server_module.has_active_product_access(agency):
+        server_module.logger.info(f"WhatsApp cascade skipped: trial expired agency={agency.get('id')}")
+        return {"sent": 0, "failed": 0, "total": 0}
 
     slots = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).sort("priority", 1).to_list(1000)
     active_count = sum(1 for slot in slots if slot.get("status") in ("contacted", "confirmed"))
@@ -304,7 +307,7 @@ async def run_whatsapp_followups():
         if not mission:
             continue
         agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
-        if not agency:
+        if not agency or not server_module.has_active_product_access(agency):
             continue
         hours = max(1, int(mission.get("followup_hours") or FOLLOWUP_DEFAULT_HOURS))
         cutoff = now - __import__("datetime").timedelta(hours=hours)
@@ -341,7 +344,7 @@ async def run_whatsapp_reminders():
         if not mission:
             continue
         agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
-        if not agency:
+        if not agency or not server_module.has_active_product_access(agency):
             continue
         slots = await db.mission_workers.find({"shift_id": shift["id"], "status": "confirmed", "reminder_sent": {"$ne": True}}, {"_id": 0}).to_list(500)
         for slot in slots:
@@ -450,6 +453,7 @@ async def whatsapp_logout(user=Depends(get_current_user)):
 
 @router.post("/send-test")
 async def whatsapp_send_test(payload: dict, user=Depends(get_current_user)):
+    await server_module.ensure_trial_active_or_raise(user)
     target = server_module.normalize_phone(payload.get("to") or user.get("phone", ""))
     if not target:
         raise HTTPException(status_code=400, detail="Aucun numéro fourni ni renseigné sur votre profil")
@@ -491,6 +495,7 @@ async def whatsapp_followups_cron(user=Depends(get_current_user)):
 
 @router.post("/import")
 async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
+    await server_module.ensure_trial_active_or_raise(user)
     selected_ids = payload.get("contacts", [])
     if not isinstance(selected_ids, list) or not selected_ids:
         raise HTTPException(status_code=400, detail="Aucun contact sélectionné.")
@@ -502,7 +507,7 @@ async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
     if not selected:
         raise HTTPException(status_code=400, detail="Les contacts sélectionnés sont introuvables ou sans nom exploitable.")
     plan_doc = await db.users.find_one({"id": user["id"]}, {"plan": 1})
-    limit = None if (plan_doc or {}).get("plan", "free") == "pro" else 10
+    limit = None if (plan_doc or {}).get("plan", "free") == "pro" else server_module.FREE_WORKER_LIMIT
     current_count = await db.workers.count_documents({"agency_id": user["id"]})
     created, skipped = [], []
     for contact in selected:
