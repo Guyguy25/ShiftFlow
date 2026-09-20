@@ -13,12 +13,37 @@ export default function Missions() {
   const [upgrade, setUpgrade] = useState(null);
   const nav = useNavigate();
 
-  const load = useCallback(() => {
-    setLoading(true);
-    api.get("/missions", { params: { archived: showArchived } }).then((r) => setMissions(r.data)).finally(() => setLoading(false));
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    try {
+      const { data } = await api.get("/missions", {
+        params: { archived: showArchived, _ts: Date.now() },
+      });
+      setMissions(data);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [showArchived]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") {
+        load({ silent: true }).catch(() => {});
+      }
+    };
+
+    const interval = window.setInterval(refreshIfVisible, 3000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [load]);
 
   const duplicate = async (e, id) => {
     e.preventDefault(); e.stopPropagation();
