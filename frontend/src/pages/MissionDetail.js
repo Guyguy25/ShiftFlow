@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
@@ -109,7 +109,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
 
 function ShiftSelector({ mission, shift, workers, onSelected }) {
   const nav = useNavigate();
-  const returnTo = `/app/missions/${mission.id}`;
+  const returnTo = `/app/missions/${mission.id}?step=select&shift=${encodeURIComponent(shift.id)}`;
   const openAddWorkers = () => nav(`/app/workers?add=1&returnTo=${encodeURIComponent(returnTo)}`);
   const [selected, setSelected] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -281,11 +281,15 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
   );
 }
 
-function ShiftCard({ mission, shift, workers, onReload }) {
-  const [expandSelect, setExpandSelect] = useState(false);
+function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
+  const noSlots = !shift.slots || shift.slots.length === 0;
+  const [expandSelect, setExpandSelect] = useState(autoExpand && noSlots);
   const filled = shift.confirmed_count >= shift.people_needed;
   const missing = Math.max(0, shift.people_needed - shift.confirmed_count);
-  const noSlots = !shift.slots || shift.slots.length === 0;
+
+  useEffect(() => {
+    if (autoExpand && noSlots) setExpandSelect(true);
+  }, [autoExpand, noSlots]);
 
   const copyLink = (token) => {
     const url = `${window.location.origin}/m/${token}`;
@@ -390,6 +394,7 @@ function ShiftCard({ mission, shift, workers, onReload }) {
 export default function MissionDetail() {
   const { id } = useParams();
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [workers, setWorkers] = useState([]);
 
@@ -408,6 +413,12 @@ export default function MissionDetail() {
   if (!data) return <div className="text-gray-500">Chargement…</div>;
   const m = data;
   const totalCost = (m.shifts || []).reduce((sum, sh) => sum + (sh.estimated_cost || 0), 0);
+  const shouldOpenSelection = searchParams.get("step") === "select";
+  const requestedShiftId = searchParams.get("shift");
+  const firstSelectableShiftId = (m.shifts || []).find((sh) => !sh.slots || sh.slots.length === 0)?.id;
+  const autoExpandShiftId = shouldOpenSelection
+    ? ((requestedShiftId && (m.shifts || []).some((sh) => sh.id === requestedShiftId)) ? requestedShiftId : firstSelectableShiftId)
+    : null;
 
   const cancelMission = async () => {
     if (!window.confirm("Annuler définitivement cette mission ?")) return;
@@ -476,7 +487,14 @@ export default function MissionDetail() {
       <h2 className="mt-10 font-display font-bold text-xl">Shifts</h2>
       <div className="mt-4 space-y-4">
         {m.shifts.map((sh) => (
-          <ShiftCard key={sh.id} mission={m} shift={sh} workers={workers} onReload={load}/>
+          <ShiftCard
+            key={sh.id}
+            mission={m}
+            shift={sh}
+            workers={workers}
+            onReload={load}
+            autoExpand={sh.id === autoExpandShiftId}
+          />
         ))}
       </div>
     </div>
