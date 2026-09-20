@@ -77,7 +77,7 @@ export default function Dashboard() {
 
       {quota && quota.plan === "free" && (
         <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="plan-quota-banner">
-          <div className="flex-1 text-sm"><strong className="text-blue-900">Plan gratuit</strong> · Missions actives {quota.active_missions}/{quota.mission_limit} · Intervenants {quota.workers}/{quota.worker_limit}</div>
+          <div className="flex-1 text-sm"><strong className="text-blue-900">Essai gratuit</strong> · Missions utilisées {quota.missions_used}/{quota.mission_limit} · Intervenants {quota.workers}/{quota.worker_limit}</div>
           <Link to="/pricing" data-testid="dashboard-upgrade-link" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md whitespace-nowrap">Passer au Pro →</Link>
         </div>
       )}
