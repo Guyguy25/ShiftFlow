@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, Link, useNavigate } from "react-router-dom";
 import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../lib/api";
 
 const nav = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
@@ -16,7 +17,20 @@ const nav = [
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [quota, setQuota] = useState(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user || user.plan === "pro") {
+      setQuota(null);
+      return;
+    }
+    let cancelled = false;
+    api.get("/plan/quota")
+      .then(({ data }) => { if (!cancelled) setQuota(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user]);
 
   const handleLogout = async () => {
     await logout();
@@ -64,7 +78,7 @@ export default function Layout({ children }) {
           {user?.plan !== "pro" && (
             <NavLink to="/pricing" data-testid="nav-upgrade-cta"
               className="mb-3 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-700 text-white text-sm font-semibold transition-all shadow-sm">
-              <Crown className="w-4 h-4" /> Passer au Pro
+              <Crown className="w-4 h-4" /> {quota?.trial_expired ? "Essai terminé — Passer au Pro" : quota ? `${quota.trial_days_remaining} j restants · Pro` : "Passer au Pro"}
             </NavLink>
           )}
           <div className="text-xs text-gray-500">Connecté en tant que</div>
@@ -142,6 +156,22 @@ export default function Layout({ children }) {
       )}
 
       <main className="flex-1 min-w-0 pt-14 lg:pt-0 lg:ml-64">
+        {user?.plan !== "pro" && quota && (
+          <div className={`border-b ${quota.trial_expired ? "bg-red-50 border-red-200" : quota.trial_days_remaining <= 5 ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-100"}`}>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className={`text-sm ${quota.trial_expired ? "text-red-800" : quota.trial_days_remaining <= 5 ? "text-amber-900" : "text-blue-900"}`}>
+                {quota.trial_expired ? (
+                  <><strong>Votre essai de 30 jours est terminé.</strong> Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</>
+                ) : (
+                  <><strong>{quota.trial_days_remaining} jour{quota.trial_days_remaining > 1 ? "s" : ""} restant{quota.trial_days_remaining > 1 ? "s" : ""}</strong> · {quota.missions_used}/{quota.mission_limit} missions · {quota.workers}/{quota.worker_limit} intervenants</>
+                )}
+              </div>
+              <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${quota.trial_expired ? "text-red-700 hover:text-red-900" : "text-blue-700 hover:text-blue-900"}`}>
+                {quota.trial_expired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
+              </Link>
+            </div>
+          </div>
+        )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-8">
           {children}
         </div>
