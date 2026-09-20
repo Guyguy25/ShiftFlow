@@ -8,11 +8,11 @@ import { LEGAL_VERSION } from "../constants/legal";
 const PLANS = [
   {
     key: "free",
-    name: "Free",
+    name: "Essai gratuit",
     price: "0 €",
-    period: "toujours",
-    features: ["1 mission gratuite", "Jusqu'à 10 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
-    cta: "Commencer",
+    period: "30 jours",
+    features: ["Jusqu'à 3 missions", "Jusqu'à 30 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
+    cta: "Essayer 30 jours",
     href: "/register",
     highlighted: false,
     testid: "pricing-free-cta",
@@ -37,7 +37,7 @@ export default function Pricing() {
   const [error, setError] = useState("");
   const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
   const [highlightConsent, setHighlightConsent] = useState(false);
-  const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null });
+  const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null, trialExpired: user?.trial_expired || false, trialDaysRemaining: user?.trial_days_remaining ?? 30 });
   const consentRef = useRef(null);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export default function Pricing() {
 
     const loadPlan = async () => {
       if (!user) {
-        setPlanState({ loading: false, plan: "free", subscriptionStatus: null });
+        setPlanState({ loading: false, plan: "free", subscriptionStatus: null, trialExpired: false, trialDaysRemaining: 30 });
         return;
       }
 
@@ -59,6 +59,8 @@ export default function Pricing() {
             loading: false,
             plan: data?.plan || "free",
             subscriptionStatus: data?.subscription_status || null,
+            trialExpired: !!data?.trial_expired,
+            trialDaysRemaining: data?.trial_days_remaining ?? 0,
           });
         }
       } catch (_) {
@@ -67,6 +69,8 @@ export default function Pricing() {
             loading: false,
             plan: user?.plan || "free",
             subscriptionStatus: user?.subscription_status || null,
+            trialExpired: !!user?.trial_expired,
+            trialDaysRemaining: user?.trial_days_remaining ?? 0,
           });
         }
       }
@@ -130,7 +134,7 @@ export default function Pricing() {
       <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="text-center">
           <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight">Un tarif simple, sans surprise.</h1>
-          <p className="mt-4 text-gray-600 text-lg">Testez gratuitement, passez au Pro quand vous en avez besoin.</p>
+          <p className="mt-4 text-gray-600 text-lg">30 jours pour tester ShiftFlow sur de vraies missions, sans carte bancaire.</p>
           {!planState.loading && isPro && (
             <div className="mt-6 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-full px-4 py-2 text-sm font-medium" data-testid="pricing-current-plan">
               <Check className="w-4 h-4"/> Vous êtes déjà abonné Pro
@@ -166,7 +170,7 @@ export default function Pricing() {
               {p.key === "free" ? (
                 <Link to={user ? "/app/dashboard" : "/register"} data-testid={p.testid}
                   className="mt-6 block text-center w-full py-2.5 rounded-md font-medium bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors">
-                  {user ? "Continuer" : p.cta}
+                  {user ? (planState.trialExpired ? "Essai terminé" : `${planState.trialDaysRemaining} j restants`) : p.cta}
                 </Link>
               ) : (
                 <button onClick={()=>startCheckout(p.lookup)} disabled={loading === p.lookup || planState.loading || isPro} data-testid={p.testid}
