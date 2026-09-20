@@ -36,6 +36,7 @@ JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24
 REFRESH_TOKEN_DAYS = 90  # "rester connecté" : la session glisse tant que l'utilisateur revient dans les 90 jours
+FREE_TRIAL_DAYS = 30
 
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -108,13 +109,57 @@ def clear_auth_cookies(response: Response):
                          httponly=True, secure=True, samesite="none", path="/")
 
 
+def _parse_account_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def trial_info(u: dict) -> dict:
+    start = _parse_account_datetime(u.get("trial_started_at") or u.get("created_at"))
+    if not start:
+        # All normal accounts have created_at. This fallback avoids breaking
+        # legacy/admin rows that predate that field.
+        start = now_utc()
+    end = _parse_account_datetime(u.get("trial_ends_at")) or (start + timedelta(days=FREE_TRIAL_DAYS))
+    seconds_left = max(0, int((end - now_utc()).total_seconds()))
+    days_remaining = 0 if seconds_left <= 0 else (seconds_left + 86399) // 86400
+    expired = u.get("plan", "free") != "pro" and now_utc() >= end
+    return {
+        "trial_started_at": iso(start),
+        "trial_ends_at": iso(end),
+        "trial_days_remaining": int(days_remaining),
+        "trial_expired": bool(expired),
+    }
+
+
+def has_active_product_access(u: dict) -> bool:
+    return u.get("plan", "free") == "pro" or not trial_info(u)["trial_expired"]
+
+
+async def ensure_trial_active_or_raise(user: dict):
+    if has_active_product_access(user):
+        return
+    raise HTTPException(
+        status_code=402,
+        detail=f"Votre essai gratuit de {FREE_TRIAL_DAYS} jours est terminé. Passez au Pro pour continuer à utiliser ShiftFlow.",
+    )
+
+
 def public_user(u: dict) -> dict:
     return {"id": u["id"], "email": u["email"], "name": u.get("name", ""),
             "agency_name": u.get("agency_name", ""), "phone": u.get("phone", ""),
             "plan": u.get("plan", "free"),
             "onboarding_completed": bool(u.get("onboarding_completed")),
             "subscription_status": u.get("subscription_status"),
-            "created_at": u.get("created_at")}
+            "created_at": u.get("created_at"),
+            **trial_info(u)}
 
 
 async def get_current_user(request: Request) -> dict:
@@ -469,9 +514,12 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     email = payload.email.lower().strip()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
+    created_at = now_utc()
     user = {"id": new_id(), "email": email, "password_hash": hash_password(payload.password),
             "name": payload.name, "agency_name": payload.agency_name, "phone": payload.phone,
-            "role": "admin", "created_at": iso(now_utc()),
+            "role": "admin", "created_at": iso(created_at),
+            "trial_started_at": iso(created_at),
+            "trial_ends_at": iso(created_at + timedelta(days=FREE_TRIAL_DAYS)),
             "onboarding_completed": bool(payload.onboarding_answers),
             "onboarding_answers": payload.onboarding_answers or None,
             "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None}
@@ -621,6 +669,8 @@ async def create_workers_bulk(payload: BulkWorkersIn, user=Depends(get_current_u
     if not payload.workers:
         raise HTTPException(status_code=400, detail="Liste vide")
     plan = await _get_plan(user["id"])  # noqa: F821
+    if plan != "pro":
+        await ensure_trial_active_or_raise(user)
     current = await db.workers.count_documents({"agency_id": user["id"]})
     limit = None if plan == "pro" else FREE_WORKER_LIMIT  # noqa: F821
     created = []
@@ -645,6 +695,7 @@ async def create_workers_bulk(payload: BulkWorkersIn, user=Depends(get_current_u
 
 @api.put("/workers/{worker_id}")
 async def update_worker(worker_id: str, payload: WorkerIn, user=Depends(get_current_user)):
+    await ensure_trial_active_or_raise(user)
     res = await db.workers.update_one({"id": worker_id, "agency_id": user["id"]}, {"$set": payload.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Intervenant introuvable")
@@ -782,6 +833,7 @@ async def get_mission(mission_id: str, user=Depends(get_current_user)):
 
 @api.put("/missions/{mission_id}")
 async def update_mission(mission_id: str, payload: MissionUpdateIn, user=Depends(get_current_user)):
+    await ensure_trial_active_or_raise(user)
     res = await db.missions.update_one({"id": mission_id, "agency_id": user["id"]}, {"$set": payload.model_dump()})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Mission introuvable")
@@ -798,8 +850,8 @@ async def delete_mission(mission_id: str, user=Depends(get_current_user)):
     if not mission:
         raise HTTPException(status_code=404, detail="Mission introuvable")
 
-    # "Delete" is intentionally a soft delete. Keeping the mission prevents a
-    # free account from repeatedly deleting its one free mission to create more.
+    # "Delete" is intentionally a soft delete. Archived missions still count
+    # toward the three-mission trial allowance, preventing quota bypasses.
     archived_at = iso(now_utc())
     await db.missions.update_one(
         {"id": mission_id, "agency_id": user["id"]},
@@ -829,6 +881,7 @@ async def cancel_mission(mission_id: str, user=Depends(get_current_user)):
 # ---- Shift-level actions ----
 @api.post("/shifts/{shift_id}/select-workers")
 async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user=Depends(get_current_user)):
+    await ensure_trial_active_or_raise(user)
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
@@ -864,6 +917,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
 
 @api.post("/shifts/{shift_id}/next-cascade")
 async def force_cascade(shift_id: str, user=Depends(get_current_user)):
+    await ensure_trial_active_or_raise(user)
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
@@ -874,6 +928,7 @@ async def force_cascade(shift_id: str, user=Depends(get_current_user)):
 
 @api.post("/mission-workers/{slot_id}/mark-no-answer")
 async def mark_no_answer(slot_id: str, user=Depends(get_current_user)):
+    await ensure_trial_active_or_raise(user)
     slot = await db.mission_workers.find_one({"id": slot_id}, {"_id": 0})
     if not slot:
         raise HTTPException(status_code=404, detail="Slot introuvable")
@@ -1044,6 +1099,7 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
 
 @api.post("/shifts/{shift_id}/duplicate")
 async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends(get_current_user)):
+    await ensure_trial_active_or_raise(user)
     original = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not original:
         raise HTTPException(status_code=404, detail="Shift introuvable")
@@ -1368,8 +1424,8 @@ async def root():
 import stripe as stripe_lib
 stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-FREE_MISSION_LIMIT = 1
-FREE_WORKER_LIMIT = 10
+FREE_MISSION_LIMIT = 3
+FREE_WORKER_LIMIT = 30
 
 
 async def _get_plan(user_id: str) -> str:
@@ -1396,22 +1452,23 @@ async def _active_missions_count(user_id: str) -> int:
 
 
 async def _missions_created_count(user_id: str) -> int:
-    # The free offer is one mission total, not one simultaneously active mission.
-    # Archived/cancelled/past missions still consume the single free mission.
+    # Trial missions are counted for the lifetime of the trial. Archived,
+    # cancelled and past missions still consume one of the three slots.
     return await db.missions.count_documents({"agency_id": user_id})
 
 
 async def check_quota_or_raise(user, kind: str):
     if (await _get_plan(user["id"])) == "pro":
         return
+    await ensure_trial_active_or_raise(user)
     if kind == "mission":
         if (await _missions_created_count(user["id"])) >= FREE_MISSION_LIMIT:
             raise HTTPException(status_code=402,
-                detail=f"Limite plan gratuit atteinte ({FREE_MISSION_LIMIT} mission gratuite au total). Passez au Pro pour créer des missions illimitées.")
+                detail=f"Limite de l'essai atteinte ({FREE_MISSION_LIMIT} missions max). Passez au Pro pour créer des missions illimitées.")
     elif kind == "worker":
         if (await db.workers.count_documents({"agency_id": user["id"]})) >= FREE_WORKER_LIMIT:
             raise HTTPException(status_code=402,
-                detail=f"Limite plan gratuit atteinte ({FREE_WORKER_LIMIT} intervenants max). Passez au Pro pour un nombre illimité.")
+                detail=f"Limite de l'essai atteinte ({FREE_WORKER_LIMIT} intervenants max). Passez au Pro pour un nombre illimité.")
 
 
 class OnboardingIn(BaseModel):
@@ -1443,6 +1500,7 @@ async def get_quota(user=Depends(get_current_user)):
     missions_used = await _missions_created_count(user["id"])
     workers = await db.workers.count_documents({"agency_id": user["id"]})
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    info = trial_info(u or user)
     return {
         "plan": plan,
         "active_missions": missions,
@@ -1451,6 +1509,7 @@ async def get_quota(user=Depends(get_current_user)):
         "workers": workers,
         "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
         "subscription_status": (u or {}).get("subscription_status"),
+        **info,
     }
 
 
