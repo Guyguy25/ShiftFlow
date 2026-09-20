@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { NavLink, Link, useNavigate } from "react-router-dom";
+import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle, Clock3 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
@@ -49,6 +49,7 @@ export default function Layout({ children }) {
   const [quota, setQuota] = useState(null);
   const [clockNow, setClockNow] = useState(Date.now());
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     if (!user || user.plan === "pro") {
@@ -56,11 +57,11 @@ export default function Layout({ children }) {
       return;
     }
     let cancelled = false;
-    api.get("/plan/quota")
+    api.get("/plan/quota", { params: { _ts: Date.now() } })
       .then(({ data }) => { if (!cancelled) setQuota(data); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [user]);
+  }, [location.pathname, location.search, user]);
 
   useEffect(() => {
     if (!quota?.trial_ends_at || user?.plan === "pro") return undefined;
