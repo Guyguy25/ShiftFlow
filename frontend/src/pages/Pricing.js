@@ -37,7 +37,7 @@ export default function Pricing() {
   const [error, setError] = useState("");
   const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
   const [highlightConsent, setHighlightConsent] = useState(false);
-  const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null, trialExpired: user?.trial_expired || false, trialDaysRemaining: user?.trial_days_remaining ?? 30 });
+  const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null, trialStarted: !!user?.trial_started, trialExpired: user?.trial_expired || false, trialDaysRemaining: user?.trial_days_remaining ?? 30 });
   const consentRef = useRef(null);
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export default function Pricing() {
 
     const loadPlan = async () => {
       if (!user) {
-        setPlanState({ loading: false, plan: "free", subscriptionStatus: null, trialExpired: false, trialDaysRemaining: 30 });
+        setPlanState({ loading: false, plan: "free", subscriptionStatus: null, trialStarted: false, trialExpired: false, trialDaysRemaining: 30 });
         return;
       }
 
@@ -59,6 +59,7 @@ export default function Pricing() {
             loading: false,
             plan: data?.plan || "free",
             subscriptionStatus: data?.subscription_status || null,
+            trialStarted: !!data?.trial_started,
             trialExpired: !!data?.trial_expired,
             trialDaysRemaining: data?.trial_days_remaining ?? 0,
           });
@@ -69,6 +70,7 @@ export default function Pricing() {
             loading: false,
             plan: user?.plan || "free",
             subscriptionStatus: user?.subscription_status || null,
+            trialStarted: !!user?.trial_started,
             trialExpired: !!user?.trial_expired,
             trialDaysRemaining: user?.trial_days_remaining ?? 0,
           });
@@ -170,7 +172,7 @@ export default function Pricing() {
               {p.key === "free" ? (
                 <Link to={user ? "/app/dashboard" : "/register"} data-testid={p.testid}
                   className="mt-6 block text-center w-full py-2.5 rounded-md font-medium bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors">
-                  {user ? (planState.trialExpired ? "Essai terminé" : `${planState.trialDaysRemaining} j restants`) : p.cta}
+                  {user ? (planState.trialExpired ? "Essai terminé" : planState.trialStarted ? `${planState.trialDaysRemaining} j restants` : "Essai prêt — 30 jours") : p.cta}
                 </Link>
               ) : (
                 <button onClick={()=>startCheckout(p.lookup)} disabled={loading === p.lookup || planState.loading || isPro} data-testid={p.testid}
