@@ -70,8 +70,76 @@ export default function Layout({ children }) {
     return () => window.clearInterval(interval);
   }, [quota?.trial_ends_at, user?.plan]);
 
-  const trialCountdown = quota ? formatTrialRemaining(quota.trial_ends_at, clockNow) : null;
+  const trialStarted = !!quota?.trial_started;
+  const trialCountdown = trialStarted ? formatTrialRemaining(quota?.trial_ends_at, clockNow) : null;
   const trialExpired = !!(quota?.trial_expired || trialCountdown?.expired);
+
+  const trialTone = (() => {
+    if (!trialStarted) return "ready";
+    if (trialExpired || (trialCountdown?.remainingMs ?? Infinity) < 24 * 60 * 60 * 1000) return "danger";
+    if ((trialCountdown?.remainingMs ?? Infinity) <= 3 * 24 * 60 * 60 * 1000) return "urgent";
+    if ((trialCountdown?.remainingMs ?? Infinity) <= 7 * 24 * 60 * 60 * 1000) return "warning";
+    return "calm";
+  })();
+
+  const toneClasses = {
+    ready: {
+      card: "border-emerald-200 bg-emerald-50/80",
+      icon: "bg-white text-emerald-700",
+      kicker: "text-emerald-700",
+      text: "text-emerald-950",
+      banner: "bg-emerald-50 border-emerald-200",
+      bannerText: "text-emerald-900",
+      link: "text-emerald-700 hover:text-emerald-900",
+      track: "bg-emerald-100",
+      fill: "bg-emerald-500",
+    },
+    calm: {
+      card: "border-blue-100 bg-blue-50/70",
+      icon: "bg-white text-blue-700",
+      kicker: "text-blue-600",
+      text: "text-gray-900",
+      banner: "bg-blue-50 border-blue-100",
+      bannerText: "text-blue-900",
+      link: "text-blue-700 hover:text-blue-900",
+      track: "bg-blue-100",
+      fill: "bg-blue-600",
+    },
+    warning: {
+      card: "border-amber-200 bg-amber-50",
+      icon: "bg-white text-amber-700",
+      kicker: "text-amber-700",
+      text: "text-amber-950",
+      banner: "bg-amber-50 border-amber-200",
+      bannerText: "text-amber-900",
+      link: "text-amber-700 hover:text-amber-950",
+      track: "bg-amber-100",
+      fill: "bg-amber-500",
+    },
+    urgent: {
+      card: "border-orange-200 bg-orange-50",
+      icon: "bg-white text-orange-700",
+      kicker: "text-orange-700",
+      text: "text-orange-950",
+      banner: "bg-orange-50 border-orange-200",
+      bannerText: "text-orange-950",
+      link: "text-orange-700 hover:text-orange-950",
+      track: "bg-orange-100",
+      fill: "bg-orange-500",
+    },
+    danger: {
+      card: "border-red-200 bg-red-50",
+      icon: "bg-white text-red-700",
+      kicker: "text-red-700",
+      text: "text-red-950",
+      banner: "bg-red-50 border-red-200",
+      bannerText: "text-red-900",
+      link: "text-red-700 hover:text-red-950",
+      track: "bg-red-100",
+      fill: "bg-red-600",
+    },
+  };
+  const tone = toneClasses[trialTone];
 
   const trialProgress = (() => {
     if (!quota?.trial_started_at || !quota?.trial_ends_at) return null;
@@ -125,22 +193,28 @@ export default function Layout({ children }) {
           ))}
         </nav>
         <div className="border-t border-gray-200 p-4 shrink-0 bg-white">
-          {user?.plan !== "pro" && quota && trialCountdown && (
-            <div className={`mb-3 rounded-xl border p-3 ${trialExpired ? "border-red-200 bg-red-50" : "border-blue-100 bg-blue-50/70"}`} data-testid="trial-countdown-card">
+          {user?.plan !== "pro" && quota && (
+            <div className={`mb-3 rounded-xl border p-3 transition-colors ${tone.card}`} data-testid="trial-countdown-card">
               <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${trialExpired ? "bg-red-100 text-red-700" : "bg-white text-blue-700"}`}>
-                  <Clock3 className="w-4 h-4" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tone.icon}`}>
+                  {trialStarted ? <Clock3 className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                 </div>
                 <div className="min-w-0">
-                  <div className={`text-[10px] uppercase tracking-widest font-bold ${trialExpired ? "text-red-600" : "text-blue-600"}`}>Essai gratuit</div>
-                  <div className={`text-sm font-semibold truncate ${trialExpired ? "text-red-900" : "text-gray-900"}`}>{trialCountdown.label}</div>
+                  <div className={`text-[10px] uppercase tracking-widest font-bold ${tone.kicker}`}>{trialStarted ? "Essai en cours" : "Essai prêt"}</div>
+                  <div className={`text-sm font-semibold truncate ${tone.text}`}>
+                    {trialStarted ? (trialCountdown?.label || "30 jours") : "30 jours disponibles"}
+                  </div>
                 </div>
               </div>
-              {trialProgress !== null && !trialExpired && (
-                <div className="mt-2 h-1.5 rounded-full bg-blue-100 overflow-hidden">
-                  <div className="h-full bg-blue-600 rounded-full transition-all duration-500" style={{ width: `${trialProgress}%` }} />
+              {!trialStarted ? (
+                <div className="mt-2 text-[11px] leading-relaxed text-emerald-800">
+                  Le chrono démarre seulement quand vous créez votre première mission.
                 </div>
-              )}
+              ) : trialProgress !== null && !trialExpired ? (
+                <div className={`mt-2 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
+                  <div className={`h-full rounded-full transition-all duration-500 ${tone.fill}`} style={{ width: `${trialProgress}%` }} />
+                </div>
+              ) : null}
             </div>
           )}
           {user?.plan !== "pro" && (
@@ -224,15 +298,23 @@ export default function Layout({ children }) {
       )}
 
       <main className="flex-1 min-w-0 pt-14 lg:pt-0 lg:ml-64">
-        {user?.plan !== "pro" && quota && trialCountdown && (
-          <div className={`border-b ${trialExpired ? "bg-red-50 border-red-200" : trialCountdown.remainingMs < 5 * 24 * 60 * 60 * 1000 ? "bg-amber-50 border-amber-200" : "bg-blue-50 border-blue-100"}`}>
+        {user?.plan !== "pro" && quota && (
+          <div className={`border-b transition-colors ${tone.banner}`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${trialExpired ? "text-red-800" : trialCountdown.remainingMs < 5 * 24 * 60 * 60 * 1000 ? "text-amber-900" : "text-blue-900"}`}>
-                {trialExpired ? (
+              <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${tone.bannerText}`}>
+                {!trialStarted ? (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 font-semibold"><Zap className="w-3.5 h-3.5" /> Vos 30 jours sont prêts</span>
+                    <span className="opacity-40">·</span>
+                    <span>Le chrono démarre à votre première mission</span>
+                    <span className="opacity-40">·</span>
+                    <span>{quota.workers}/{quota.worker_limit} intervenants préparés</span>
+                  </>
+                ) : trialExpired ? (
                   <><strong>Votre essai de 30 jours est terminé.</strong> <span>Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</span></>
                 ) : (
                   <>
-                    <span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="w-3.5 h-3.5" /> {trialCountdown.label}</span>
+                    <span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="w-3.5 h-3.5" /> {trialCountdown?.label}</span>
                     <span className="opacity-40">·</span>
                     <span>{quota.missions_used}/{quota.mission_limit} missions</span>
                     <span className="opacity-40">·</span>
@@ -240,9 +322,13 @@ export default function Layout({ children }) {
                   </>
                 )}
               </div>
-              <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${trialExpired ? "text-red-700 hover:text-red-900" : "text-blue-700 hover:text-blue-900"}`}>
-                {trialExpired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
-              </Link>
+              {!trialStarted ? (
+                <Link to="/app/missions/new" className={`text-sm font-semibold shrink-0 ${tone.link}`}>Créer ma première mission →</Link>
+              ) : (
+                <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${tone.link}`}>
+                  {trialExpired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
+                </Link>
+              )}
             </div>
           </div>
         )}
