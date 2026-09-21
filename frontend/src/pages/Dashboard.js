@@ -79,8 +79,8 @@ export default function Dashboard() {
         !quota.trial_started ? (
           <div className="mt-4 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4" data-testid="plan-quota-banner">
             <div className="flex-1">
-              <div className="text-sm font-semibold text-emerald-900">Vos 30 jours gratuits sont prêts.</div>
-              <div className="mt-1 text-sm text-emerald-800">Préparez vos intervenants tranquillement : le chrono démarre uniquement quand vous créez votre première mission.</div>
+              <div className="text-sm font-semibold text-emerald-900">Votre essai gratuit n’a pas encore commencé.</div>
+              <div className="mt-1 text-sm text-emerald-800">Il commencera automatiquement lorsque vous créerez votre première mission. Vous pouvez préparer vos intervenants avant.</div>
             </div>
             <Link to="/app/missions/new" data-testid="dashboard-start-trial-link" className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg whitespace-nowrap shadow-sm">
               <Plus className="w-4 h-4"/> Créer ma première mission
