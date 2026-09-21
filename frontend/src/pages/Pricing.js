@@ -11,7 +11,7 @@ const PLANS = [
     name: "Essai gratuit",
     price: "0 €",
     period: "30 jours",
-    features: ["Jusqu'à 3 missions", "Jusqu'à 30 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
+    features: ["30 jours à partir de la 1re mission", "Jusqu'à 3 missions", "Jusqu'à 30 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
     cta: "Essayer 30 jours",
     href: "/register",
     highlighted: false,
@@ -134,7 +134,7 @@ export default function Pricing() {
       <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="text-center">
           <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight">Un tarif simple, sans surprise.</h1>
-          <p className="mt-4 text-gray-600 text-lg">30 jours pour tester ShiftFlow sur de vraies missions, sans carte bancaire.</p>
+          <p className="mt-4 text-gray-600 text-lg">30 jours pour tester ShiftFlow sur de vraies missions, sans carte bancaire. Le chrono démarre à votre première mission.</p>
           {!planState.loading && isPro && (
             <div className="mt-6 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-full px-4 py-2 text-sm font-medium" data-testid="pricing-current-plan">
               <Check className="w-4 h-4"/> Vous êtes déjà abonné Pro
