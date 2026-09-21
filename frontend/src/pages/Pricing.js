@@ -136,7 +136,7 @@ export default function Pricing() {
       <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="text-center">
           <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight">Un tarif simple, sans surprise.</h1>
-          <p className="mt-4 text-gray-600 text-lg">30 jours pour tester ShiftFlow sur de vraies missions, sans carte bancaire. Le chrono démarre à votre première mission.</p>
+          <p className="mt-4 text-gray-600 text-lg">30 jours pour tester ShiftFlow sur de vraies missions, sans carte bancaire. Votre essai commence à la création de votre première mission.</p>
           {!planState.loading && isPro && (
             <div className="mt-6 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-full px-4 py-2 text-sm font-medium" data-testid="pricing-current-plan">
               <Check className="w-4 h-4"/> Vous êtes déjà abonné Pro
@@ -172,7 +172,7 @@ export default function Pricing() {
               {p.key === "free" ? (
                 <Link to={user ? "/app/dashboard" : "/register"} data-testid={p.testid}
                   className="mt-6 block text-center w-full py-2.5 rounded-md font-medium bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors">
-                  {user ? (planState.trialExpired ? "Essai terminé" : planState.trialStarted ? `${planState.trialDaysRemaining} j restants` : "Essai prêt — 30 jours") : p.cta}
+                  {user ? (planState.trialExpired ? "Essai terminé" : planState.trialStarted ? `${planState.trialDaysRemaining} j restants` : "30 jours d’essai disponibles") : p.cta}
                 </Link>
               ) : (
                 <button onClick={()=>startCheckout(p.lookup)} disabled={loading === p.lookup || planState.loading || isPro} data-testid={p.testid}
