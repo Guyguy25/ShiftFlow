@@ -200,15 +200,15 @@ export default function Layout({ children }) {
                   {trialStarted ? <Clock3 className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                 </div>
                 <div className="min-w-0">
-                  <div className={`text-[10px] uppercase tracking-widest font-bold ${tone.kicker}`}>{trialStarted ? "Essai en cours" : "Essai prêt"}</div>
+                  <div className={`text-[10px] uppercase tracking-widest font-bold ${tone.kicker}`}>{trialStarted ? "Essai en cours" : "Essai disponible"}</div>
                   <div className={`text-sm font-semibold truncate ${tone.text}`}>
-                    {trialStarted ? (trialCountdown?.label || "30 jours") : "30 jours disponibles"}
+                    {trialStarted ? (trialCountdown?.label || "30 jours") : "30 jours offerts"}
                   </div>
                 </div>
               </div>
               {!trialStarted ? (
                 <div className="mt-2 text-[11px] leading-relaxed text-emerald-800">
-                  Le chrono démarre seulement quand vous créez votre première mission.
+                  Votre essai commence à la création de votre première mission.
                 </div>
               ) : trialProgress !== null && !trialExpired ? (
                 <div className={`mt-2 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
@@ -304,9 +304,9 @@ export default function Layout({ children }) {
               <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${tone.bannerText}`}>
                 {!trialStarted ? (
                   <>
-                    <span className="inline-flex items-center gap-1.5 font-semibold"><Zap className="w-3.5 h-3.5" /> Vos 30 jours sont prêts</span>
+                    <span className="inline-flex items-center gap-1.5 font-semibold"><Zap className="w-3.5 h-3.5" /> 30 jours d’essai disponibles</span>
                     <span className="opacity-40">·</span>
-                    <span>Le chrono démarre à votre première mission</span>
+                    <span>Votre essai commence à la création de votre première mission</span>
                     <span className="opacity-40">·</span>
                     <span>{quota.workers}/{quota.worker_limit} intervenants préparés</span>
                   </>
