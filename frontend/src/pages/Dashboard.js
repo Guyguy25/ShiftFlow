@@ -76,10 +76,22 @@ export default function Dashboard() {
       </div>
 
       {quota && quota.plan === "free" && (
-        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="plan-quota-banner">
-          <div className="flex-1 text-sm"><strong className="text-blue-900">Essai gratuit</strong> · Missions utilisées {quota.missions_used}/{quota.mission_limit} · Intervenants {quota.workers}/{quota.worker_limit}</div>
-          <Link to="/pricing" data-testid="dashboard-upgrade-link" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md whitespace-nowrap">Passer au Pro →</Link>
-        </div>
+        !quota.trial_started ? (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4" data-testid="plan-quota-banner">
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-emerald-900">Vos 30 jours gratuits sont prêts.</div>
+              <div className="mt-1 text-sm text-emerald-800">Préparez vos intervenants tranquillement : le chrono démarre uniquement quand vous créez votre première mission.</div>
+            </div>
+            <Link to="/app/missions/new" data-testid="dashboard-start-trial-link" className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg whitespace-nowrap shadow-sm">
+              <Plus className="w-4 h-4"/> Créer ma première mission
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="plan-quota-banner">
+            <div className="flex-1 text-sm"><strong className="text-blue-900">Essai gratuit</strong> · Missions utilisées {quota.missions_used}/{quota.mission_limit} · Intervenants {quota.workers}/{quota.worker_limit}</div>
+            <Link to="/pricing" data-testid="dashboard-upgrade-link" className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md whitespace-nowrap">Passer au Pro →</Link>
+          </div>
+        )
       )}
       {quota && quota.plan === "pro" && (
         <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900 flex items-center gap-2" data-testid="plan-pro-banner"><CheckCircle2 className="w-4 h-4"/> Plan <strong>Pro</strong> actif — missions et intervenants illimités.</div>
