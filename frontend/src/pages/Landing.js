@@ -166,7 +166,7 @@ export default function Landing() {
             <div className="text-center max-w-4xl mx-auto">
               <div className="sf-fade-up inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/80 px-3 py-1.5 text-xs font-semibold text-blue-700">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-                30 jours gratuits · 3 missions · aucune carte bancaire
+                30 jours gratuits dès votre 1re mission · 3 missions · aucune carte bancaire
               </div>
               <h1 className="sf-fade-up sf-fade-up-delay-1 mt-6 text-4xl sm:text-5xl lg:text-7xl leading-[1.02] tracking-[-0.04em] font-display font-bold text-slate-950">
                 Vos équipes événementielles, <span className="text-blue-600">sans les relances à répétition.</span>
@@ -320,7 +320,7 @@ export default function Landing() {
           <div className="max-w-4xl mx-auto px-5 sm:px-6 text-center relative">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold"><Zap className="w-3.5 h-3.5" />30 jours gratuits</div>
             <h2 className="mt-5 text-4xl sm:text-6xl font-display font-bold tracking-[-0.04em]">La prochaine relance peut être la dernière que vous faites à la main.</h2>
-            <p className="mt-5 text-blue-100 text-lg max-w-2xl mx-auto">Créez votre compte, ajoutez jusqu'à 30 intervenants et testez ShiftFlow sur jusqu'à 3 missions pendant 30 jours. Aucune carte bancaire demandée.</p>
+            <p className="mt-5 text-blue-100 text-lg max-w-2xl mx-auto">Créez votre compte, préparez jusqu'à 30 intervenants, puis lancez vos 30 jours quand vous créez votre première mission. Jusqu'à 3 missions, sans carte bancaire.</p>
             <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
               <Link to="/register" data-testid="footer-cta" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-blue-700 px-7 py-3.5 font-semibold hover:bg-blue-50 transition-colors">Tester ShiftFlow <ArrowRight className="w-4 h-4" /></Link>
               <Link to="/pricing" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-7 py-3.5 font-semibold hover:bg-white/15 transition-colors">Voir les tarifs <ChevronRight className="w-4 h-4" /></Link>
