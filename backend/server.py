@@ -816,6 +816,7 @@ async def list_missions(archived: bool = False, user=Depends(get_current_user)):
 async def create_mission(payload: MissionIn, request: Request, user=Depends(get_current_user)):
     await check_quota_or_raise(user, "mission")  # noqa: F821 (defined later)
     is_first_mission = await db.missions.count_documents({"agency_id": user["id"]}) == 0
+    mission_created_at = now_utc()
     mission = {
         "id": new_id(),
         "agency_id": user["id"],
@@ -826,7 +827,7 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
         "cascade_enabled": payload.cascade_enabled,
         "followup_hours": payload.followup_hours,
         "status": "draft",
-        "created_at": iso(now_utc()),
+        "created_at": iso(mission_created_at),
     }
     await db.missions.insert_one(mission)
     for s in payload.shifts:
@@ -843,22 +844,46 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
         shift.pop("_id", None)
     mission.pop("_id", None)
 
-    if is_first_mission and payload.meta_consent:
-        origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
-        event_source_url = f"{origin}/app/missions/new" if origin else "/app/missions/new"
-
-        # Activation stays separate from trial start: this tells us the user
-        # actually used ShiftFlow rather than only creating an account.
-        await send_meta_event(
-            event_name="FirstMissionCreated",
-            event_id=f"first_mission_{user['id']}",
-            event_source_url=event_source_url,
-            email=user.get("email"),
-            phone=user.get("phone"),
-            external_id=user.get("id"),
-            client_user_agent=request.headers.get("user-agent"),
-            custom_data={"mission_id": mission["id"]},
+    if is_first_mission:
+        trial_started_at = mission_created_at
+        trial_ends_at = trial_started_at + timedelta(days=FREE_TRIAL_DAYS)
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {
+                "trial_started_at": iso(trial_started_at),
+                "trial_ends_at": iso(trial_ends_at),
+                "trial_model_version": TRIAL_MODEL_VERSION,
+            }},
         )
+        user["trial_started_at"] = iso(trial_started_at)
+        user["trial_ends_at"] = iso(trial_ends_at)
+
+        if payload.meta_consent:
+            origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
+            event_source_url = f"{origin}/app/missions/new" if origin else "/app/missions/new"
+
+            await send_meta_event(
+                event_name="StartTrial",
+                event_id=f"trial_{user['id']}",
+                event_source_url=event_source_url,
+                email=user.get("email"),
+                phone=user.get("phone"),
+                external_id=user.get("id"),
+                client_user_agent=request.headers.get("user-agent"),
+                custom_data={"trial_days": FREE_TRIAL_DAYS},
+            )
+
+            # Separate activation signal: the user has actually used ShiftFlow.
+            await send_meta_event(
+                event_name="FirstMissionCreated",
+                event_id=f"first_mission_{user['id']}",
+                event_source_url=event_source_url,
+                email=user.get("email"),
+                phone=user.get("phone"),
+                external_id=user.get("id"),
+                client_user_agent=request.headers.get("user-agent"),
+                custom_data={"mission_id": mission["id"]},
+            )
 
     return await mission_with_shifts({**mission}, include_slots=True)
 
