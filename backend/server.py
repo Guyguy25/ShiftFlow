@@ -37,6 +37,7 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24
 REFRESH_TOKEN_DAYS = 90  # "rester connecté" : la session glisse tant que l'utilisateur revient dans les 90 jours
 FREE_TRIAL_DAYS = 30
+TRIAL_MODEL_VERSION = 2  # v2 starts the 30-day clock on the first mission
 
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -122,16 +123,31 @@ def _parse_account_datetime(value: Optional[str]) -> Optional[datetime]:
 
 
 def trial_info(u: dict) -> dict:
-    start = _parse_account_datetime(u.get("trial_started_at") or u.get("created_at"))
+    if u.get("plan", "free") == "pro":
+        return {
+            "trial_started": bool(u.get("trial_started_at")),
+            "trial_started_at": u.get("trial_started_at"),
+            "trial_ends_at": u.get("trial_ends_at"),
+            "trial_days_remaining": None,
+            "trial_expired": False,
+        }
+
+    start = _parse_account_datetime(u.get("trial_started_at"))
     if not start:
-        # All normal accounts have created_at. This fallback avoids breaking
-        # legacy/admin rows that predate that field.
-        start = now_utc()
+        return {
+            "trial_started": False,
+            "trial_started_at": None,
+            "trial_ends_at": None,
+            "trial_days_remaining": FREE_TRIAL_DAYS,
+            "trial_expired": False,
+        }
+
     end = _parse_account_datetime(u.get("trial_ends_at")) or (start + timedelta(days=FREE_TRIAL_DAYS))
     seconds_left = max(0, int((end - now_utc()).total_seconds()))
     days_remaining = 0 if seconds_left <= 0 else (seconds_left + 86399) // 86400
-    expired = u.get("plan", "free") != "pro" and now_utc() >= end
+    expired = now_utc() >= end
     return {
+        "trial_started": True,
         "trial_started_at": iso(start),
         "trial_ends_at": iso(end),
         "trial_days_remaining": int(days_remaining),
@@ -140,6 +156,8 @@ def trial_info(u: dict) -> dict:
 
 
 def has_active_product_access(u: dict) -> bool:
+    # Before the first mission the trial clock has not started yet, so setup
+    # actions (WhatsApp, contacts, etc.) remain available.
     return u.get("plan", "free") == "pro" or not trial_info(u)["trial_expired"]
 
 
@@ -150,6 +168,36 @@ async def ensure_trial_active_or_raise(user: dict):
         status_code=402,
         detail=f"Votre essai gratuit de {FREE_TRIAL_DAYS} jours est terminé. Passez au Pro pour continuer à utiliser ShiftFlow.",
     )
+
+
+async def ensure_trial_model(user: dict) -> dict:
+    """One-time migration to the 'trial starts on first mission' model."""
+    if not user or user.get("plan", "free") == "pro" or int(user.get("trial_model_version") or 0) >= TRIAL_MODEL_VERSION:
+        return user
+
+    first = await db.missions.find(
+        {"agency_id": user["id"]},
+        {"_id": 0, "created_at": 1},
+    ).sort("created_at", 1).limit(1).to_list(1)
+
+    update = {"trial_model_version": TRIAL_MODEL_VERSION}
+    unset = {}
+    if first:
+        start = _parse_account_datetime(first[0].get("created_at")) or now_utc()
+        update["trial_started_at"] = iso(start)
+        update["trial_ends_at"] = iso(start + timedelta(days=FREE_TRIAL_DAYS))
+        user.update(update)
+    else:
+        unset = {"trial_started_at": "", "trial_ends_at": ""}
+        user.pop("trial_started_at", None)
+        user.pop("trial_ends_at", None)
+        user.update(update)
+
+    mongo_update = {"$set": update}
+    if unset:
+        mongo_update["$unset"] = unset
+    await db.users.update_one({"id": user["id"]}, mongo_update)
+    return user
 
 
 def public_user(u: dict) -> dict:
@@ -177,6 +225,7 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        user = await ensure_trial_model(user)
         user.pop("password_hash", None)
         return user
     except jwt.ExpiredSignatureError:
@@ -518,8 +567,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     user = {"id": new_id(), "email": email, "password_hash": hash_password(payload.password),
             "name": payload.name, "agency_name": payload.agency_name, "phone": payload.phone,
             "role": "admin", "created_at": iso(created_at),
-            "trial_started_at": iso(created_at),
-            "trial_ends_at": iso(created_at + timedelta(days=FREE_TRIAL_DAYS)),
+            "trial_model_version": TRIAL_MODEL_VERSION,
             "onboarding_completed": bool(payload.onboarding_answers),
             "onboarding_answers": payload.onboarding_answers or None,
             "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None}
@@ -531,16 +579,6 @@ async def register(payload: RegisterIn, request: Request, response: Response):
         await send_meta_event(
             event_name="CompleteRegistration",
             event_id=f"registration_{user['id']}",
-            event_source_url=event_source_url,
-            email=user.get("email"),
-            phone=user.get("phone"),
-            external_id=user.get("id"),
-            client_user_agent=request.headers.get("user-agent"),
-        )
-        # The 30-day trial now starts when the account is created.
-        await send_meta_event(
-            event_name="StartTrial",
-            event_id=f"trial_{user['id']}",
             event_source_url=event_source_url,
             email=user.get("email"),
             phone=user.get("phone"),
@@ -560,6 +598,7 @@ async def login(payload: LoginIn, response: Response):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    user = await ensure_trial_model(user)
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
@@ -588,6 +627,7 @@ async def refresh_session(request: Request, response: Response):
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    user = await ensure_trial_model(user)
 
     access = create_access_token(user["id"], user["email"])
     # On régénère aussi le refresh_token à chaque passage : tant que l'utilisateur
@@ -1407,23 +1447,6 @@ async def on_startup():
     await db.mission_workers.create_index("shift_id")
     await db.mission_workers.create_index("token", unique=True)
 
-    # Existing free accounts keep a full 30-day trial from this rollout.
-    # New registrations already receive explicit trial dates at creation.
-    rollout_start = now_utc()
-    await db.users.update_many(
-        {
-            "plan": {"$ne": "pro"},
-            "$or": [
-                {"trial_started_at": {"$exists": False}},
-                {"trial_ends_at": {"$exists": False}},
-            ],
-        },
-        {"$set": {
-            "trial_started_at": iso(rollout_start),
-            "trial_ends_at": iso(rollout_start + timedelta(days=FREE_TRIAL_DAYS)),
-        }},
-    )
-
     await seed_admin_and_demo()
     logger.info(f"Twilio ready: {twilio_ready()} (from={TWILIO_FROM or 'unset'})")
 
@@ -1470,15 +1493,11 @@ async def _active_missions_count(user_id: str) -> int:
 
 
 async def _missions_created_count(user_id: str) -> int:
-    # Count only missions created during the current trial window. This matters
-    # for accounts that existed before the 30-day trial model was introduced:
-    # old test missions must not consume their fresh trial allowance.
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "trial_started_at": 1, "created_at": 1})
-    start = (user or {}).get("trial_started_at") or (user or {}).get("created_at")
-    query = {"agency_id": user_id}
-    if start:
-        query["created_at"] = {"$gte": start}
-    return await db.missions.count_documents(query)
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "trial_started_at": 1})
+    start = (user or {}).get("trial_started_at")
+    if not start:
+        return 0
+    return await db.missions.count_documents({"agency_id": user_id, "created_at": {"$gte": start}})
 
 
 async def check_quota_or_raise(user, kind: str):
