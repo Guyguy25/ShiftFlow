@@ -144,7 +144,7 @@ export default function Register() {
           <form onSubmit={submit} data-testid="register-form" autoComplete="on">
             <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Finalisation</div>
             <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Démarrez votre essai gratuit</h1>
-            <p className="mt-2 text-gray-600 text-sm">30 jours gratuits · 3 missions · jusqu’à 30 intervenants · aucune carte bancaire requise.</p>
+            <p className="mt-2 text-gray-600 text-sm">30 jours gratuits à partir de votre première mission · 3 missions · jusqu’à 30 intervenants · aucune carte bancaire requise.</p>
             <div className="mt-6 space-y-4">
               <div><label className="text-sm font-medium">Nom de l'agence *</label>
                 <input required data-testid="register-agency-input" className={inputCls} value={form.agency_name} onChange={setF("agency_name")} placeholder="Mon Agence Event"/></div>
@@ -172,7 +172,7 @@ export default function Register() {
             {error && <div className="mt-4 text-sm text-red-600" data-testid="register-error">{error}</div>}
             <button type="submit" disabled={loading || !acceptedTerms} data-testid="register-submit-btn"
               className="mt-6 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2">
-              {loading ? "Création…" : "Commencer mes 30 jours gratuits"} <ArrowRight className="w-4 h-4"/>
+              {loading ? "Création…" : "Créer mon compte gratuitement"} <ArrowRight className="w-4 h-4"/>
             </button>
             <div className="mt-4 text-center text-sm text-gray-500">
               Déjà un compte ? <Link to="/login" data-testid="register-login-link" className="text-blue-600 font-medium hover:text-blue-700">Se connecter</Link>
