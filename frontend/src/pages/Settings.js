@@ -150,7 +150,7 @@ export default function Settings() {
               {isPro ? (
                 <>Missions et intervenants <strong>illimités</strong>. Merci pour votre soutien !</>
               ) : (
-                <>Missions : <strong>{quota.missions_used ?? quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong> · {!quota.trial_started ? <strong className="text-emerald-700">30 jours prêts — démarre à la 1re mission</strong> : quota.trial_expired ? <strong className="text-red-600">Essai terminé</strong> : <><strong>{quota.trial_days_remaining}</strong> jour{quota.trial_days_remaining > 1 ? "s" : ""} restant{quota.trial_days_remaining > 1 ? "s" : ""}</>}</>
+                <>Missions : <strong>{quota.missions_used ?? quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong> · {!quota.trial_started ? <strong className="text-emerald-700">30 jours disponibles — l’essai commence à la création de votre 1re mission</strong> : quota.trial_expired ? <strong className="text-red-600">Essai terminé</strong> : <><strong>{quota.trial_days_remaining}</strong> jour{quota.trial_days_remaining > 1 ? "s" : ""} restant{quota.trial_days_remaining > 1 ? "s" : ""}</>}</>
               )}
             </div>
           )}
