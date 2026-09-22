@@ -950,12 +950,25 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
-    existing = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).to_list(1000)
-    if existing:
-        raise HTTPException(status_code=400, detail="Les intervenants ont déjà été sélectionnés pour ce shift")
+    if shift.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="Impossible d'ajouter des intervenants à un shift annulé")
+    if int(shift.get("confirmed_count") or 0) >= int(shift.get("people_needed") or 0):
+        raise HTTPException(status_code=400, detail="L'équipe de ce shift est déjà complète")
+
+    existing = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).sort("priority", 1).to_list(1000)
+    existing_worker_ids = {slot.get("worker_id") for slot in existing}
+    next_priority = max((int(slot.get("priority") or 0) for slot in existing), default=-1) + 1
+
     slots = []
-    for idx, worker_id in enumerate(payload.worker_ids):
-        worker = await db.workers.find_one({"id": worker_id, "agency_id": user["id"]}, {"_id": 0})
+    seen = set()
+    for worker_id in payload.worker_ids:
+        if not worker_id or worker_id in seen or worker_id in existing_worker_ids:
+            continue
+        seen.add(worker_id)
+        worker = await db.workers.find_one(
+            {"id": worker_id, "agency_id": user["id"], "active": {"$ne": False}},
+            {"_id": 0},
+        )
         if not worker:
             continue
         slots.append({
@@ -963,7 +976,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
             "mission_id": shift["mission_id"],
             "shift_id": shift_id,
             "worker_id": worker_id,
-            "priority": idx,
+            "priority": next_priority + len(slots),
             "token": secrets.token_urlsafe(24),
             "status": "pending",
             "contacted_at": None,
@@ -971,13 +984,28 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
             "response_reason": None,
             "created_at": iso(now_utc()),
         })
-    if slots:
-        await db.mission_workers.insert_many(slots)
+
+    if not slots:
+        raise HTTPException(
+            status_code=400,
+            detail="Sélectionnez au moins un nouvel intervenant qui n'est pas déjà dans la cascade.",
+        )
+
+    await db.mission_workers.insert_many(slots)
     await db.shifts.update_one({"id": shift_id}, {"$set": {"status": "in_progress"}})
     await db.missions.update_one({"id": shift["mission_id"]}, {"$set": {"status": "in_progress"}})
     await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
-    return {"ok": True, "slots_created": len(slots)}
+
+    refreshed_shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
+    confirmed = int((refreshed_shift or {}).get("confirmed_count") or 0)
+    remaining = max(0, int(shift.get("people_needed") or 0) - confirmed)
+    return {
+        "ok": True,
+        "slots_created": len(slots),
+        "total_candidates": len(existing) + len(slots),
+        "remaining_needed": remaining,
+    }
 
 
 @api.post("/shifts/{shift_id}/next-cascade")
