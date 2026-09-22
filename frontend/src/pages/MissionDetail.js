@@ -314,13 +314,13 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
 
 function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
   const noSlots = !shift.slots || shift.slots.length === 0;
-  const [expandSelect, setExpandSelect] = useState(autoExpand && noSlots);
   const filled = shift.confirmed_count >= shift.people_needed;
+  const [expandSelect, setExpandSelect] = useState(autoExpand && !filled);
   const missing = Math.max(0, shift.people_needed - shift.confirmed_count);
 
   useEffect(() => {
-    if (autoExpand && noSlots) setExpandSelect(true);
-  }, [autoExpand, noSlots]);
+    if (autoExpand && !filled) setExpandSelect(true);
+  }, [autoExpand, filled]);
 
   const copyLink = (token) => {
     const url = `${window.location.origin}/m/${token}`;
