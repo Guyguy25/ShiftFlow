@@ -1518,6 +1518,10 @@ async def root():
 import stripe as stripe_lib
 stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+ALLOWED_STRIPE_PRICES = {
+    "shiftflow_pro_monthly": "month",
+    "shiftflow_pro_yearly": "year",
+}
 FREE_MISSION_LIMIT = 3
 FREE_WORKER_LIMIT = 30
 
@@ -1652,10 +1656,21 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
+    expected_interval = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
+    if not expected_interval:
+        raise HTTPException(status_code=400, detail="Offre Stripe non autorisée")
+
     prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
     if not prices:
-        raise HTTPException(status_code=400, detail=f"Prix inconnu: {payload.lookup_key}")
+        raise HTTPException(status_code=400, detail=f"Prix Stripe introuvable: {payload.lookup_key}")
+
     price = prices[0]
+    if not price.recurring or price.recurring.interval != expected_interval:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Le prix Stripe {payload.lookup_key} doit être un abonnement récurrent {expected_interval}.",
+        )
+
     origin = payload.origin_url.rstrip("/")
     # French micro-entrepreneur franchise en base de TVA (art. 293 B du CGI): no VAT applied.
     session = stripe_lib.checkout.Session.create(
@@ -1665,14 +1680,19 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         cancel_url=f"{origin}/payment/cancel",
         customer_email=user.get("email"),
         allow_promotion_codes=True,
-        metadata={"user_id": user["id"], "lookup_key": payload.lookup_key},
+        metadata={
+            "user_id": user["id"],
+            "lookup_key": payload.lookup_key,
+            "billing_interval": expected_interval,
+        },
         custom_text={
             "submit": {"message": "TVA non applicable, art. 293 B du CGI"},
         },
     )
     await db.payment_transactions.insert_one({
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
-        "lookup_key": payload.lookup_key, "amount": (price.unit_amount or 0),
+        "lookup_key": payload.lookup_key, "billing_interval": expected_interval,
+        "amount": (price.unit_amount or 0),
         "currency": price.currency, "status": "initiated", "payment_status": "pending",
         "origin_url": origin,
         "client_user_agent": request.headers.get("user-agent"),
@@ -1717,6 +1737,7 @@ async def payment_status_endpoint(session_id: str):
                     await db.users.update_one({"id": s.metadata["user_id"]}, {"$set": {
                         "plan": "pro", "subscription_status": "active",
                         "stripe_customer_id": s.customer, "stripe_subscription_id": s.subscription,
+                        "subscription_billing_interval": (s.metadata or {}).get("billing_interval"),
                     }})
                 if s.payment_status == "paid":
                     await _send_subscribe_meta_if_needed(session_id, s.subscription)
@@ -1750,12 +1771,14 @@ async def stripe_webhook(request: Request):
                 "plan": "pro", "subscription_status": "active",
                 "stripe_customer_id": obj.get("customer"),
                 "stripe_subscription_id": obj.get("subscription"),
+                "subscription_billing_interval": (obj.get("metadata") or {}).get("billing_interval"),
             }})
         if obj.get("payment_status") == "paid":
             await _send_subscribe_meta_if_needed(obj["id"], obj.get("subscription"))
     elif t == "customer.subscription.deleted":
         await db.users.update_one({"stripe_customer_id": obj.get("customer")}, {"$set": {
             "plan": "free", "subscription_status": "canceled",
+            "subscription_billing_interval": None,
         }})
     elif t == "checkout.session.expired":
         await db.payment_transactions.update_one({"session_id": obj["id"]},
