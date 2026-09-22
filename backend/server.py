@@ -1519,8 +1519,8 @@ import stripe as stripe_lib
 stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 ALLOWED_STRIPE_PRICES = {
-    "shiftflow_pro_monthly": "month",
-    "shiftflow_pro_yearly": "year",
+    "shiftflow_pro_monthly": {"interval": "month", "amount": 4900},
+    "shiftflow_pro_yearly": {"interval": "year", "amount": 49980},
 }
 FREE_MISSION_LIMIT = 3
 FREE_WORKER_LIMIT = 30
@@ -1656,9 +1656,11 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
-    expected_interval = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
-    if not expected_interval:
+    expected_price = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
+    if not expected_price:
         raise HTTPException(status_code=400, detail="Offre Stripe non autorisée")
+    expected_interval = expected_price["interval"]
+    expected_amount = expected_price["amount"]
 
     prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
     if not prices:
@@ -1669,6 +1671,11 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         raise HTTPException(
             status_code=400,
             detail=f"Le prix Stripe {payload.lookup_key} doit être un abonnement récurrent {expected_interval}.",
+        )
+    if price.currency != "eur" or int(price.unit_amount or 0) != expected_amount:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Le montant Stripe de {payload.lookup_key} ne correspond pas au tarif ShiftFlow attendu.",
         )
 
     origin = payload.origin_url.rstrip("/")
