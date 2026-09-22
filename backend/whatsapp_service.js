@@ -14,11 +14,76 @@ const LEGACY_SESSION_ROOT = path.join(__dirname, "whatsapp-session");
 const DEFAULT_SESSION_ID = process.env.WHATSAPP_SESSION_ID || "default";
 const SEND_INTERVAL_MS = Math.max(500, Number(process.env.WHATSAPP_SEND_INTERVAL_MS || 1200));
 const REFRESH_COOLDOWN_MS = 60 * 1000;
+const SHIFTFLOW_API_BASE_URL = String(process.env.SHIFTFLOW_API_BASE_URL || "https://shiftflow.io").replace(/\/$/, "");
+const REMINDER_SCHEDULER_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.REMINDER_SCHEDULER_INTERVAL_MS || 15 * 60 * 1000));
+const REMINDER_CRON_SECRET = String(process.env.WEBHOOK_CRON_SECRET || "").trim();
 
 app.use(express.json());
 const sessions = new Map();
 let shuttingDown = false;
+let reminderSchedulerInterval = null;
+let reminderSchedulerBootstrapTimer = null;
+let reminderSchedulerRunning = false;
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function runReminderSchedulerTick() {
+    if (shuttingDown || reminderSchedulerRunning || !REMINDER_CRON_SECRET) return;
+    reminderSchedulerRunning = true;
+    const bucket = Math.floor(Date.now() / REMINDER_SCHEDULER_INTERVAL_MS);
+    const runId = `railway-reminders-${bucket}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60 * 1000);
+
+    try {
+        const response = await fetch(`${SHIFTFLOW_API_BASE_URL}/api/cron/reminders`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${REMINDER_CRON_SECRET}`,
+                "X-Webhook-Id": runId,
+                "Content-Type": "application/json",
+            },
+            body: "{}",
+            signal: controller.signal,
+        });
+        const raw = await response.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch (_) {}
+
+        if (!response.ok) {
+            console.error(`❌ Scheduler rappels HTTP ${response.status}: ${data?.detail || raw || "erreur inconnue"}`);
+            return;
+        }
+
+        if (data?.duplicate) {
+            console.log(`⏭️ Scheduler rappels déjà exécuté pour ce créneau [${runId}]`);
+        } else {
+            console.log(`⏰ Scheduler rappels OK [${runId}] : ${Number(data?.sent || 0)} rappel(s) envoyé(s)`);
+        }
+    } catch (error) {
+        const label = error?.name === "AbortError" ? "timeout" : error?.message || String(error);
+        console.error(`❌ Scheduler rappels impossible : ${label}`);
+    } finally {
+        clearTimeout(timeout);
+        reminderSchedulerRunning = false;
+    }
+}
+
+function startReminderScheduler() {
+    if (!REMINDER_CRON_SECRET) {
+        console.log("⚠️ Scheduler rappels désactivé : WEBHOOK_CRON_SECRET absent sur Railway");
+        return;
+    }
+    console.log(`⏰ Scheduler rappels actif : vérification toutes les ${Math.round(REMINDER_SCHEDULER_INTERVAL_MS / 60000)} min via ${SHIFTFLOW_API_BASE_URL}`);
+
+    // Catch up shortly after every Railway restart, then keep checking.
+    reminderSchedulerBootstrapTimer = setTimeout(() => {
+        runReminderSchedulerTick().catch(() => {});
+    }, 10 * 1000);
+
+    reminderSchedulerInterval = setInterval(() => {
+        runReminderSchedulerTick().catch(() => {});
+    }, REMINDER_SCHEDULER_INTERVAL_MS);
+}
 function safeSessionId(value) { const raw = String(value || DEFAULT_SESSION_ID).trim(); return raw.replace(/[^a-zA-Z0-9_-]/g, "_") || "default"; }
 function sessionPath(sessionId) { return path.join(SESSION_ROOT, safeSessionId(sessionId)); }
 function createSessionState(sessionId) { return { id: safeSessionId(sessionId), sock: null, connected: false, qr: null, qrText: null, contacts: new Map(), pendingLidContacts: new Map(), lidToPhone: new Map(), contactsLoading: false, initialSyncDone: false, initialAutoRefreshAttempted: false, starting: false, reconnectTimer: null, refreshPromise: null, resetPromise: null, lastRefreshAt: 0, generation: 0, lastConnectionError: null, sendQueue: Promise.resolve(), sendQueueLength: 0, lastSendAt: 0 }; }
@@ -306,7 +371,7 @@ app.post("/session/start", async (req, res) => { const state = getSession(sessio
 app.post("/session/logout", async (req, res) => { const state = getSession(sessionFromRequest(req)); if (state.sock && state.connected) { try { await state.sock.logout(); } catch (error) { console.log(`⚠️ Logout socket [${state.id}] : ${error.message}`); } } await resetSessionForNewLogin(state, true); res.json({ success: true, reset: true }); });
 app.get("/", (req, res) => res.json({ service: "ShiftFlow WhatsApp", provider: "Baileys", status: "ok" }));
 async function discoverExistingSessions() { try { const entries = await fs.promises.readdir(SESSION_ROOT, { withFileTypes: true }); return entries.filter(entry => entry.isDirectory()).map(entry => safeSessionId(entry.name)).filter(Boolean); } catch (error) { console.error(`❌ Impossible de lire le dossier des sessions :`, error.message); return []; } }
-async function bootstrap() { await fs.promises.mkdir(SESSION_ROOT, { recursive: true }); console.log("🚀 SHIFTLOW - WHATSAPP BAILEYS SERVICE"); console.log(`📁 Sessions persistantes : ${SESSION_ROOT}`); console.log(`🌐 Port : ${PORT}`); const defaultDir = sessionPath(DEFAULT_SESSION_ID); if (DEFAULT_SESSION_ID === "default" && fs.existsSync(LEGACY_SESSION_ROOT) && !fs.existsSync(defaultDir)) await fs.promises.rename(LEGACY_SESSION_ROOT, defaultDir).catch(() => {}); const existing = await discoverExistingSessions(); if (existing.length > 0) { console.log(`♻️ Sessions existantes détectées : ${existing.join(", ")}`); for (const id of existing) { const state = getSession(id); await loadContactsCache(state); startSession(state).catch(error => console.error(`❌ Restauration session [${id}] :`, error)); } } else console.log("ℹ️ Aucune session sauvegardée au démarrage. Une session sera créée à la demande via /status."); app.listen(PORT, () => console.log(`🌐 Serveur lancé sur le port ${PORT}`)); }
-async function shutdown(signal) { if (shuttingDown) return; shuttingDown = true; console.log(`🛑 Arrêt du service (${signal})...`); for (const state of sessions.values()) { if (state.reconnectTimer) clearTimeout(state.reconnectTimer); await destroySocket(state); } process.exit(0); }
+async function bootstrap() { await fs.promises.mkdir(SESSION_ROOT, { recursive: true }); console.log("🚀 SHIFTLOW - WHATSAPP BAILEYS SERVICE"); console.log(`📁 Sessions persistantes : ${SESSION_ROOT}`); console.log(`🌐 Port : ${PORT}`); const defaultDir = sessionPath(DEFAULT_SESSION_ID); if (DEFAULT_SESSION_ID === "default" && fs.existsSync(LEGACY_SESSION_ROOT) && !fs.existsSync(defaultDir)) await fs.promises.rename(LEGACY_SESSION_ROOT, defaultDir).catch(() => {}); const existing = await discoverExistingSessions(); if (existing.length > 0) { console.log(`♻️ Sessions existantes détectées : ${existing.join(", ")}`); for (const id of existing) { const state = getSession(id); await loadContactsCache(state); startSession(state).catch(error => console.error(`❌ Restauration session [${id}] :`, error)); } } else console.log("ℹ️ Aucune session sauvegardée au démarrage. Une session sera créée à la demande via /status."); app.listen(PORT, () => { console.log(`🌐 Serveur lancé sur le port ${PORT}`); startReminderScheduler(); }); }
+async function shutdown(signal) { if (shuttingDown) return; shuttingDown = true; console.log(`🛑 Arrêt du service (${signal})...`); if (reminderSchedulerBootstrapTimer) clearTimeout(reminderSchedulerBootstrapTimer); if (reminderSchedulerInterval) clearInterval(reminderSchedulerInterval); for (const state of sessions.values()) { if (state.reconnectTimer) clearTimeout(state.reconnectTimer); await destroySocket(state); } process.exit(0); }
 process.on("SIGINT", () => shutdown("SIGINT")); process.on("SIGTERM", () => shutdown("SIGTERM"));
 bootstrap().catch(error => { console.error("❌ Échec du démarrage du service WhatsApp :", error); process.exit(1); });
