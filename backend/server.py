@@ -1370,8 +1370,8 @@ async def cron_reminders(request: Request):
     if await db.cron_runs.find_one({"run_id": run_id}):
         return {"ok": True, "duplicate": True}
     await db.cron_runs.insert_one({"run_id": run_id, "kind": "reminders", "at": iso(now_utc())})
-    asyncio.create_task(_run_reminders())
-    return {"ok": True, "queued": True}
+    sent = await _run_reminders()
+    return {"ok": True, "sent": sent}
 
 
 @api.get("/config")
