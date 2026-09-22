@@ -107,10 +107,13 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
   );
 }
 
-function ShiftSelector({ mission, shift, workers, onSelected }) {
+function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = [] }) {
   const nav = useNavigate();
   const returnTo = `/app/missions/${mission.id}?step=select&shift=${encodeURIComponent(shift.id)}`;
   const openAddWorkers = () => nav(`/app/workers?add=1&returnTo=${encodeURIComponent(returnTo)}`);
+  const existingWorkerIds = new Set(existingSlots.map((slot) => slot.worker_id).filter(Boolean));
+  const selectableWorkers = workers.filter((worker) => !existingWorkerIds.has(worker.id));
+  const missingNeeded = Math.max(0, Number(shift.people_needed || 0) - Number(shift.confirmed_count || 0));
   const [selected, setSelected] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -145,6 +148,12 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
 
   const submit = async () => {
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
+    if (selected.length < missingNeeded) {
+      const ok = window.confirm(
+        `Ce shift a encore besoin de ${missingNeeded} personne${missingNeeded > 1 ? "s" : ""}, mais vous n'en avez sélectionné que ${selected.length}.\n\nVous pourrez ajouter d'autres intervenants ensuite. Lancer quand même ?`
+      );
+      if (!ok) return;
+    }
     try {
       const { data } = await api.get("/whatsapp/status");
       if (!data.connected) {
@@ -199,16 +208,32 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
         <div className="text-xs text-gray-500"><span className="font-semibold text-gray-900">{selected.length}</span> sélectionné{selected.length > 1 ? "s" : ""}</div>
       </div>
 
+      {missingNeeded > 0 && (
+        <div className={`mb-4 rounded-xl border px-4 py-3 text-sm flex gap-3 ${selected.length < missingNeeded ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`}>
+          <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${selected.length < missingNeeded ? "text-amber-600" : "text-emerald-600"}`} />
+          <div>
+            <div className="font-semibold">
+              {selected.length < missingNeeded
+                ? `Il manque ${missingNeeded} personne${missingNeeded > 1 ? "s" : ""} pour compléter ce shift.`
+                : "Vous avez sélectionné assez de personnes pour couvrir le besoin."}
+            </div>
+            <div className="mt-0.5 text-xs opacity-80">
+              Vous pouvez sélectionner moins de personnes et lancer la cascade quand même. ShiftFlow vous laissera ensuite ajouter d’autres intervenants si nécessaire.
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-5" data-testid={`shift-selector-${shift.id}`}>
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Disponibles</div>
-            <span className="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{workers.length}</span>
+            <span className="text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full px-2 py-0.5">{selectableWorkers.length}</span>
           </div>
 
           <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
             <div className="max-h-80 overflow-y-auto">
-              {workers.map((w) => {
+              {selectableWorkers.map((w) => {
                 const on = selected.includes(w.id);
                 return (
                   <button type="button" key={w.id} onClick={()=>toggle(w.id)}
@@ -272,7 +297,13 @@ function ShiftSelector({ mission, shift, workers, onSelected }) {
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
           <button onClick={submit} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`}
             className="mt-3 w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-sm transition-colors shadow-sm disabled:shadow-none">
-            {saving ? "Envoi…" : selected.length === 0 ? "Sélectionnez au moins un intervenant" : `Lancer la cascade (${selected.length})`}
+            {saving
+              ? "Envoi…"
+              : selected.length === 0
+                ? "Sélectionnez au moins un intervenant"
+                : selected.length < missingNeeded
+                  ? `Lancer avec ${selected.length} · il en manque ${missingNeeded - selected.length}`
+                  : `Lancer la cascade (${selected.length})`}
           </button>
         </div>
       </div>
@@ -353,11 +384,12 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
               <Plus className="w-4 h-4"/> Sélectionner les intervenants
             </button>
           ) : (
-            <ShiftSelector mission={mission} shift={shift} workers={workers} onSelected={()=>{ setExpandSelect(false); onReload(); }}/>
+            <ShiftSelector mission={mission} shift={shift} workers={workers} existingSlots={shift.slots || []} onSelected={()=>{ setExpandSelect(false); onReload(); }}/>
           )}
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div>
+          <div className="divide-y divide-gray-100">
           {shift.slots.map((s) => (
             <div key={s.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" data-testid={`slot-${s.id}`}>
               <div className="flex items-center gap-4">
@@ -385,6 +417,29 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
               </div>
             </div>
           ))}
+          </div>
+          {!filled && mission.status !== "cancelled" && (
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/60">
+              {!expandSelect ? (
+                <button
+                  type="button"
+                  onClick={() => setExpandSelect(true)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-800"
+                  data-testid={`add-more-candidates-${shift.id}`}
+                >
+                  <Plus className="w-4 h-4" /> Ajouter d’autres intervenants
+                </button>
+              ) : (
+                <ShiftSelector
+                  mission={mission}
+                  shift={shift}
+                  workers={workers}
+                  existingSlots={shift.slots}
+                  onSelected={() => { setExpandSelect(false); onReload(); }}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
