@@ -1,5 +1,7 @@
 import os
 import re
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +14,9 @@ router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 WHATSAPP_SERVICE_URL = os.environ.get("WHATSAPP_SERVICE_URL", "http://localhost:3001").rstrip("/")
 WHATSAPP_TIMEOUT = float(os.environ.get("WHATSAPP_SERVICE_TIMEOUT", "90"))
 FOLLOWUP_DEFAULT_HOURS = max(1, int(os.environ.get("WHATSAPP_FOLLOWUP_HOURS", "2")))
+MISSION_TIMEZONE = ZoneInfo(os.environ.get("MISSION_TIMEZONE", "Europe/Paris"))
+REMINDER_LOOKAHEAD_HOURS = 24
+REMINDER_TICK_GRACE_MINUTES = 15
 
 MESSAGE_TEMPLATE_MAX_CHARS = 500
 MESSAGE_TEMPLATE_MAX_LINES = 10
@@ -158,6 +163,16 @@ async def _insert_notification(**doc):
     return notification
 
 
+def shift_start_utc(shift: dict):
+    """Interpret mission date/time in the agency timezone, then convert to UTC."""
+    try:
+        local_dt = datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00")
+        local_dt = local_dt.replace(tzinfo=MISSION_TIMEZONE)
+        return local_dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
 def usable_contact(contact: dict) -> bool:
     """Only expose human-readable WhatsApp contacts; never use a phone number as a name."""
     if not isinstance(contact, dict):
@@ -297,11 +312,8 @@ async def run_whatsapp_followups():
     shifts = await db.shifts.find({"status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(5000)
     sent = 0
     for shift in shifts:
-        try:
-            shift_dt = __import__("datetime").datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00+00:00")
-        except Exception:
-            continue
-        if shift_dt <= now:
+        shift_dt = shift_start_utc(shift)
+        if not shift_dt or shift_dt <= now:
             continue
         mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
         if not mission:
@@ -328,17 +340,25 @@ async def run_whatsapp_followups():
 
 async def run_whatsapp_reminders():
     now = now_utc()
-    window_start = now + __import__("datetime").timedelta(hours=23)
-    window_end = now + __import__("datetime").timedelta(hours=25)
-    candidate_dates = {window_start.date().isoformat(), window_end.date().isoformat()}
-    shifts = await db.shifts.find({"date": {"$in": list(candidate_dates)}, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(2000)
+    # Normal case: the Railway scheduler checks every 15 minutes, so a reminder
+    # is sent very close to 24h before the shift. If a check is missed (restart,
+    # temporary outage, WhatsApp reconnect), any still-unreminded confirmed
+    # worker inside the next 24h is retried instead of losing the reminder.
+    window_end = now + timedelta(
+        hours=REMINDER_LOOKAHEAD_HOURS,
+        minutes=REMINDER_TICK_GRACE_MINUTES,
+    )
+    local_now = now.astimezone(MISSION_TIMEZONE)
+    local_end = window_end.astimezone(MISSION_TIMEZONE)
+    candidate_dates = {local_now.date().isoformat(), local_end.date().isoformat()}
+    shifts = await db.shifts.find(
+        {"date": {"$in": list(candidate_dates)}, "status": {"$ne": "cancelled"}},
+        {"_id": 0},
+    ).to_list(2000)
     sent = 0
     for shift in shifts:
-        try:
-            dt = __import__("datetime").datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00+00:00")
-        except Exception:
-            continue
-        if not (window_start <= dt <= window_end):
+        dt = shift_start_utc(shift)
+        if not dt or not (now < dt <= window_end):
             continue
         mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
         if not mission:
