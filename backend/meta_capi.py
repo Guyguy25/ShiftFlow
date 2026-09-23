@@ -50,6 +50,9 @@ def build_user_data(
     phone: Optional[str],
     external_id: Optional[str],
     client_user_agent: Optional[str],
+    client_ip_address: Optional[str] = None,
+    fbp: Optional[str] = None,
+    fbc: Optional[str] = None,
 ) -> dict:
     user_data = {}
 
@@ -67,6 +70,15 @@ def build_user_data(
     if client_user_agent:
         user_data["client_user_agent"] = client_user_agent
 
+    if client_ip_address:
+        user_data["client_ip_address"] = client_ip_address.strip()
+
+    if fbp:
+        user_data["fbp"] = fbp.strip()
+
+    if fbc:
+        user_data["fbc"] = fbc.strip()
+
     return user_data
 
 
@@ -79,6 +91,9 @@ async def send_meta_event(
     phone: Optional[str],
     external_id: Optional[str],
     client_user_agent: Optional[str],
+    client_ip_address: Optional[str] = None,
+    fbp: Optional[str] = None,
+    fbc: Optional[str] = None,
     custom_data: Optional[dict] = None,
     subscription_id: Optional[str] = None,
 ) -> bool:
@@ -98,6 +113,9 @@ async def send_meta_event(
         phone=phone,
         external_id=external_id,
         client_user_agent=client_user_agent,
+        client_ip_address=client_ip_address,
+        fbp=fbp,
+        fbc=fbc,
     )
 
     if subscription_id:
