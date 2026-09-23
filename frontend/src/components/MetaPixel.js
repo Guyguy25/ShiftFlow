@@ -1,8 +1,21 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 const META_PIXEL_ID = "1749796536239379";
 const CONSENT_KEY = "shiftflow_cookie_consent";
+const ATTRIBUTION_KEY = "shiftflow_meta_attribution";
+const ATTRIBUTION_PARAMS = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "placement",
+  "campaign_id",
+  "adset_id",
+  "ad_id",
+  "fbclid",
+];
 
 function loadMetaPixel() {
   if (window.fbq) return;
@@ -21,12 +34,50 @@ function loadMetaPixel() {
   window.fbq('init', META_PIXEL_ID);
 }
 
+function attributionFromLocation(search, pathname) {
+  const params = new URLSearchParams(search || "");
+  const attribution = {};
+
+  ATTRIBUTION_PARAMS.forEach((key) => {
+    const value = params.get(key);
+    if (value) attribution[key] = value;
+  });
+
+  if (!Object.keys(attribution).length) return null;
+
+  return {
+    ...attribution,
+    landing_path: pathname || "/",
+    captured_at: new Date().toISOString(),
+  };
+}
+
+function persistAttribution(attribution) {
+  if (!attribution) return;
+  try {
+    const previous = JSON.parse(localStorage.getItem(ATTRIBUTION_KEY) || "{}");
+    localStorage.setItem(
+      ATTRIBUTION_KEY,
+      JSON.stringify({ ...previous, ...attribution })
+    );
+  } catch {
+    // Attribution is best-effort and must never affect navigation or signup.
+  }
+}
+
 export default function MetaPixel() {
   const location = useLocation();
   const [consent, setConsent] = useState(() => localStorage.getItem(CONSENT_KEY));
+  const pendingAttribution = useRef(null);
 
   useEffect(() => {
+    const candidate = attributionFromLocation(location.search, location.pathname);
+    if (candidate) pendingAttribution.current = candidate;
+
     if (consent === "accepted") {
+      persistAttribution(pendingAttribution.current);
+      pendingAttribution.current = null;
+
       loadMetaPixel();
       window.fbq?.("track", "PageView");
     }

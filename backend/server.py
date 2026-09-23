@@ -68,6 +68,16 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+def request_client_ip(request: Request) -> Optional[str]:
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    real_ip = (request.headers.get("x-real-ip") or "").strip()
+    if real_ip:
+        return real_ip
+    return request.client.host if request.client else None
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -360,6 +370,9 @@ class RegisterIn(BaseModel):
     phone: str = Field(min_length=1)
     onboarding_answers: Optional[dict] = None
     meta_consent: bool = False
+    meta_attribution: Optional[dict] = None
+    meta_fbp: Optional[str] = None
+    meta_fbc: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -570,7 +583,10 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "trial_model_version": TRIAL_MODEL_VERSION,
             "onboarding_completed": bool(payload.onboarding_answers),
             "onboarding_answers": payload.onboarding_answers or None,
-            "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None}
+            "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None,
+            "meta_attribution": payload.meta_attribution if payload.meta_consent else None,
+            "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
+            "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
 
     if payload.meta_consent:
@@ -584,6 +600,9 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             phone=user.get("phone"),
             external_id=user.get("id"),
             client_user_agent=request.headers.get("user-agent"),
+            client_ip_address=request_client_ip(request),
+            fbp=user.get("meta_fbp"),
+            fbc=user.get("meta_fbc"),
         )
 
     access = create_access_token(user["id"], email)
@@ -870,6 +889,9 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
                 phone=user.get("phone"),
                 external_id=user.get("id"),
                 client_user_agent=request.headers.get("user-agent"),
+                client_ip_address=request_client_ip(request),
+                fbp=user.get("meta_fbp"),
+                fbc=user.get("meta_fbc"),
                 custom_data={"trial_days": FREE_TRIAL_DAYS},
             )
 
@@ -882,6 +904,9 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
                 phone=user.get("phone"),
                 external_id=user.get("id"),
                 client_user_agent=request.headers.get("user-agent"),
+                client_ip_address=request_client_ip(request),
+                fbp=user.get("meta_fbp"),
+                fbc=user.get("meta_fbc"),
                 custom_data={"mission_id": mission["id"]},
             )
 
@@ -1644,6 +1669,9 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
         phone=user.get("phone"),
         external_id=user.get("id"),
         client_user_agent=record.get("client_user_agent"),
+        client_ip_address=record.get("client_ip_address"),
+        fbp=user.get("meta_fbp"),
+        fbc=user.get("meta_fbc"),
         custom_data=custom_data,
         subscription_id=sub_id,
     )
@@ -1703,6 +1731,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         "currency": price.currency, "status": "initiated", "payment_status": "pending",
         "origin_url": origin,
         "client_user_agent": request.headers.get("user-agent"),
+        "client_ip_address": request_client_ip(request),
         "meta_consent": payload.meta_consent,
         "created_at": iso(now_utc()), "updated_at": iso(now_utc()),
     })
@@ -1716,6 +1745,9 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             phone=user.get("phone"),
             external_id=user.get("id"),
             client_user_agent=request.headers.get("user-agent"),
+            client_ip_address=request_client_ip(request),
+            fbp=user.get("meta_fbp"),
+            fbc=user.get("meta_fbc"),
             custom_data={
                 "currency": str(price.currency or "eur").upper(),
                 "value": float(price.unit_amount or 0) / 100,

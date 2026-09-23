@@ -56,6 +56,26 @@ export default function Register() {
     return false;
   };
 
+  const readCookie = (name) => {
+    const prefix = `${name}=`;
+    const item = document.cookie.split("; ").find((part) => part.startsWith(prefix));
+    return item ? decodeURIComponent(item.slice(prefix.length)) : "";
+  };
+
+  const readMetaAttribution = () => {
+    try {
+      return JSON.parse(localStorage.getItem("shiftflow_meta_attribution") || "null");
+    } catch {
+      return null;
+    }
+  };
+
+  const buildFallbackFbc = (attribution) => {
+    if (!attribution?.fbclid) return "";
+    const captured = Date.parse(attribution.captured_at || "") || Date.now();
+    return `fb.1.${Math.floor(captured / 1000)}.${attribution.fbclid}`;
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setError("");
@@ -71,11 +91,19 @@ export default function Register() {
     if (pErr || pwErr) { setLoading(false); return; }
     const acceptedAt = new Date().toISOString();
     try {
+      const metaConsent = localStorage.getItem("shiftflow_cookie_consent") === "accepted";
+      const metaAttribution = metaConsent ? readMetaAttribution() : null;
+      const metaFbp = metaConsent ? readCookie("_fbp") : "";
+      const metaFbc = metaConsent ? (readCookie("_fbc") || buildFallbackFbc(metaAttribution)) : "";
+
       await register({
         ...form,
         onboarding_answers: answers,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "account" },
-        meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
+        meta_consent: metaConsent,
+        meta_attribution: metaAttribution,
+        meta_fbp: metaFbp || null,
+        meta_fbc: metaFbc || null,
       });
       localStorage.setItem("shiftflow_legal_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, scope: "account" }));
       nav("/app/dashboard");
