@@ -20,7 +20,7 @@ export default function Tutorial() {
       <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
         <video
           className="block w-full aspect-video bg-black object-contain"
-          src="/shiftflow-tutorial%20(3).mp4"
+          src="/video-tutorial.mp4"
           controls
           preload="metadata"
           playsInline
