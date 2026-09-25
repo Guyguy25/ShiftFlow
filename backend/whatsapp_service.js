@@ -367,6 +367,43 @@ app.post("/refresh", async (req, res) => { const state = getSession(sessionFromR
 app.post("/send", async (req, res) => { const state = getSession(sessionFromRequest(req)); const { to, message } = req.body || {}; if (!message || !String(message).trim()) return res.status(400).json({ error: "Message vide." }); if (!to) return res.status(400).json({ error: "Numéro de téléphone manquant." }); try { res.json({ success: true, ...(await sendText(state, to, message)) }); } catch (error) { console.error(`❌ Envoi WhatsApp échoué [${state.id}] :`, error.message); res.status(400).json({ success: false, error: error.message }); } });
 app.get("/send/status", (req, res) => { const state = getSession(sessionFromRequest(req)); res.json({ connected: state.connected, queueLength: state.sendQueueLength, lastSendAt: state.lastSendAt || null }); });
 app.post("/session/start", async (req, res) => { const state = getSession(sessionFromRequest(req)); startSession(state).catch(error => console.error(`❌ Erreur démarrage [${state.id}] :`, error)); res.json({ success: true, ...publicStatus(state) }); });
+app.post("/session/pair-code", async (req, res) => {
+    const state = getSession(sessionFromRequest(req));
+    const phone = normalizeSendNumber(req.body?.phone);
+
+    if (!phone) {
+        return res.status(400).json({ success: false, error: "Numéro WhatsApp invalide." });
+    }
+    if (state.connected) {
+        return res.json({ success: true, connected: true, code: null });
+    }
+
+    if (!state.sock && !state.starting && !shuttingDown) {
+        startSession(state).catch(error => console.error(`❌ Erreur démarrage pairing [${state.id}] :`, error));
+    }
+
+    const deadline = Date.now() + 12000;
+    while (Date.now() < deadline && !state.connected && (!state.sock || !state.qrText)) {
+        await sleep(250);
+    }
+
+    if (state.connected) {
+        return res.json({ success: true, connected: true, code: null });
+    }
+    if (!state.sock || typeof state.sock.requestPairingCode !== "function") {
+        return res.status(503).json({ success: false, error: "WhatsApp est encore en préparation. Réessayez dans quelques secondes." });
+    }
+
+    try {
+        const code = await state.sock.requestPairingCode(phone);
+        if (!code) throw new Error("Aucun code reçu.");
+        console.log(`🔗 Code de liaison WhatsApp généré [${state.id}]`);
+        return res.json({ success: true, connected: false, code: String(code) });
+    } catch (error) {
+        console.error(`❌ Génération code de liaison impossible [${state.id}] : ${error.message}`);
+        return res.status(400).json({ success: false, error: "Impossible de générer le code de liaison WhatsApp. Réessayez dans quelques secondes." });
+    }
+});
 app.post("/session/logout", async (req, res) => { const state = getSession(sessionFromRequest(req)); if (state.sock && state.connected) { try { await state.sock.logout(); } catch (error) { console.log(`⚠️ Logout socket [${state.id}] : ${error.message}`); } } await resetSessionForNewLogin(state, true); res.json({ success: true, reset: true }); });
 app.get("/", (req, res) => res.json({ service: "ShiftFlow WhatsApp", provider: "Baileys", status: "ok" }));
 async function discoverExistingSessions() { try { const entries = await fs.promises.readdir(SESSION_ROOT, { withFileTypes: true }); return entries.filter(entry => entry.isDirectory()).map(entry => safeSessionId(entry.name)).filter(Boolean); } catch (error) { console.error(`❌ Impossible de lire le dossier des sessions :`, error.message); return []; } }
