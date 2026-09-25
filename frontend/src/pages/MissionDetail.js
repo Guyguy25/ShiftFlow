@@ -344,8 +344,8 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid={`shift-card-${shift.id}`}>
-      <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="bg-white border border-gray-200 rounded-2xl sm:rounded-xl overflow-hidden" data-testid={`shift-card-${shift.id}`}>
+      <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">{TYPE_LABEL[shift.mission_type]}</div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-700">
@@ -358,7 +358,7 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
             Estimation coût : <span className="font-semibold text-gray-900">{shift.estimated_cost} €</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           {filled ? (
             <span className="text-xs px-2 py-1 rounded-md border font-medium status-confirmed inline-flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5"/>Équipe complète
@@ -377,7 +377,7 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
       </div>
 
       {noSlots ? (
-        <div className="px-6 py-6">
+        <div className="px-4 sm:px-6 py-5 sm:py-6">
           {!expandSelect ? (
             <button onClick={()=>setExpandSelect(true)} data-testid={`open-select-${shift.id}`}
               className="inline-flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
@@ -391,7 +391,7 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
         <div>
           <div className="divide-y divide-gray-100">
           {shift.slots.map((s) => (
-            <div key={s.id} className="px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" data-testid={`slot-${s.id}`}>
+            <div key={s.id} className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" data-testid={`slot-${s.id}`}>
               <div className="flex items-center gap-4">
                 <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-700 text-xs font-bold flex items-center justify-center">{s.priority + 1}</span>
                 <div>
@@ -500,9 +500,9 @@ export default function MissionDetail() {
       <Toaster position="top-right" richColors/>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Mission</div>
-          <h1 className="mt-2 text-3xl font-display font-bold tracking-tight" data-testid="mission-title">{m.name}</h1>
-          <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">
+          <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Mission</div>
+          <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight break-words" data-testid="mission-title">{m.name}</h1>
+          <div className="mt-2 flex flex-col sm:flex-row sm:flex-wrap gap-1.5 sm:gap-4 text-sm text-gray-600">
             <div className="flex items-center gap-2"><MapPin className="w-4 h-4"/> {m.location}</div>
             {m.first_date && <div className="flex items-center gap-2"><CalendarClock className="w-4 h-4"/> {m.first_date}{m.last_date && m.last_date !== m.first_date ? ` → ${m.last_date}` : ""}</div>}
             <div className="flex items-center gap-2"><Users className="w-4 h-4"/> {m.total_confirmed}/{m.total_needed} confirmés</div>
@@ -528,12 +528,12 @@ export default function MissionDetail() {
 
       {m.description && <p className="mt-4 text-gray-600 max-w-3xl">{m.description}</p>}
 
-      <div className="mt-6 bg-white border border-gray-200 rounded-xl p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="mission-total-progress">
+      <div className="mt-5 sm:mt-6 bg-white border border-gray-200 rounded-2xl sm:rounded-xl p-4 sm:p-6 grid grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-between" data-testid="mission-total-progress">
         <div>
           <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Équipe totale</div>
           <div className="mt-1 text-2xl font-display font-bold">{m.total_confirmed}/{m.total_needed} confirmés</div>
         </div>
-        <div className="text-right">
+        <div className="text-right sm:text-right">
           <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Coût brut estimé</div>
           <div className="mt-1 text-2xl font-display font-bold" data-testid="mission-total-cost">{totalCost.toFixed(2)} €</div>
         </div>
