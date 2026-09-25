@@ -81,18 +81,18 @@ export default function MissionCreate() {
     } finally { setLoading(false); }
   };
 
-  const inputCls = "mt-1 w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white";
+  const inputCls = "mt-1 w-full h-11 px-3 rounded-xl sm:rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white";
 
   return (
     <div className="max-w-4xl" data-testid="mission-create-page">
       <UpgradeModal open={!!upgrade} onClose={()=>{setUpgrade(null); nav("/app/missions");}} message={upgrade}/>
-      <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Nouvelle mission</div>
-      <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Créer une mission</h1>
-      <p className="text-gray-500 mt-1">Renseignez les infos de la mission et ajoutez un ou plusieurs shifts (journées). Vous sélectionnerez les intervenants à l'étape suivante, shift par shift.</p>
+      <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Nouvelle mission</div>
+      <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight">Créer une mission</h1>
+      <p className="text-sm sm:text-base text-gray-500 mt-1.5 leading-relaxed">Renseignez les infos essentielles. Vous choisirez ensuite les intervenants pour chaque shift.</p>
 
-      <form onSubmit={submit} className="mt-8 space-y-6">
+      <form onSubmit={submit} className="mt-5 sm:mt-8 space-y-4 sm:space-y-6">
         {/* Mission block */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 sm:p-8 space-y-5">
+        <div className="bg-white rounded-2xl sm:rounded-xl border border-gray-200 p-4 sm:p-8 space-y-5">
           <h2 className="font-display font-bold text-lg">Mission</h2>
           <div>
             <label className="text-sm font-medium text-gray-700">Nom de la mission *</label>
@@ -110,9 +110,9 @@ export default function MissionCreate() {
           </div>
           <div>
             <label className="text-sm font-medium text-gray-700">Description</label>
-            <textarea data-testid="mc-desc" rows={2} className="mt-1 w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={mission.description} onChange={(e)=>setM("description", e.target.value)} placeholder="Détails généraux, contact sur place…"/>
+            <textarea data-testid="mc-desc" rows={2} className="mt-1 w-full px-3 py-2 rounded-xl sm:rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={mission.description} onChange={(e)=>setM("description", e.target.value)} placeholder="Détails généraux, contact sur place…"/>
           </div>
-          <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-md px-4 py-3">
+          <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl sm:rounded-md px-4 py-3">
             <input type="checkbox" data-testid="mc-cascade" checked={mission.cascade_enabled} onChange={(e)=>setM("cascade_enabled", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
             <div>
               <div className="text-sm font-medium text-gray-900">Cascade automatique</div>
@@ -125,7 +125,7 @@ export default function MissionCreate() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-display font-bold text-lg">Shifts / Journées</h2>
-            <button type="button" onClick={addShift} data-testid="mc-add-shift" className="inline-flex items-center gap-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 px-3 py-2 rounded-md">
+            <button type="button" onClick={addShift} data-testid="mc-add-shift" className="inline-flex items-center gap-2 text-sm bg-white border border-gray-300 hover:bg-gray-50 px-3 py-2 rounded-xl sm:rounded-md">
               <Plus className="w-4 h-4"/> Ajouter un shift
             </button>
           </div>
@@ -189,8 +189,8 @@ export default function MissionCreate() {
 
         {error && <div className="text-sm text-red-600" data-testid="mc-error">{error}</div>}
         <div className="flex justify-end gap-3">
-          <button type="button" onClick={()=>nav("/app/missions")} className="px-4 py-2.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">Annuler</button>
-          <button type="submit" disabled={loading} data-testid="mc-submit" className="px-5 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60">
+          <button type="button" onClick={()=>nav("/app/missions")} className="px-4 py-2.5 rounded-xl sm:rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">Annuler</button>
+          <button type="submit" disabled={loading} data-testid="mc-submit" className="px-5 py-2.5 rounded-xl sm:rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60">
             {loading ? "Création…" : "Créer la mission"}
           </button>
         </div>
