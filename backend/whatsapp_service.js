@@ -167,7 +167,7 @@ async function loadContactsCache(state) {
     }
 }
 async function saveContactsCache(state) { try { await fs.promises.mkdir(sessionPath(state.id), { recursive: true }); await fs.promises.writeFile(contactsFile(state), JSON.stringify(sortedContacts(state), null, 2), "utf8"); } catch (error) { console.error(`❌ Sauvegarde contacts impossible [${state.id}] :`, error.message); } }
-async function generateQR(state, qr) { state.qrText = qr; try { state.qr = await QRCode.toDataURL(qr); console.log(`📱 QR WhatsApp généré [${state.id}]`); } catch (error) { console.error(`❌ Erreur génération QR [${state.id}] :`, error.message); state.qr = null; } }
+async function generateQR(state, qr) { state.qrText = qr; try { state.qr = await QRCode.toDataURL(qr); } catch (error) { console.error(`❌ Erreur génération QR [${state.id}] :`, error.message); state.qr = null; } }
 function statusCodeFrom(error) { try { return new Boom(error)?.output?.statusCode; } catch (_) { return undefined; } }
 async function destroySocket(state) { const old = state.sock; state.sock = null; if (!old) return; try { if (typeof old.end === "function") old.end(undefined); } catch (_) {} await sleep(250); }
 async function clearAuth(state) { const dir = sessionPath(state.id); try { await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 }); } catch (error) { console.error(`❌ Suppression session impossible [${state.id}] :`, error.message); } await fs.promises.mkdir(dir, { recursive: true }); }
