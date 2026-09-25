@@ -7,30 +7,60 @@ import { useAuth } from "../context/AuthContext";
 const QUESTIONS = [
   {
     key: "team_size",
-    q: "Combien de personnes travaillent en moyenne sur vos missions ?",
-    options: ["1-5", "6-15", "16-30", "30+"],
+    q: "Combien d’intervenants mobilisez-vous en moyenne par mission ?",
+    options: ["1-5", "6-15", "16-30", "31+"],
   },
   {
     key: "monthly_missions",
-    q: "Combien de missions gérez-vous par mois environ ?",
-    options: ["1-3", "4-10", "11-20", "20+"],
+    q: "En moyenne, combien de missions gérez-vous chaque mois ?",
+    options: ["1-3", "4-10", "11-20", "21+"],
   },
   {
     key: "current_tool",
-    q: "Comment gérez-vous actuellement les confirmations d'équipe ?",
-    options: ["WhatsApp / SMS manuel", "Appels téléphoniques", "Tableur Excel", "Autre outil"],
+    q: "Comment confirmez-vous aujourd’hui la disponibilité de vos intervenants ?",
+    options: [
+      "WhatsApp / SMS manuellement",
+      "Appels téléphoniques",
+      "Excel / Google Sheets",
+      "Outil de planning / staffing",
+      "Au cas par cas",
+    ],
   },
+];
+
+const PAIN_OPTIONS = [
+  "Relancer les intervenants pour obtenir une réponse",
+  "Gérer les annulations de dernière minute",
+  "Trouver rapidement un remplaçant",
+  "Savoir qui est disponible pour une mission",
+  "Suivre les confirmations et les refus",
+  "Passer trop de temps sur WhatsApp / les appels",
+  "Éviter les absences non prévenues",
 ];
 
 export default function Onboarding() {
   const nav = useNavigate();
   const { refresh } = useAuth();
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState({ team_size: "", monthly_missions: "", current_tool: "", main_pain: "" });
+  const [answers, setAnswers] = useState({
+    team_size: "",
+    monthly_missions: "",
+    current_tool: "",
+    main_pain: [],
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const setA = (k, v) => setAnswers({ ...answers, [k]: v });
+  const setA = (k, v) => setAnswers((prev) => ({ ...prev, [k]: v }));
+
+  const togglePain = (pain) => {
+    setAnswers((prev) => ({
+      ...prev,
+      main_pain: prev.main_pain.includes(pain)
+        ? prev.main_pain.filter((item) => item !== pain)
+        : [...prev.main_pain, pain],
+    }));
+  };
 
   const next = async () => {
     if (step < QUESTIONS.length - 1) {
@@ -40,17 +70,22 @@ export default function Onboarding() {
       if (!answers[QUESTIONS[step].key]) return;
       setStep(step + 1);
     } else if (step === QUESTIONS.length) {
-      if (!answers.main_pain) return;
+      if (answers.main_pain.length === 0) return;
       setStep(step + 1);
     } else {
       setSaving(true);
       try {
-        await api.post("/onboarding", answers);
+        await api.post("/onboarding", {
+          ...answers,
+          main_pain: answers.main_pain.join(" | "),
+        });
         await refresh();
         nav("/app/dashboard");
       } catch (err) {
         setError(formatApiError(err.response?.data?.detail) || err.message);
-      } finally { setSaving(false); }
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -84,7 +119,7 @@ export default function Onboarding() {
               {currentQ.options.map((opt) => (
                 <button
                   key={opt}
-                  onClick={()=>setA(currentQ.key, opt)}
+                  onClick={() => setA(currentQ.key, opt)}
                   data-testid={`onboarding-opt-${currentQ.key}-${opt}`}
                   className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-colors ${
                     answers[currentQ.key] === opt
@@ -105,15 +140,33 @@ export default function Onboarding() {
         {step === QUESTIONS.length && (
           <div data-testid="onboarding-pain">
             <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">{currentStepLabel}</div>
-            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Quel est votre plus gros problème avec la gestion d'équipe actuellement ?</h1>
-            <textarea
-              rows={4}
-              data-testid="onboarding-input-pain"
-              value={answers.main_pain}
-              onChange={(e)=>setA("main_pain", e.target.value)}
-              placeholder="Un mot ou deux phrases suffisent…"
-              className="mt-6 w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none focus:border-blue-600 bg-white"
-            />
+            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">
+              Quels problèmes rencontrez-vous le plus souvent dans la gestion de vos équipes ?
+            </h1>
+            <p className="mt-3 text-sm text-gray-500">Vous pouvez en sélectionner plusieurs.</p>
+
+            <div className="mt-6 space-y-3">
+              {PAIN_OPTIONS.map((pain) => {
+                const selected = answers.main_pain.includes(pain);
+                return (
+                  <button
+                    key={pain}
+                    onClick={() => togglePain(pain)}
+                    data-testid={`onboarding-pain-${pain}`}
+                    className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-colors ${
+                      selected
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="font-medium">{pain}</span>
+                      {selected && <Check className="w-5 h-5 text-blue-600 shrink-0"/>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -140,7 +193,11 @@ export default function Onboarding() {
         <div className="mt-8">
           <button
             onClick={next}
-            disabled={saving || (currentQ && !answers[currentQ.key]) || (step === QUESTIONS.length && !answers.main_pain)}
+            disabled={
+              saving ||
+              (currentQ && !answers[currentQ.key]) ||
+              (step === QUESTIONS.length && answers.main_pain.length === 0)
+            }
             data-testid="onboarding-next-btn"
             className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors"
           >
