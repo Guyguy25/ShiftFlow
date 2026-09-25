@@ -252,36 +252,15 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
             {pairError && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pairError}</div>}
           </div>
 
-          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-            <div className="text-sm font-semibold text-blue-950">Ensuite, dans WhatsApp :</div>
-            <ol className="mt-3 space-y-3">
-              {[
-                "Ouvrez WhatsApp sur ce téléphone.",
-                "Allez dans Paramètres > Appareils connectés.",
-                "Touchez « Connecter un appareil ».",
-                "Choisissez « Lier avec un numéro de téléphone ».",
-                "Saisissez le code affiché dans ShiftFlow.",
-              ].map((label, index) => <li key={label} className="flex items-start gap-3">
-                <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">{index + 1}</span>
-                <span className="text-sm leading-relaxed text-blue-950">{label}</span>
-              </li>)}
-            </ol>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Guide visuel</div>
-                <p className="text-xs text-gray-500 mt-0.5">Les zones rouges indiquent exactement où appuyer dans WhatsApp.</p>
-              </div>
-              <span className="text-[10px] uppercase tracking-wide font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">3 étapes</span>
-            </div>
+          <div>
             <img
               src="/phone-link-guide.png"
-              alt="Guide visuel pour connecter WhatsApp avec un numéro de téléphone"
-              loading="lazy"
-              className="w-full h-auto rounded-lg border border-gray-100"
+              alt="Étapes pour connecter WhatsApp avec un numéro de téléphone"
+              className="block w-full h-auto rounded-xl border border-gray-200 shadow-sm"
             />
+            <p className="mt-2 px-1 text-xs leading-relaxed text-gray-500">
+              Dans WhatsApp : <strong>Appareils connectés</strong> → <strong>Connecter un appareil</strong> → <strong>Connecter plutôt avec un numéro de téléphone</strong>, puis saisissez le code affiché dans ShiftFlow.
+            </p>
           </div>
 
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
