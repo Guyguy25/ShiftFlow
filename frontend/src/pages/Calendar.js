@@ -66,22 +66,55 @@ export default function Calendar() {
     <div data-testid="calendar-page">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Calendrier</div>
-          <h1 className="mt-2 text-3xl font-display font-bold tracking-tight" data-testid="calendar-title">
+          <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Calendrier</div>
+          <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight" data-testid="calendar-title">
             {MONTHS[month]} {year}
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-[44px_1fr_44px] sm:flex items-center gap-2 w-full sm:w-auto">
           <button onClick={prev} data-testid="calendar-prev" className="p-2 rounded-md border border-gray-300 hover:bg-gray-50"><ChevronLeft className="w-4 h-4"/></button>
           <button onClick={goToday} data-testid="calendar-today" className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 text-sm font-medium">Aujourd'hui</button>
           <button onClick={next} data-testid="calendar-next" className="p-2 rounded-md border border-gray-300 hover:bg-gray-50"><ChevronRight className="w-4 h-4"/></button>
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-7 text-xs uppercase tracking-widest text-gray-500 font-semibold border-b border-gray-200 pb-2">
+      <div className="sm:hidden mt-5 space-y-3">
+        {grid.filter(({ date, inMonth }) => inMonth && (shiftsByDate[fmt(date)] || []).length > 0).length === 0 ? (
+          <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-8 text-center text-sm text-gray-500">
+            Aucune mission prévue ce mois-ci.
+          </div>
+        ) : grid.filter(({ date, inMonth }) => inMonth && (shiftsByDate[fmt(date)] || []).length > 0).map(({ date }) => {
+          const key = fmt(date);
+          const shifts = shiftsByDate[key] || [];
+          return <div key={key} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">{DAYS[(date.getDay() + 6) % 7]}</div>
+                <div className="font-semibold text-gray-950">{date.getDate()} {MONTHS[month].toLowerCase()}</div>
+              </div>
+              {key === todayStr && <span className="text-[10px] uppercase tracking-wide font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded-full px-2 py-1">Aujourd'hui</span>}
+            </div>
+            <div className="mt-3 space-y-2">
+              {shifts.map((sh) => {
+                const filled = sh.confirmed_count >= sh.people_needed;
+                const missing = Math.max(0, sh.people_needed - sh.confirmed_count);
+                const cls = sh.mission_status === "cancelled" ? "status-cancelled" : filled ? "status-confirmed" : missing > 0 ? "status-waiting" : "status-contacted";
+                return <Link key={sh.id} to={`/app/missions/${sh.mission_id}`} className={`block rounded-xl border px-3 py-3 ${cls}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0"><div className="font-semibold text-sm truncate">{sh.mission_name}</div><div className="text-xs mt-0.5 opacity-80">{sh.start_time} – {sh.end_time}</div></div>
+                    <div className="text-xs font-bold shrink-0">{sh.confirmed_count}/{sh.people_needed}</div>
+                  </div>
+                </Link>;
+              })}
+            </div>
+          </div>;
+        })}
+      </div>
+
+      <div className="hidden sm:grid mt-6 grid-cols-7 text-xs uppercase tracking-widest text-gray-500 font-semibold border-b border-gray-200 pb-2">
         {DAYS.map((d) => <div key={d} className="px-2">{d}</div>)}
       </div>
-      <div className="grid grid-cols-7 gap-px bg-gray-200 mt-2 rounded-xl overflow-hidden border border-gray-200">
+      <div className="hidden sm:grid grid-cols-7 gap-px bg-gray-200 mt-2 rounded-xl overflow-hidden border border-gray-200">
         {grid.map(({ date, inMonth }, i) => {
           const key = fmt(date);
           const shifts = shiftsByDate[key] || [];
@@ -121,7 +154,7 @@ export default function Calendar() {
         })}
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-3 text-xs text-gray-600">
+      <div className="hidden sm:flex mt-6 flex-wrap gap-3 text-xs text-gray-600">
         <div className="flex items-center gap-2"><span className="w-3 h-3 rounded border status-confirmed"/> Équipe complète</div>
         <div className="flex items-center gap-2"><span className="w-3 h-3 rounded border status-waiting"/> Manque des personnes</div>
         <div className="flex items-center gap-2"><span className="w-3 h-3 rounded border status-contacted"/> En cours</div>
