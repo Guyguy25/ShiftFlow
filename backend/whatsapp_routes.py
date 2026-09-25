@@ -465,6 +465,13 @@ async def whatsapp_refresh(user=Depends(get_current_user)):
 async def whatsapp_start(user=Depends(get_current_user)):
     return await whatsapp_request("POST", "/session/start", user)
 
+@router.post("/session/pair-code")
+async def whatsapp_pair_code(payload: dict, user=Depends(get_current_user)):
+    phone = str(payload.get("phone") or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Renseignez le numéro WhatsApp à connecter.")
+    return await whatsapp_request("POST", "/session/pair-code", user, json={"phone": phone})
+
 
 @router.post("/session/logout")
 async def whatsapp_logout(user=Depends(get_current_user)):
