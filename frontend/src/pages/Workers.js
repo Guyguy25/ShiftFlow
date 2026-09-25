@@ -268,6 +268,22 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
             </ol>
           </div>
 
+          <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">Guide visuel</div>
+                <p className="text-xs text-gray-500 mt-0.5">Les zones rouges indiquent exactement où appuyer dans WhatsApp.</p>
+              </div>
+              <span className="text-[10px] uppercase tracking-wide font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">3 étapes</span>
+            </div>
+            <img
+              src="/phone-link-guide.png"
+              alt="Guide visuel pour connecter WhatsApp avec un numéro de téléphone"
+              loading="lazy"
+              className="w-full h-auto rounded-lg border border-gray-100"
+            />
+          </div>
+
           <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
             <RefreshCw className="w-4 h-4 animate-spin" />
             {pairCode ? "En attente de la connexion WhatsApp…" : "Préparation de WhatsApp…"}
