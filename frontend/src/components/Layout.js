@@ -243,21 +243,28 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Mobile top bar */}
-      <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white border-b border-gray-200 flex items-center justify-between px-4 h-14">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center">
-            <Zap className="w-4 h-4 text-white" aria-hidden="true" />
-          </div>
-          <span className="font-display font-bold">ShiftFlow</span>
+      <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 h-14">
+        <div className="h-full max-w-xl mx-auto px-4 flex items-center justify-between">
+          <Link to="/app/dashboard" className="flex items-center gap-2.5 min-w-0" onClick={() => setOpen(false)}>
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
+              <Zap className="w-4 h-4 text-white" aria-hidden="true" />
+            </div>
+            <span className="font-display font-bold text-[17px] tracking-tight">ShiftFlow</span>
+          </Link>
+          <button
+            onClick={() => setOpen(!open)}
+            data-testid="mobile-menu-toggle"
+            aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
+            className="w-10 h-10 rounded-xl border border-gray-200 bg-white flex items-center justify-center text-gray-700 active:bg-gray-100"
+          >
+            {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
-        <button onClick={() => setOpen(!open)} data-testid="mobile-menu-toggle" className="p-2">
-          {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
       </div>
 
       {open && (
-        <div className="lg:hidden fixed inset-0 top-14 z-30 bg-white">
-          <nav className="p-4 space-y-1">
+        <div className="lg:hidden fixed inset-0 top-14 z-30 bg-black/30" onClick={() => setOpen(false)}>
+          <nav className="h-full w-[86%] max-w-sm ml-auto bg-white p-4 space-y-1 shadow-2xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {nav.map((n) => (
               <NavLink
                 key={n.to}
@@ -300,39 +307,59 @@ export default function Layout({ children }) {
       <main className="flex-1 min-w-0 pt-14 lg:pt-0 lg:ml-64">
         {user?.plan !== "pro" && quota && (
           <div className={`border-b transition-colors ${tone.banner}`}>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${tone.bannerText}`}>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5">
+              <div className="sm:hidden flex items-center justify-between gap-3">
+                <div className={`min-w-0 text-sm ${tone.bannerText}`}>
+                  {!trialStarted ? (
+                    <div className="font-semibold inline-flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 shrink-0" /> Essai disponible</div>
+                  ) : trialExpired ? (
+                    <div className="font-semibold">Essai terminé</div>
+                  ) : (
+                    <div className="font-semibold inline-flex items-center gap-1.5"><Clock3 className="w-3.5 h-3.5 shrink-0" /> {trialCountdown?.label}</div>
+                  )}
+                  <div className="text-xs mt-0.5 opacity-80 truncate">
+                    {trialStarted ? `${quota.missions_used}/${quota.mission_limit} missions · ${quota.workers}/${quota.worker_limit} intervenants` : `${quota.workers}/${quota.worker_limit} intervenants préparés`}
+                  </div>
+                </div>
+                <Link to={!trialStarted ? "/app/missions/new" : "/pricing"} className={`text-xs font-semibold shrink-0 px-3 py-1.5 rounded-lg bg-white/80 border border-current/10 ${tone.link}`}>
+                  {!trialStarted ? "Démarrer" : trialExpired ? "Pro" : "Voir Pro"}
+                </Link>
+              </div>
+
+              <div className="hidden sm:flex sm:items-center sm:justify-between gap-2">
+                <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${tone.bannerText}`}>
+                  {!trialStarted ? (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 font-semibold"><Zap className="w-3.5 h-3.5" /> 30 jours d’essai disponibles</span>
+                      <span className="opacity-40">·</span>
+                      <span>Votre essai commence à la création de votre première mission</span>
+                      <span className="opacity-40">·</span>
+                      <span>{quota.workers}/{quota.worker_limit} intervenants préparés</span>
+                    </>
+                  ) : trialExpired ? (
+                    <><strong>Votre essai de 30 jours est terminé.</strong> <span>Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</span></>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="w-3.5 h-3.5" /> {trialCountdown?.label}</span>
+                      <span className="opacity-40">·</span>
+                      <span>{quota.missions_used}/{quota.mission_limit} missions</span>
+                      <span className="opacity-40">·</span>
+                      <span>{quota.workers}/{quota.worker_limit} intervenants</span>
+                    </>
+                  )}
+                </div>
                 {!trialStarted ? (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 font-semibold"><Zap className="w-3.5 h-3.5" /> 30 jours d’essai disponibles</span>
-                    <span className="opacity-40">·</span>
-                    <span>Votre essai commence à la création de votre première mission</span>
-                    <span className="opacity-40">·</span>
-                    <span>{quota.workers}/{quota.worker_limit} intervenants préparés</span>
-                  </>
-                ) : trialExpired ? (
-                  <><strong>Votre essai de 30 jours est terminé.</strong> <span>Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</span></>
+                  <Link to="/app/missions/new" className={`text-sm font-semibold shrink-0 ${tone.link}`}>Créer ma première mission →</Link>
                 ) : (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="w-3.5 h-3.5" /> {trialCountdown?.label}</span>
-                    <span className="opacity-40">·</span>
-                    <span>{quota.missions_used}/{quota.mission_limit} missions</span>
-                    <span className="opacity-40">·</span>
-                    <span>{quota.workers}/{quota.worker_limit} intervenants</span>
-                  </>
+                  <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${tone.link}`}>
+                    {trialExpired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
+                  </Link>
                 )}
               </div>
-              {!trialStarted ? (
-                <Link to="/app/missions/new" className={`text-sm font-semibold shrink-0 ${tone.link}`}>Créer ma première mission →</Link>
-              ) : (
-                <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${tone.link}`}>
-                  {trialExpired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
-                </Link>
-              )}
             </div>
           </div>
         )}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-5 sm:py-8">
           {children}
         </div>
       </main>
