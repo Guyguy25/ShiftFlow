@@ -28,18 +28,297 @@ function PhoneContactsUnsupportedModal({ onClose }) { return <div className="fix
 function PhoneContactsImportModal({ onClose, onDone, onQuota }) { const [rows, setRows] = useState([]); const [selected, setSelected] = useState(new Set()); const [search, setSearch] = useState(""); const [picking, setPicking] = useState(false); const [importing, setImporting] = useState(false); const pickFromDevice = async () => { if (picking) return; setPicking(true); try { const picked = await navigator.contacts.select(["name", "tel", "email"], { multiple: true }); const built = picked.map((c, idx) => { const { first_name, last_name } = splitFullName((c.name && c.name[0]) || ""); const phone = (c.tel && c.tel[0]) || ""; const email = (c.email && c.email[0]) || ""; const errs = validateWorker({ first_name, last_name, phone, email }); return { key: `${idx}-${phone || first_name}`, first_name, last_name, phone, email, valid: Object.keys(errs).length === 0, reason: errs.phone || errs.first_name || errs.last_name || "" }; }); setRows(built); setSelected(new Set(built.filter((r) => r.valid).map((r) => r.key))); } catch (err) { if (err?.name !== "AbortError") toast.error("Impossible d'accéder aux contacts du téléphone."); } finally { setPicking(false); } }; const toggle = (key) => setSelected((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); const filteredRows = rows.filter((r) => `${r.first_name} ${r.last_name} ${r.phone}`.toLowerCase().includes(search.toLowerCase())); const submit = async () => { const workers = rows.filter((r) => r.valid && selected.has(r.key)).map(({ first_name, last_name, phone, email }) => ({ first_name, last_name, phone, email, skills: [], note: "", active: true })); if (workers.length === 0) return toast.error("Sélectionnez au moins un contact."); setImporting(true); try { const { data } = await api.post("/workers/bulk", { workers }); if (data.quota_hit) onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`); else toast.success(`${data.created} intervenant${data.created > 1 ? "s" : ""} ajouté${data.created > 1 ? "s" : ""}`); onDone(); onClose(); } catch (err) { const statusCode = err.response?.status; const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import des contacts."; if (statusCode === 402) { onQuota(detail); onClose(); } else toast.error(detail); } finally { setImporting(false); } }; const invalidCount = rows.filter((r) => !r.valid).length; return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col"><div className="flex items-center justify-between"><div><h3 className="font-display font-bold text-xl">Importer les contacts</h3><p className="text-sm text-gray-500 mt-1">Choisissez les contacts à ajouter comme intervenants.</p></div><button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button></div>{rows.length === 0 ? <div className="py-12 text-center"><div className="w-14 h-14 mx-auto rounded-full bg-blue-50 flex items-center justify-center"><Smartphone className="w-7 h-7 text-blue-600" /></div><h4 className="mt-4 font-semibold text-gray-900">Ouvrir le répertoire du téléphone</h4><p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">Le navigateur exige que l'ouverture des contacts parte directement d'un clic. Appuyez sur le bouton ci-dessous pour afficher le sélecteur natif.</p><button type="button" onClick={pickFromDevice} disabled={picking} className="mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60"><Smartphone className="w-4 h-4" />{picking ? "Ouverture…" : "Choisir dans mes contacts"}</button></div> : <><div className="relative mt-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300" /></div>{invalidCount > 0 && <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">{invalidCount} contact{invalidCount > 1 ? "s" : ""} ignoré{invalidCount > 1 ? "s" : ""} (numéro manquant ou invalide).</div>}<div className="mt-3 border border-gray-200 rounded-lg overflow-y-auto flex-1">{filteredRows.map((row) => { const checked = row.valid && selected.has(row.key); return <label key={row.key} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 ${row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50"}`}><input type="checkbox" checked={checked} disabled={!row.valid} onChange={() => toggle(row.key)} className="w-4 h-4 accent-blue-600" /><div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{`${row.first_name}${row.last_name}`.slice(0, 2).toUpperCase() || "?"}</div><div className="flex-1 min-w-0"><div className="font-medium truncate">{row.first_name} {row.last_name}</div><div className="text-sm text-gray-500 truncate">{row.phone || row.reason}</div></div></label>; })}</div><div className="mt-5 flex items-center justify-between"><button type="button" onClick={pickFromDevice} disabled={picking} className="text-sm text-blue-700 font-medium disabled:opacity-60">{picking ? "Ouverture…" : "Modifier la sélection"}</button><div className="flex gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button><button type="button" onClick={submit} disabled={importing || selected.size === 0} className="px-4 py-2 rounded-md bg-blue-600 text-white disabled:opacity-60">{importing ? "Import…" : `Importer ${selected.size} contact(s)`}</button></div></div></>}</div></div>; }
 
 function WhatsAppImportModal({ onClose, onDone, onQuota }) {
-  const [status, setStatus] = useState(null); const [contacts, setContacts] = useState([]); const [selected, setSelected] = useState(new Set()); const [search, setSearch] = useState(""); const [loading, setLoading] = useState(true); const [importing, setImporting] = useState(false); const [contactsReady, setContactsReady] = useState(false); const [loadingSeconds, setLoadingSeconds] = useState(0); const [startingSession, setStartingSession] = useState(false); const [refreshing, setRefreshing] = useState(false); const [refreshCooldown, setRefreshCooldown] = useState(0); const refreshLockRef = useRef(false); const sessionStartLockRef = useRef(false);
-  const startWhatsAppSession = useCallback(async () => { if (sessionStartLockRef.current) return; sessionStartLockRef.current = true; setStartingSession(true); try { await api.post("/whatsapp/session/start"); } catch (err) { console.error("Erreur démarrage WhatsApp :", err); } finally { sessionStartLockRef.current = false; setStartingSession(false); } }, []);
-  const fetchStatusAndContacts = useCallback(async () => { try { const { data } = await api.get("/whatsapp/status"); setStatus(data); if (data.refreshCooldown > 0) setRefreshCooldown(data.refreshCooldown); if (!data.connected) { setContactsReady(false); setLoading(false); if (!data.hasQR && !data.starting) await startWhatsAppSession(); return; } setLoading(false); try { const { data: loadedContacts } = await api.get("/whatsapp/contacts"); setContacts(Array.isArray(loadedContacts) ? loadedContacts : []); setContactsReady(true); } catch (contactsError) { console.error("Erreur récupération contacts :", contactsError); setContactsReady(true); } } catch (err) { console.error("Erreur statut WhatsApp :", err); const statusCode = err.response?.status; if (statusCode !== 400 && statusCode !== 503) toast.error(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp."); setLoading(false); } }, [startWhatsAppSession]);
-  const refreshContacts = async () => { if (refreshLockRef.current || refreshing || refreshCooldown > 0) return; refreshLockRef.current = true; setRefreshing(true); try { const { data } = await api.post("/whatsapp/refresh"); if (data && typeof data.refreshCooldown === "number") setRefreshCooldown(data.refreshCooldown || 60); else setRefreshCooldown(60); if (data && typeof data.count === "number") setStatus((prev) => prev ? { ...prev, contactCount: data.count, refreshCooldown: data.refreshCooldown || 60 } : prev); const { data: loadedContacts } = await api.get("/whatsapp/contacts"); setContacts(Array.isArray(loadedContacts) ? loadedContacts : []); setContactsReady(true); } catch (err) { const statusCode = err.response?.status; const retryAfter = err.response?.data?.retryAfter || err.response?.data?.detail?.match?.(/(\d+)s/)?.[1]; if (statusCode === 429) { setRefreshCooldown(Number(retryAfter) || 60); toast.error(`Actualisation disponible dans ${retryAfter || 60}s.`); } else toast.error(formatApiError(err.response?.data?.detail) || "Impossible d'actualiser les contacts."); } finally { setRefreshing(false); } };
-  useEffect(() => { startWhatsAppSession(); fetchStatusAndContacts(); }, [fetchStatusAndContacts, startWhatsAppSession]);
-  useEffect(() => { if (refreshCooldown <= 0) return undefined; const timer = setInterval(() => setRefreshCooldown((previous) => Math.max(0, previous - 1)), 1000); return () => clearInterval(timer); }, [refreshCooldown]);
-  useEffect(() => { if (status?.connected || status === null) return undefined; const interval = setInterval(fetchStatusAndContacts, 2000); return () => clearInterval(interval); }, [fetchStatusAndContacts, status]);
-  useEffect(() => { if (!status?.connected || contactsReady) { setLoadingSeconds(0); return undefined; } const interval = setInterval(() => setLoadingSeconds((previous) => previous + 1), 1000); return () => clearInterval(interval); }, [status?.connected, contactsReady]);
-  const toggle = (id) => setSelected((previous) => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  const importContacts = async () => { if (selected.size === 0) return toast.error("Sélectionnez au moins un contact."); setImporting(true); try { const { data } = await api.post("/whatsapp/import", { contacts: Array.from(selected) }); if (data.quota_hit) onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`); else toast.success(`${data.created} intervenant(s) ajouté(s).`); onDone(); onClose(); } catch (err) { const statusCode = err.response?.status; const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import WhatsApp."; if (statusCode === 402) { onQuota(detail); onClose(); } else toast.error(detail); } finally { setImporting(false); } };
-  const filteredContacts = contacts.filter((contact) => `${contact.name || ""} ${contact.number || ""}`.toLowerCase().includes(search.toLowerCase())); const refreshDisabled = refreshing || refreshCooldown > 0; const refreshLabel = refreshing ? "Actualisation..." : refreshCooldown > 0 ? `Actualiser (${refreshCooldown}s)` : "Actualiser";
-  return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(event) => event.stopPropagation()} className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto"><div className="flex items-center justify-between"><div><h3 className="font-display font-bold text-xl">Importer depuis WhatsApp</h3><p className="text-sm text-gray-500 mt-1">Sélectionnez les contacts à ajouter à vos intervenants.</p></div><button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button></div>{!status?.connected && <div className="mt-6"><div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">{status?.hasQR && status?.qr ? <WhatsAppQrGuide qr={status.qr} /> : <><RefreshCw className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" /><h4 className="font-semibold">Préparation de WhatsApp...</h4><p className="text-sm text-gray-500 mt-2">Nous préparons votre session WhatsApp.</p>{status?.starting && <p className="text-xs text-gray-400 mt-3">Connexion au service en cours...</p>}</>}</div></div>}{status?.connected && <div className="mt-6"><div className="flex items-center justify-between mb-4"><div><div className="flex items-center gap-2 text-green-700 font-medium"><Check className="w-4 h-4" />WhatsApp connecté</div><p className="text-sm text-gray-500 mt-1">{contacts.length} contact{contacts.length > 1 ? "s" : ""} disponibles</p></div><button type="button" onClick={(event) => { event.currentTarget.disabled = true; refreshContacts(); }} disabled={refreshDisabled} title={refreshDisabled ? `Disponible dans ${refreshCooldown}s` : "Actualiser les contacts WhatsApp"} className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />{refreshLabel}</button></div><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un contact..." className="w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" /><div className="mt-4 border border-gray-200 rounded-lg overflow-hidden"><div className="max-h-[400px] overflow-y-auto">{filteredContacts.length === 0 && <div className="p-8 text-center text-gray-500">{contacts.length === 0 ? "Aucun contact disponible pour le moment." : "Aucun contact trouvé."}</div>}{filteredContacts.map((contact) => { const checked = selected.has(contact.id); return <label key={contact.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}><input type="checkbox" checked={checked} onChange={() => toggle(contact.id)} className="w-4 h-4 accent-blue-600" /><div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{(contact.name || "?").slice(0, 2).toUpperCase()}</div><div className="flex-1 min-w-0"><div className="font-medium truncate">{contact.name}</div><div className="text-sm text-gray-500">+{contact.number}</div></div></label>; })}</div></div><div className="mt-5 flex items-center justify-between"><div className="text-sm text-gray-500">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</div><div className="flex gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button><button type="button" onClick={importContacts} disabled={importing || selected.size === 0} className="px-4 py-2 rounded-md bg-blue-600 text-white disabled:opacity-60">{importing ? "Import..." : `Importer ${selected.size} contact(s)`}</button></div></div></div>}</div></div>;
+  const mobile = isMobileViewport();
+  const [status, setStatus] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [contactsReady, setContactsReady] = useState(false);
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
+  const [startingSession, setStartingSession] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshCooldown, setRefreshCooldown] = useState(0);
+  const [pairPhone, setPairPhone] = useState("");
+  const [pairCode, setPairCode] = useState("");
+  const [pairing, setPairing] = useState(false);
+  const [pairError, setPairError] = useState("");
+  const refreshLockRef = useRef(false);
+  const sessionStartLockRef = useRef(false);
+
+  const startWhatsAppSession = useCallback(async () => {
+    if (sessionStartLockRef.current) return;
+    sessionStartLockRef.current = true;
+    setStartingSession(true);
+    try {
+      await api.post("/whatsapp/session/start");
+    } catch (err) {
+      console.error("Erreur démarrage WhatsApp :", err);
+    } finally {
+      sessionStartLockRef.current = false;
+      setStartingSession(false);
+    }
+  }, []);
+
+  const fetchStatusAndContacts = useCallback(async () => {
+    try {
+      const { data } = await api.get("/whatsapp/status");
+      setStatus(data);
+      if (data.refreshCooldown > 0) setRefreshCooldown(data.refreshCooldown);
+      if (!data.connected) {
+        setContactsReady(false);
+        setLoading(false);
+        if (!data.hasQR && !data.starting) await startWhatsAppSession();
+        return;
+      }
+      setPairError("");
+      setLoading(false);
+      try {
+        const { data: loadedContacts } = await api.get("/whatsapp/contacts");
+        setContacts(Array.isArray(loadedContacts) ? loadedContacts : []);
+        setContactsReady(true);
+      } catch (contactsError) {
+        console.error("Erreur récupération contacts :", contactsError);
+        setContactsReady(true);
+      }
+    } catch (err) {
+      console.error("Erreur statut WhatsApp :", err);
+      const statusCode = err.response?.status;
+      if (statusCode !== 400 && statusCode !== 503) toast.error(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp.");
+      setLoading(false);
+    }
+  }, [startWhatsAppSession]);
+
+  const requestPairCode = async () => {
+    if (pairing) return;
+    const phone = pairPhone.trim();
+    if (!phone) {
+      setPairError("Renseignez le numéro utilisé sur WhatsApp.");
+      return;
+    }
+    setPairing(true);
+    setPairError("");
+    setPairCode("");
+    try {
+      const { data } = await api.post("/whatsapp/session/pair-code", { phone });
+      if (data?.connected) {
+        await fetchStatusAndContacts();
+        return;
+      }
+      if (!data?.code) throw new Error("Aucun code reçu.");
+      setPairCode(String(data.code));
+    } catch (err) {
+      setPairError(formatApiError(err.response?.data?.detail || err.response?.data?.error) || "Impossible de générer le code. Réessayez dans quelques secondes.");
+    } finally {
+      setPairing(false);
+    }
+  };
+
+  const refreshContacts = async () => {
+    if (refreshLockRef.current || refreshing || refreshCooldown > 0) return;
+    refreshLockRef.current = true;
+    setRefreshing(true);
+    try {
+      const { data } = await api.post("/whatsapp/refresh");
+      if (data && typeof data.refreshCooldown === "number") setRefreshCooldown(data.refreshCooldown || 60);
+      else setRefreshCooldown(60);
+      if (data && typeof data.count === "number") setStatus((prev) => prev ? { ...prev, contactCount: data.count, refreshCooldown: data.refreshCooldown || 60 } : prev);
+      const { data: loadedContacts } = await api.get("/whatsapp/contacts");
+      setContacts(Array.isArray(loadedContacts) ? loadedContacts : []);
+      setContactsReady(true);
+    } catch (err) {
+      const statusCode = err.response?.status;
+      const retryAfter = err.response?.data?.retryAfter || err.response?.data?.detail?.match?.(/(\\d+)s/)?.[1];
+      if (statusCode === 429) {
+        setRefreshCooldown(Number(retryAfter) || 60);
+        toast.error(`Actualisation disponible dans ${retryAfter || 60}s.`);
+      } else toast.error(formatApiError(err.response?.data?.detail) || "Impossible d'actualiser les contacts.");
+    } finally {
+      refreshLockRef.current = false;
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    startWhatsAppSession();
+    fetchStatusAndContacts();
+  }, [fetchStatusAndContacts, startWhatsAppSession]);
+
+  useEffect(() => {
+    if (refreshCooldown <= 0) return undefined;
+    const timer = setInterval(() => setRefreshCooldown((previous) => Math.max(0, previous - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [refreshCooldown]);
+
+  useEffect(() => {
+    if (status?.connected || status === null) return undefined;
+    const interval = setInterval(fetchStatusAndContacts, 2000);
+    return () => clearInterval(interval);
+  }, [fetchStatusAndContacts, status]);
+
+  useEffect(() => {
+    if (!status?.connected || contactsReady) {
+      setLoadingSeconds(0);
+      return undefined;
+    }
+    const interval = setInterval(() => setLoadingSeconds((previous) => previous + 1), 1000);
+    return () => clearInterval(interval);
+  }, [status?.connected, contactsReady]);
+
+  const toggle = (id) => setSelected((previous) => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
+  const importContacts = async () => {
+    if (selected.size === 0) return toast.error("Sélectionnez au moins un contact.");
+    setImporting(true);
+    try {
+      const { data } = await api.post("/whatsapp/import", { contacts: Array.from(selected) });
+      if (data.quota_hit) onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`);
+      else toast.success(`${data.created} intervenant(s) ajouté(s).`);
+      onDone();
+      onClose();
+    } catch (err) {
+      const statusCode = err.response?.status;
+      const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import WhatsApp.";
+      if (statusCode === 402) {
+        onQuota(detail);
+        onClose();
+      } else toast.error(detail);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const filteredContacts = contacts.filter((contact) => `${contact.name || ""} ${contact.number || ""}`.toLowerCase().includes(search.toLowerCase()));
+  const refreshDisabled = refreshing || refreshCooldown > 0;
+  const refreshLabel = refreshing ? "Actualisation..." : refreshCooldown > 0 ? `Actualiser (${refreshCooldown}s)` : "Actualiser";
+
+  return <div className={`fixed inset-0 bg-black/40 z-50 flex justify-center ${mobile ? "items-end" : "items-center p-4"}`} onClick={onClose}>
+    <div onClick={(event) => event.stopPropagation()} className={`bg-white w-full shadow-xl max-h-[92dvh] overflow-y-auto ${mobile ? "rounded-t-2xl p-5" : "max-w-3xl rounded-xl p-6"}`}>
+      {mobile && <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-display font-bold text-xl">Importer depuis WhatsApp</h3>
+          <p className="text-sm text-gray-500 mt-1">{mobile ? "Connectez WhatsApp puis choisissez vos intervenants." : "Sélectionnez les contacts à ajouter à vos intervenants."}</p>
+        </div>
+        <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+      </div>
+
+      {!status?.connected && <div className="mt-6">
+        {mobile ? <div className="space-y-4">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center"><MessageCircle className="w-5 h-5" /></div>
+              <div>
+                <h4 className="font-semibold text-gray-900">Lier avec un numéro de téléphone</h4>
+                <p className="text-xs text-gray-500 mt-0.5">Pas besoin de scanner un QR code.</p>
+              </div>
+            </div>
+
+            {!pairCode ? <>
+              <label className="block text-sm font-medium text-gray-800 mt-5">Votre numéro WhatsApp</label>
+              <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={pairPhone}
+                onChange={(e) => setPairPhone(e.target.value)}
+                placeholder="+33 6 12 34 56 78"
+                className="mt-2 w-full h-12 rounded-xl border border-gray-300 bg-white px-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <button
+                type="button"
+                onClick={requestPairCode}
+                disabled={pairing || startingSession}
+                className="mt-3 w-full h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold disabled:opacity-50"
+              >
+                {pairing ? "Génération du code…" : "Obtenir mon code"}
+              </button>
+            </> : <div className="mt-5">
+              <div className="text-xs uppercase tracking-widest font-bold text-gray-500 text-center">Votre code de liaison</div>
+              <div className="mt-2 rounded-xl border-2 border-green-200 bg-white px-4 py-4 text-center font-mono text-2xl font-bold tracking-[0.18em] text-gray-950 break-all">
+                {pairCode}
+              </div>
+              <button type="button" onClick={() => { setPairCode(""); setPairError(""); }} className="mt-2 w-full text-sm font-medium text-blue-700">
+                Utiliser un autre numéro
+              </button>
+            </div>}
+
+            {pairError && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pairError}</div>}
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+            <div className="text-sm font-semibold text-blue-950">Ensuite, dans WhatsApp :</div>
+            <ol className="mt-3 space-y-3">
+              {[
+                "Ouvrez WhatsApp sur ce téléphone.",
+                "Allez dans Paramètres > Appareils connectés.",
+                "Touchez « Connecter un appareil ».",
+                "Choisissez « Lier avec un numéro de téléphone ».",
+                "Saisissez le code affiché dans ShiftFlow.",
+              ].map((label, index) => <li key={label} className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">{index + 1}</span>
+                <span className="text-sm leading-relaxed text-blue-950">{label}</span>
+              </li>)}
+            </ol>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            {pairCode ? "En attente de la connexion WhatsApp…" : "Préparation de WhatsApp…"}
+          </div>
+        </div> : <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
+          {status?.hasQR && status?.qr ? <WhatsAppQrGuide qr={status.qr} /> : <>
+            <RefreshCw className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" />
+            <h4 className="font-semibold">Préparation de WhatsApp...</h4>
+            <p className="text-sm text-gray-500 mt-2">Nous préparons votre session WhatsApp.</p>
+            {status?.starting && <p className="text-xs text-gray-400 mt-3">Connexion au service en cours...</p>}
+          </>}
+        </div>}
+      </div>}
+
+      {status?.connected && <div className="mt-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2 text-green-700 font-medium"><Check className="w-4 h-4" />WhatsApp connecté</div>
+            <p className="text-sm text-gray-500 mt-1">{contacts.length} contact{contacts.length > 1 ? "s" : ""} disponibles</p>
+          </div>
+          <button type="button" onClick={refreshContacts} disabled={refreshDisabled} title={refreshDisabled ? `Disponible dans ${refreshCooldown}s` : "Actualiser les contacts WhatsApp"} className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />{refreshLabel}
+          </button>
+        </div>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un contact..." className="w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+          <div className="max-h-[400px] overflow-y-auto">
+            {filteredContacts.length === 0 && <div className="p-8 text-center text-gray-500">{contacts.length === 0 ? "Aucun contact disponible pour le moment." : "Aucun contact trouvé."}</div>}
+            {filteredContacts.map((contact) => {
+              const checked = selected.has(contact.id);
+              return <label key={contact.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}>
+                <input type="checkbox" checked={checked} onChange={() => toggle(contact.id)} className="w-4 h-4 accent-blue-600" />
+                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{(contact.name || "?").slice(0, 2).toUpperCase()}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{contact.name}</div>
+                  <div className="text-sm text-gray-500">+{contact.number}</div>
+                </div>
+              </label>;
+            })}
+          </div>
+        </div>
+        <div className={`mt-5 flex ${mobile ? "flex-col gap-3" : "items-center justify-between"}`}>
+          <div className="text-sm text-gray-500">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</div>
+          <div className={`flex gap-2 ${mobile ? "w-full" : ""}`}>
+            <button type="button" onClick={onClose} className={`${mobile ? "flex-1" : ""} px-4 py-2.5 rounded-md border border-gray-300`}>Annuler</button>
+            <button type="button" onClick={importContacts} disabled={importing || selected.size === 0} className={`${mobile ? "flex-[1.4]" : ""} px-4 py-2.5 rounded-md bg-blue-600 text-white disabled:opacity-60`}>{importing ? "Import..." : `Importer ${selected.size} contact(s)`}</button>
+          </div>
+        </div>
+      </div>}
+    </div>
+  </div>;
 }
 function AddWorkersChoiceModal({ onClose, onPickWhatsapp, onPickPhone, onPickManual }) {
   const mobile = isMobileViewport();
