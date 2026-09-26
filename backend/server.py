@@ -440,8 +440,7 @@ class RegisterIn(BaseModel):
     @field_validator("password")
     @classmethod
     def _password_strong(cls, v: str) -> str:
-        import re
-        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+        if not any(ch.isalpha() for ch in v) or not any(ch.isdigit() for ch in v):
             raise ValueError("Le mot de passe doit contenir au moins 8 caractères, dont une lettre et un chiffre.")
         return v
 
@@ -481,8 +480,7 @@ class ResetIn(BaseModel):
     @field_validator("new_password")
     @classmethod
     def _new_password_strong(cls, v: str) -> str:
-        import re
-        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+        if not any(ch.isalpha() for ch in v) or not any(ch.isdigit() for ch in v):
             raise ValueError("Le mot de passe doit contenir au moins 8 caractères, dont une lettre et un chiffre.")
         return v
 
