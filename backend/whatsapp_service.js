@@ -320,33 +320,6 @@ async function startSession(state) { if (shuttingDown || state.starting || state
     await applyLidMapping(state, update);
 });
 
-sock.ev.on("messaging-history.set", async event => {
-    if (generation !== state.generation) return;
-
-    const historyContacts = Array.isArray(event?.contacts) ? event.contacts : [];
-
-    // Baileys documents Contact.name as the name saved by the current user in
-    // WhatsApp. Contact.notify is the other person's self-chosen WhatsApp name.
-    // A fresh linked device can expose the full history contact set here even
-    // when contacts.upsert is empty, so only promote entries with a real saved
-    // address-book name. This recovers saved contacts without re-importing the
-    // hundreds of chat/push-name pseudo-contacts that caused the old ~800 list.
-    const savedContacts = historyContacts.filter(contact => {
-        const savedName = String(contact?.name || "").trim();
-        return !!savedName && !looksLikePhoneName(savedName);
-    });
-
-    if (!savedContacts.length) return;
-
-    const changed = await upsertContacts(state, savedContacts, "address_book");
-    await resolvePendingLids(state);
-    if (changed > 0) await saveContactsCache(state);
-
-    console.log(
-        `📒 Contacts carnet depuis historique [${state.id}] : ${savedContacts.length}/${historyContacts.length} candidats sauvegardés, ${sortedContacts(state).length} exploitables`
-    );
-});
-
 sock.ev.on("contacts.upsert", async list => {
     if (generation !== state.generation) return;
     const changed = await upsertContacts(state, Array.isArray(list) ? list : [], "address_book");
@@ -362,68 +335,7 @@ sock.ev.on("contacts.update", async () => {
 });
 
 console.log(`✅ Socket Baileys créé [${state.id}].`); } catch (error) { state.connected = false; state.sock = null; console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error); if (!shuttingDown) setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000); } finally { state.starting = false; } }
-async function refreshContacts(state) {
-    if (!state.connected || !state.sock) throw new Error("WhatsApp n'est pas connecté.");
-    if (state.refreshPromise) return state.refreshPromise;
-
-    const now = Date.now();
-    const elapsed = now - state.lastRefreshAt;
-    if (state.lastRefreshAt && elapsed < REFRESH_COOLDOWN_MS) {
-        const retryAfter = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000);
-        const error = new Error(`Actualisation disponible dans ${retryAfter}s.`);
-        error.statusCode = 429;
-        error.retryAfter = retryAfter;
-        throw error;
-    }
-
-    state.lastRefreshAt = now;
-    state.contactsLoading = true;
-    state.refreshPromise = (async () => {
-        const before = state.contacts.size;
-
-        if (typeof state.sock.resyncAppState === "function") {
-            try {
-                await state.sock.resyncAppState(["critical_unblock_low", "regular"], true);
-            } catch (error) {
-                console.log(`⚠️ Resync contacts incomplet [${state.id}] : ${error.message}`);
-            }
-        }
-
-        await sleep(3000);
-
-        // Baileys rc14 can keep the initial app-state events buffered even
-        // though the socket already reports connection=open. Only intervene
-        // when the normal contact sync produced nothing. Flushing does not
-        // invent contacts: it merely releases the same contacts.upsert events
-        // that the normal ShiftFlow flow already consumes.
-        if (state.contacts.size === 0 && typeof state.sock?.ev?.flush === "function") {
-            try {
-                console.log(`🔓 Libération du buffer Baileys pour les contacts [${state.id}]`);
-                state.sock.ev.flush();
-                await sleep(750);
-            } catch (error) {
-                console.log(`⚠️ Buffer Baileys non libéré [${state.id}] : ${error.message}`);
-            }
-        }
-
-        await resolvePendingLids(state);
-        await saveContactsCache(state);
-        const after = state.contacts.size;
-        return {
-            count: after,
-            added: Math.max(0, after - before),
-            previousCount: before,
-            refreshedAt: new Date().toISOString(),
-        };
-    })();
-
-    try {
-        return await state.refreshPromise;
-    } finally {
-        state.refreshPromise = null;
-        state.contactsLoading = false;
-    }
-}
+async function refreshContacts(state) { if (!state.connected || !state.sock) throw new Error("WhatsApp n'est pas connecté."); if (state.refreshPromise) return state.refreshPromise; const now = Date.now(); const elapsed = now - state.lastRefreshAt; if (state.lastRefreshAt && elapsed < REFRESH_COOLDOWN_MS) { const retryAfter = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000); const error = new Error(`Actualisation disponible dans ${retryAfter}s.`); error.statusCode = 429; error.retryAfter = retryAfter; throw error; } state.lastRefreshAt = now; state.contactsLoading = true; state.refreshPromise = (async () => { const before = state.contacts.size; if (typeof state.sock.resyncAppState === "function") { try { await state.sock.resyncAppState(["critical_unblock_low", "regular"], true); } catch (error) { console.log(`⚠️ Resync contacts incomplet [${state.id}] : ${error.message}`); } } await sleep(3000); await resolvePendingLids(state); await saveContactsCache(state); const after = state.contacts.size; return { count: after, added: Math.max(0, after - before), previousCount: before, refreshedAt: new Date().toISOString() }; })(); try { return await state.refreshPromise; } finally { state.refreshPromise = null; state.contactsLoading = false; } }
 function publicStatus(state) { const refreshRemaining = state.lastRefreshAt ? Math.max(0, Math.ceil((REFRESH_COOLDOWN_MS - (Date.now() - state.lastRefreshAt)) / 1000)) : 0; return { connected: state.connected, hasQR: !!state.qr, qr: state.qr, contactCount: state.contacts.size, contactsLoading: state.contactsLoading, contactsLoaded: state.contacts.size > 0, initialSyncDone: state.initialSyncDone, starting: state.starting, sessionId: state.id, lastConnectionError: state.lastConnectionError, sendQueueLength: state.sendQueueLength, refreshCooldown: refreshRemaining }; }
 function sessionFromRequest(req) { return safeSessionId(req.header("x-whatsapp-session") || req.query.sessionId || req.body?.sessionId || DEFAULT_SESSION_ID); }
 app.get("/status", async (req, res) => { const state = getSession(sessionFromRequest(req)); await loadContactsCache(state); if (!state.sock && !state.starting && !shuttingDown) startSession(state).catch(error => console.error(`❌ Impossible de démarrer [${state.id}] :`, error)); res.json(publicStatus(state)); });
