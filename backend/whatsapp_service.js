@@ -144,11 +144,6 @@ function contactsFile(state) { return path.join(sessionPath(state.id), "contacts
 
 async function loadContactsCache(state) {
     try {
-        // Once Baileys is connected and has live contacts in memory, that live
-        // state is newer than contacts.json. Do not let status/contacts polling
-        // overwrite it with an older (or still empty) disk cache.
-        if (state.connected && state.contacts.size > 0) return;
-
         const file = contactsFile(state);
         if (!fs.existsSync(file)) return;
         const data = JSON.parse(await fs.promises.readFile(file, "utf8"));
