@@ -58,7 +58,7 @@ function persistAttribution(attribution) {
     const previous = JSON.parse(localStorage.getItem(ATTRIBUTION_KEY) || "{}");
     localStorage.setItem(
       ATTRIBUTION_KEY,
-      JSON.stringify({ ...previous, ...attribution })
+      JSON.stringify(previous.captured_at ? previous : attribution)
     );
   } catch {
     // Attribution is best-effort and must never affect navigation or signup.
@@ -72,7 +72,7 @@ export default function MetaPixel() {
 
   useEffect(() => {
     const candidate = attributionFromLocation(location.search, location.pathname);
-    if (candidate) pendingAttribution.current = candidate;
+    if (candidate && !pendingAttribution.current) pendingAttribution.current = candidate;
 
     if (consent === "accepted") {
       persistAttribution(pendingAttribution.current);

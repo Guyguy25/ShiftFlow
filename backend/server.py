@@ -1019,7 +1019,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
     await db.mission_workers.insert_many(slots)
     await db.shifts.update_one({"id": shift_id}, {"$set": {"status": "in_progress"}})
     await db.missions.update_one({"id": shift["mission_id"]}, {"$set": {"status": "in_progress"}})
-    await cascade_next_for_shift(shift_id)
+    delivery = await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
 
     refreshed_shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
@@ -1027,6 +1027,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
     remaining = max(0, int(shift.get("people_needed") or 0) - confirmed)
     return {
         "ok": True,
+        "delivery": delivery if isinstance(delivery, dict) else None,
         "slots_created": len(slots),
         "total_candidates": len(existing) + len(slots),
         "remaining_needed": remaining,
@@ -1039,9 +1040,9 @@ async def force_cascade(shift_id: str, user=Depends(get_current_user)):
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
-    await cascade_next_for_shift(shift_id)
+    delivery = await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
-    return {"ok": True}
+    return {"ok": True, "delivery": delivery if isinstance(delivery, dict) else None}
 
 
 @api.post("/mission-workers/{slot_id}/mark-no-answer")
@@ -1273,7 +1274,15 @@ async def dashboard_summary(user=Depends(get_current_user)):
             slots = await db.mission_workers.find({"shift_id": sh["id"]}, {"_id": 0}).to_list(1000)
             pending_count += sum(1 for s in slots if s["status"] in ("pending", "contacted"))
 
+    # Include archived missions in activation history; a test message is not activation.
+    all_mission_ids = await db.missions.distinct("id", {"agency_id": user["id"]})
+    first_invite = await db.notifications.find_one({
+        "mission_id": {"$in": all_mission_ids}, "channel": "whatsapp",
+        "kind": "invite", "status": "sent",
+    }, {"_id": 0, "id": 1})
+    active_workers = await db.workers.count_documents({"agency_id": user["id"], "active": {"$ne": False}})
     return {
+        "activation": {"first_invite_sent": bool(first_invite), "active_workers": active_workers},
         "upcoming": upcoming,
         "ongoing": ongoing,
         "past": past[-20:],
