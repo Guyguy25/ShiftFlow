@@ -105,8 +105,9 @@ async def record_activation_event(
     consent. Analytics failures never block the product action.
     """
     occurred_at = iso(now_utc())
+    event_key = f"{user['id']}:{event_name}"
     result = await db.activation_events.update_one(
-        {"agency_id": user["id"], "event_name": event_name},
+        {"_id": event_key},
         {"$setOnInsert": {
             "id": new_id(),
             "agency_id": user["id"],
