@@ -78,6 +78,69 @@ def request_client_ip(request: Request) -> Optional[str]:
     return request.client.host if request.client else None
 
 
+def meta_consent_for_user(user: dict) -> bool:
+    """Backward-compatible advertising consent check for activation events."""
+    return bool(
+        user.get("meta_consent")
+        or user.get("meta_attribution")
+        or user.get("meta_fbp")
+        or user.get("meta_fbc")
+    )
+
+
+async def record_activation_event(
+    user: dict,
+    event_name: str,
+    *,
+    metadata: Optional[dict] = None,
+    request: Optional[Request] = None,
+    meta_event_name: Optional[str] = None,
+    event_source_path: str = "/app/dashboard",
+) -> bool:
+    """Persist a first-time activation milestone and optionally mirror it to Meta.
+
+    MongoDB is the source of truth. The (agency_id, event_name) upsert makes the
+    milestone idempotent without requiring a migration or a unique index.
+    Meta is only called for the first occurrence and only with advertising
+    consent. Analytics failures never block the product action.
+    """
+    occurred_at = iso(now_utc())
+    event_key = f"{user['id']}:{event_name}"
+    result = await db.activation_events.update_one(
+        {"_id": event_key},
+        {"$setOnInsert": {
+            "id": new_id(),
+            "agency_id": user["id"],
+            "user_id": user["id"],
+            "event_name": event_name,
+            "occurred_at": occurred_at,
+            "metadata": metadata or {},
+        }},
+        upsert=True,
+    )
+    created = bool(result.upserted_id)
+    if not created:
+        return False
+
+    if meta_event_name and meta_consent_for_user(user):
+        origin = ((request.headers.get("origin") if request else None) or FRONTEND_URL).rstrip("/")
+        event_source_url = f"{origin}{event_source_path}" if origin else event_source_path
+        await send_meta_event(
+            event_name=meta_event_name,
+            event_id=f"activation_{event_name}_{user['id']}",
+            event_source_url=event_source_url,
+            email=user.get("email"),
+            phone=user.get("phone"),
+            external_id=user.get("id"),
+            client_user_agent=request.headers.get("user-agent") if request else None,
+            client_ip_address=request_client_ip(request) if request else None,
+            fbp=user.get("meta_fbp"),
+            fbc=user.get("meta_fbc"),
+            custom_data=metadata or None,
+        )
+    return True
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -566,6 +629,15 @@ async def update_shift_and_mission_status(shift_id: str):
     all_shifts = await db.shifts.find({"mission_id": mission_id}, {"_id": 0}).to_list(1000)
     if all_shifts and all(s.get("status") == "filled" for s in all_shifts):
         await db.missions.update_one({"id": mission_id}, {"$set": {"status": "filled"}})
+        agency = await db.users.find_one({"id": mission.get("agency_id")}, {"_id": 0})
+        if agency:
+            await record_activation_event(
+                agency,
+                "mission_filled",
+                metadata={"mission_id": mission_id},
+                meta_event_name="MissionFilled",
+                event_source_path=f"/app/missions/{mission_id}",
+            )
     else:
         await db.missions.update_one({"id": mission_id}, {"$set": {"status": "in_progress"}})
 
@@ -584,10 +656,16 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "onboarding_completed": bool(payload.onboarding_answers),
             "onboarding_answers": payload.onboarding_answers or None,
             "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None,
+            "meta_consent": bool(payload.meta_consent),
             "meta_attribution": payload.meta_attribution if payload.meta_consent else None,
             "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
             "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
+    await record_activation_event(
+        user,
+        "sign_up",
+        metadata={"source": "registration"},
+    )
 
     if payload.meta_consent:
         origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
@@ -721,11 +799,19 @@ async def list_workers(q: Optional[str] = None, skill: Optional[str] = None, use
 
 
 @api.post("/workers")
-async def create_worker(payload: WorkerIn, user=Depends(get_current_user)):
+async def create_worker(payload: WorkerIn, request: Request, user=Depends(get_current_user)):
     await check_quota_or_raise(user, "worker")  # noqa: F821 (defined later)
     w = {"id": new_id(), "agency_id": user["id"], **payload.model_dump(), "created_at": iso(now_utc())}
     await db.workers.insert_one(w)
     w.pop("_id", None)
+    await record_activation_event(
+        user,
+        "worker_added",
+        metadata={"worker_id": w["id"], "source": "manual"},
+        request=request,
+        meta_event_name="WorkerAdded",
+        event_source_path="/app/workers",
+    )
     return w
 
 
@@ -734,7 +820,7 @@ class BulkWorkersIn(BaseModel):
 
 
 @api.post("/workers/bulk")
-async def create_workers_bulk(payload: BulkWorkersIn, user=Depends(get_current_user)):
+async def create_workers_bulk(payload: BulkWorkersIn, request: Request, user=Depends(get_current_user)):
     """Bulk import — respects freemium quota. Returns per-row result."""
     if not payload.workers:
         raise HTTPException(status_code=400, detail="Liste vide")
@@ -758,6 +844,15 @@ async def create_workers_bulk(payload: BulkWorkersIn, user=Depends(get_current_u
         doc.pop("_id", None)
         created.append(doc)
         current += 1
+    if created:
+        await record_activation_event(
+            user,
+            "worker_added",
+            metadata={"created_count": len(created), "source": "bulk"},
+            request=request,
+            meta_event_name="WorkerAdded",
+            event_source_path="/app/workers",
+        )
     return {"created": len(created), "skipped_quota": skipped_quota, "workers": created,
             "quota_hit": skipped_quota > 0,
             "limit": limit}
@@ -877,6 +972,12 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
         user["trial_started_at"] = iso(trial_started_at)
         user["trial_ends_at"] = iso(trial_ends_at)
 
+        await record_activation_event(
+            user,
+            "mission_created",
+            metadata={"mission_id": mission["id"]},
+        )
+
         if payload.meta_consent:
             origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
             event_source_url = f"{origin}/app/missions/new" if origin else "/app/missions/new"
@@ -970,7 +1071,7 @@ async def cancel_mission(mission_id: str, user=Depends(get_current_user)):
 
 # ---- Shift-level actions ----
 @api.post("/shifts/{shift_id}/select-workers")
-async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user=Depends(get_current_user)):
+async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, request: Request, user=Depends(get_current_user)):
     await ensure_trial_active_or_raise(user)
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
@@ -1019,6 +1120,14 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
     await db.mission_workers.insert_many(slots)
     await db.shifts.update_one({"id": shift_id}, {"$set": {"status": "in_progress"}})
     await db.missions.update_one({"id": shift["mission_id"]}, {"$set": {"status": "in_progress"}})
+    await record_activation_event(
+        user,
+        "cascade_started",
+        metadata={"mission_id": shift["mission_id"], "shift_id": shift_id, "selected_count": len(slots)},
+        request=request,
+        meta_event_name="CascadeStarted",
+        event_source_path=f"/app/missions/{shift['mission_id']}",
+    )
     await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
 
@@ -1034,11 +1143,19 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
 
 
 @api.post("/shifts/{shift_id}/next-cascade")
-async def force_cascade(shift_id: str, user=Depends(get_current_user)):
+async def force_cascade(shift_id: str, request: Request, user=Depends(get_current_user)):
     await ensure_trial_active_or_raise(user)
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
+    await record_activation_event(
+        user,
+        "cascade_started",
+        metadata={"mission_id": shift["mission_id"], "shift_id": shift_id, "source": "manual_next"},
+        request=request,
+        meta_event_name="CascadeStarted",
+        event_source_path=f"/app/missions/{shift['mission_id']}",
+    )
     await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
     return {"ok": True}
@@ -1781,11 +1898,19 @@ async def payment_status_endpoint(session_id: str):
                               "updated_at": iso(now_utc())}},
                 )
                 if s.metadata and s.metadata.get("user_id"):
-                    await db.users.update_one({"id": s.metadata["user_id"]}, {"$set": {
+                    uid = s.metadata["user_id"]
+                    await db.users.update_one({"id": uid}, {"$set": {
                         "plan": "pro", "subscription_status": "active",
                         "stripe_customer_id": s.customer, "stripe_subscription_id": s.subscription,
                         "subscription_billing_interval": (s.metadata or {}).get("billing_interval"),
                     }})
+                    paid_user = await db.users.find_one({"id": uid}, {"_id": 0})
+                    if paid_user:
+                        await record_activation_event(
+                            paid_user,
+                            "subscription_started",
+                            metadata={"subscription_id": s.subscription, "session_id": session_id},
+                        )
                 if s.payment_status == "paid":
                     await _send_subscribe_meta_if_needed(session_id, s.subscription)
                 record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
@@ -1820,6 +1945,13 @@ async def stripe_webhook(request: Request):
                 "stripe_subscription_id": obj.get("subscription"),
                 "subscription_billing_interval": (obj.get("metadata") or {}).get("billing_interval"),
             }})
+            paid_user = await db.users.find_one({"id": uid}, {"_id": 0})
+            if paid_user and obj.get("payment_status") == "paid":
+                await record_activation_event(
+                    paid_user,
+                    "subscription_started",
+                    metadata={"subscription_id": obj.get("subscription"), "session_id": obj["id"]},
+                )
         if obj.get("payment_status") == "paid":
             await _send_subscribe_meta_if_needed(obj["id"], obj.get("subscription"))
     elif t == "customer.subscription.deleted":
