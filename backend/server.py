@@ -1273,7 +1273,15 @@ async def dashboard_summary(user=Depends(get_current_user)):
             slots = await db.mission_workers.find({"shift_id": sh["id"]}, {"_id": 0}).to_list(1000)
             pending_count += sum(1 for s in slots if s["status"] in ("pending", "contacted"))
 
+    # Include archived missions in activation history; a test message is not activation.
+    all_mission_ids = await db.missions.distinct("id", {"agency_id": user["id"]})
+    first_invite = await db.notifications.find_one({
+        "mission_id": {"$in": all_mission_ids}, "channel": "whatsapp",
+        "kind": "invite", "status": "sent",
+    }, {"_id": 0, "id": 1})
+    active_workers = await db.workers.count_documents({"agency_id": user["id"], "active": {"$ne": False}})
     return {
+        "activation": {"first_invite_sent": bool(first_invite), "active_workers": active_workers},
         "upcoming": upcoming,
         "ongoing": ongoing,
         "past": past[-20:],

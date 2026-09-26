@@ -151,6 +151,7 @@ export default function Register() {
           <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
         </div>
 
+        {step <= QUESTIONS.length && <button type="button" onClick={() => setStep(QUESTIONS.length + 1)} className="mb-5 text-sm text-blue-700 underline">Passer ces questions facultatives et créer mon compte</button>}
         {step > 0 && step <= QUESTIONS.length && (
           <button onClick={()=>setStep(step-1)} data-testid="register-back-btn" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
             <ArrowLeft className="w-4 h-4"/> Retour

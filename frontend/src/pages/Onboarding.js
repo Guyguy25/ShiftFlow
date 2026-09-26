@@ -80,7 +80,7 @@ export default function Onboarding() {
           main_pain: answers.main_pain.join(" | "),
         });
         await refresh();
-        nav("/app/dashboard");
+        nav("/app/missions/new");
       } catch (err) {
         setError(formatApiError(err.response?.data?.detail) || err.message);
       } finally {
@@ -178,11 +178,11 @@ export default function Onboarding() {
             <h1 className="mt-6 text-3xl font-display font-bold tracking-tight">Vous êtes prêt !</h1>
             <p className="mt-3 text-gray-600">Votre compte gratuit ShiftFlow est prêt. Créez votre première mission dès maintenant.</p>
             <div className="mt-6 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-gray-700 text-left">
-              <div className="font-semibold text-blue-900 mb-1">Plan gratuit — sans limite de temps</div>
+              <div className="font-semibold text-blue-900 mb-1">Essai gratuit — commence à la première mission</div>
               <ul className="space-y-1 text-gray-700">
-                <li>• 1 mission active max</li>
-                <li>• 10 intervenants max</li>
-                <li>• Toutes les fonctionnalités : cascade, SMS, dashboard</li>
+                <li>• 30 jours · 3 missions maximum</li>
+                <li>• 30 intervenants maximum</li>
+                <li>• Toutes les fonctionnalités : cascade WhatsApp, suivi des réponses</li>
               </ul>
             </div>
           </div>
@@ -201,7 +201,7 @@ export default function Onboarding() {
             data-testid="onboarding-next-btn"
             className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors"
           >
-            {step === QUESTIONS.length + 1 ? (saving ? "Création…" : "Créer mon compte gratuit") : "Suivant"}
+            {step === QUESTIONS.length + 1 ? (saving ? "Création…" : "Accéder à ma première mission") : "Suivant"}
             <ArrowRight className="w-4 h-4"/>
           </button>
         </div>
