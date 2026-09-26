@@ -660,6 +660,11 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
             "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
+    await record_activation_event(
+        user,
+        "sign_up",
+        metadata={"source": "registration"},
+    )
 
     if payload.meta_consent:
         origin = (request.headers.get("origin") or FRONTEND_URL).rstrip("/")
@@ -1892,11 +1897,19 @@ async def payment_status_endpoint(session_id: str):
                               "updated_at": iso(now_utc())}},
                 )
                 if s.metadata and s.metadata.get("user_id"):
-                    await db.users.update_one({"id": s.metadata["user_id"]}, {"$set": {
+                    uid = s.metadata["user_id"]
+                    await db.users.update_one({"id": uid}, {"$set": {
                         "plan": "pro", "subscription_status": "active",
                         "stripe_customer_id": s.customer, "stripe_subscription_id": s.subscription,
                         "subscription_billing_interval": (s.metadata or {}).get("billing_interval"),
                     }})
+                    paid_user = await db.users.find_one({"id": uid}, {"_id": 0})
+                    if paid_user:
+                        await record_activation_event(
+                            paid_user,
+                            "subscription_started",
+                            metadata={"subscription_id": s.subscription, "session_id": session_id},
+                        )
                 if s.payment_status == "paid":
                     await _send_subscribe_meta_if_needed(session_id, s.subscription)
                 record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
@@ -1931,6 +1944,13 @@ async def stripe_webhook(request: Request):
                 "stripe_subscription_id": obj.get("subscription"),
                 "subscription_billing_interval": (obj.get("metadata") or {}).get("billing_interval"),
             }})
+            paid_user = await db.users.find_one({"id": uid}, {"_id": 0})
+            if paid_user and obj.get("payment_status") == "paid":
+                await record_activation_event(
+                    paid_user,
+                    "subscription_started",
+                    metadata={"subscription_id": obj.get("subscription"), "session_id": obj["id"]},
+                )
         if obj.get("payment_status") == "paid":
             await _send_subscribe_meta_if_needed(obj["id"], obj.get("subscription"))
     elif t == "customer.subscription.deleted":
