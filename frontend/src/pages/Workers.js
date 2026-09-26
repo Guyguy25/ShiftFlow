@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Search, Trash2, Edit2, X, Info, MessageCircle, Smartphone, Check, RefreshCw, ArrowRight, UserPlus } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, X, Info, MessageCircle, Smartphone, Check, RefreshCw, ArrowRight, UserPlus, AlertTriangle, RotateCcw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { toast, Toaster } from "sonner";
 import UpgradeModal from "../components/UpgradeModal";
@@ -44,6 +44,7 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
   const [pairCode, setPairCode] = useState("");
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState("");
+  const [resettingConnection, setResettingConnection] = useState(false);
   const refreshLockRef = useRef(false);
   const sessionStartLockRef = useRef(false);
 
@@ -67,6 +68,8 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
       setStatus(data);
       if (data.refreshCooldown > 0) setRefreshCooldown(data.refreshCooldown);
       if (!data.connected) {
+        setContacts([]);
+        setSelected(new Set());
         setContactsReady(false);
         setLoading(false);
         if (!data.hasQR && !data.starting) await startWhatsAppSession();
@@ -137,6 +140,27 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
     } finally {
       refreshLockRef.current = false;
       setRefreshing(false);
+    }
+  };
+
+  const resetWhatsAppConnection = async () => {
+    if (resettingConnection) return;
+    setResettingConnection(true);
+    try {
+      await api.post("/whatsapp/session/logout");
+      setContacts([]);
+      setSelected(new Set());
+      setContactsReady(false);
+      setRefreshCooldown(0);
+      setPairCode("");
+      setPairError("");
+      setStatus({ connected: false, hasQR: false, starting: false });
+      toast.success("Connexion WhatsApp réinitialisée. Reconnectez votre compte.");
+      await startWhatsAppSession();
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail) || "Impossible de réinitialiser la connexion WhatsApp.");
+    } finally {
+      setResettingConnection(false);
     }
   };
 
@@ -278,19 +302,54 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
       </div>}
 
       {status?.connected && <div className="mt-6">
+        {contactsReady && contacts.length === 0 ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><AlertTriangle className="w-5 h-5" /></div>
+            <div className="min-w-0">
+              <h4 className="font-semibold text-amber-950">Connexion WhatsApp incomplète</h4>
+              <p className="mt-1 text-sm leading-relaxed text-amber-900">
+                WhatsApp est bien connecté, mais aucun contact n’a été synchronisé. Cela peut arriver après une première liaison et vous ne devez pas rester bloqué sur “0 contact”.
+              </p>
+              <p className="mt-2 text-xs text-amber-800">
+                Si votre WhatsApp contient bien des contacts enregistrés, essayez d’abord une synchronisation. Si le problème persiste, réinitialisez la connexion puis reconnectez votre compte.
+              </p>
+            </div>
+          </div>
+          <div className={`mt-4 flex gap-2 ${mobile ? "flex-col" : "flex-wrap"}`}>
+            <button
+              type="button"
+              onClick={refreshContacts}
+              disabled={refreshDisabled || resettingConnection}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-amber-300 bg-white text-amber-950 font-medium disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Synchronisation…" : refreshCooldown > 0 ? `Réessayer dans ${refreshCooldown}s` : "Réessayer la synchronisation"}
+            </button>
+            <button
+              type="button"
+              onClick={resetWhatsAppConnection}
+              disabled={resettingConnection}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-semibold disabled:opacity-50"
+            >
+              <RotateCcw className={`w-4 h-4 ${resettingConnection ? "animate-spin" : ""}`} />
+              {resettingConnection ? "Réinitialisation…" : "Réinitialiser et reconnecter WhatsApp"}
+            </button>
+          </div>
+        </div> : <>
         <div className="flex items-center justify-between gap-3 mb-4">
           <div>
             <div className="flex items-center gap-2 text-green-700 font-medium"><Check className="w-4 h-4" />WhatsApp connecté</div>
-            <p className="text-sm text-gray-500 mt-1">{contacts.length} contact{contacts.length > 1 ? "s" : ""} disponibles</p>
+            <p className="text-sm text-gray-500 mt-1">{contactsReady ? `${contacts.length} contact${contacts.length > 1 ? "s" : ""} disponibles` : "Synchronisation des contacts…"}</p>
           </div>
-          <button type="button" onClick={refreshContacts} disabled={refreshDisabled} title={refreshDisabled ? `Disponible dans ${refreshCooldown}s` : "Actualiser les contacts WhatsApp"} className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
-            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />{refreshLabel}
+          <button type="button" onClick={refreshContacts} disabled={refreshDisabled || !contactsReady} title={refreshDisabled ? `Disponible dans ${refreshCooldown}s` : "Actualiser les contacts WhatsApp"} className="px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50 inline-flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+            <RefreshCw className={`w-4 h-4 ${refreshing || !contactsReady ? "animate-spin" : ""}`} />{contactsReady ? refreshLabel : "Synchronisation"}
           </button>
         </div>
+        {contactsReady && <>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher un contact..." className="w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
         <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
           <div className="max-h-[400px] overflow-y-auto">
-            {filteredContacts.length === 0 && <div className="p-8 text-center text-gray-500">{contacts.length === 0 ? "Aucun contact disponible pour le moment." : "Aucun contact trouvé."}</div>}
+            {filteredContacts.length === 0 && <div className="p-8 text-center text-gray-500">Aucun contact trouvé.</div>}
             {filteredContacts.map((contact) => {
               const checked = selected.has(contact.id);
               return <label key={contact.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}>
@@ -311,6 +370,8 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
             <button type="button" onClick={importContacts} disabled={importing || selected.size === 0} className={`${mobile ? "flex-[1.4]" : ""} px-4 py-2.5 rounded-md bg-blue-600 text-white disabled:opacity-60`}>{importing ? "Import..." : `Importer ${selected.size} contact(s)`}</button>
           </div>
         </div>
+        </>}
+        </>}
       </div>}
     </div>
   </div>;
