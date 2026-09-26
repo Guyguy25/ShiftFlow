@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 import server as server_module
 from server import get_current_user, db, new_id, iso, now_utc
@@ -210,11 +210,24 @@ async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: d
         status, error = "failed", str(exc)
         server_module.logger.warning(f"WhatsApp invitation failed to {to}: {error}")
 
-    return await _insert_notification(
+    notification = await _insert_notification(
         mission_id=mission["id"], shift_id=shift["id"], slot_id=slot["id"], worker_id=worker["id"],
         to=to, body=body, url=url, status=status, error=error, kind="invite",
         provider_message_id=(result or {}).get("messageId") if result else None,
     )
+    if status == "sent":
+        await server_module.record_activation_event(
+            agency,
+            "first_cascade_sent",
+            metadata={
+                "mission_id": mission["id"],
+                "shift_id": shift["id"],
+                "notification_id": notification["id"],
+            },
+            meta_event_name="FirstCascadeSent",
+            event_source_path=f"/app/missions/{mission['id']}",
+        )
+    return notification
 
 
 async def send_owner_alert_whatsapp(agency: dict, mission: dict, shift: dict, worker: dict, missing: int) -> dict:
@@ -444,8 +457,18 @@ async def reset_message_template(user=Depends(get_current_user)):
 
 
 @router.get("/status")
-async def whatsapp_status(user=Depends(get_current_user)):
-    return await whatsapp_request("GET", "/status", user)
+async def whatsapp_status(request: Request, user=Depends(get_current_user)):
+    status = await whatsapp_request("GET", "/status", user)
+    if isinstance(status, dict) and status.get("connected"):
+        await server_module.record_activation_event(
+            user,
+            "whatsapp_connected",
+            metadata={"session_id": str(status.get("sessionId") or user["id"])},
+            request=request,
+            meta_event_name="WhatsAppConnected",
+            event_source_path="/app/workers",
+        )
+    return status
 
 
 @router.get("/contacts")
@@ -521,7 +544,7 @@ async def whatsapp_followups_cron(user=Depends(get_current_user)):
 
 
 @router.post("/import")
-async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
+async def whatsapp_import(payload: dict, request: Request, user=Depends(get_current_user)):
     await server_module.ensure_trial_active_or_raise(user)
     selected_ids = payload.get("contacts", [])
     if not isinstance(selected_ids, list) or not selected_ids:
@@ -569,4 +592,13 @@ async def whatsapp_import(payload: dict, user=Depends(get_current_user)):
         worker.pop("_id", None)
         created.append(worker)
         current_count += 1
+    if created:
+        await server_module.record_activation_event(
+            user,
+            "worker_added",
+            metadata={"created_count": len(created), "source": "whatsapp_import"},
+            request=request,
+            meta_event_name="WorkerAdded",
+            event_source_path="/app/workers",
+        )
     return {"success": True, "created": len(created), "skipped": len(skipped), "workers": created, "quota_hit": limit is not None and len(skipped) > 0 and current_count >= limit, "limit": limit}
