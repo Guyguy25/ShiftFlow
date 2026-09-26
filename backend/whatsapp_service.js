@@ -320,6 +320,33 @@ async function startSession(state) { if (shuttingDown || state.starting || state
     await applyLidMapping(state, update);
 });
 
+sock.ev.on("messaging-history.set", async event => {
+    if (generation !== state.generation) return;
+
+    const historyContacts = Array.isArray(event?.contacts) ? event.contacts : [];
+
+    // Baileys documents Contact.name as the name saved by the current user in
+    // WhatsApp. Contact.notify is the other person's self-chosen WhatsApp name.
+    // A fresh linked device can expose the full history contact set here even
+    // when contacts.upsert is empty, so only promote entries with a real saved
+    // address-book name. This recovers saved contacts without re-importing the
+    // hundreds of chat/push-name pseudo-contacts that caused the old ~800 list.
+    const savedContacts = historyContacts.filter(contact => {
+        const savedName = String(contact?.name || "").trim();
+        return !!savedName && !looksLikePhoneName(savedName);
+    });
+
+    if (!savedContacts.length) return;
+
+    const changed = await upsertContacts(state, savedContacts, "address_book");
+    await resolvePendingLids(state);
+    if (changed > 0) await saveContactsCache(state);
+
+    console.log(
+        `📒 Contacts carnet depuis historique [${state.id}] : ${savedContacts.length}/${historyContacts.length} candidats sauvegardés, ${sortedContacts(state).length} exploitables`
+    );
+});
+
 sock.ev.on("contacts.upsert", async list => {
     if (generation !== state.generation) return;
     const changed = await upsertContacts(state, Array.isArray(list) ? list : [], "address_book");
