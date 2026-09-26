@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap, ArrowRight, ArrowLeft, Check } from "lucide-react";
+import { Zap, ArrowRight, ArrowLeft, Check, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
@@ -34,6 +34,7 @@ export default function Register() {
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const setA = (k, v) => setAnswers((prev) => ({ ...prev, [k]: v }));
@@ -58,9 +59,17 @@ export default function Register() {
     if (isPhoneValid(raw)) return "";
     return "Téléphone invalide (ex : +33612345678 ou 0612345678).";
   };
-  const validatePassword = (raw) => {
+  const passwordChecks = (raw) => {
     const v = raw || "";
-    if (v.length < 8 || !/[A-Za-z]/.test(v) || !/\d/.test(v)) {
+    return {
+      length: v.length >= 8,
+      letter: Array.from(v).some((ch) => ch.toLowerCase() !== ch.toUpperCase()),
+      digit: /\d/.test(v),
+    };
+  };
+  const validatePassword = (raw) => {
+    const checks = passwordChecks(raw);
+    if (!checks.length || !checks.letter || !checks.digit) {
       return "8 caractères minimum, avec au moins une lettre et un chiffre.";
     }
     return "";
@@ -135,6 +144,7 @@ export default function Register() {
 
   const inputCls = "mt-1 w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500";
   const currentQ = step < QUESTIONS.length ? QUESTIONS[step] : null;
+  const currentPasswordChecks = passwordChecks(form.password);
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
@@ -224,9 +234,43 @@ export default function Register() {
                 <input required data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
                 {phoneError && <div className="text-xs text-red-600 mt-1" data-testid="register-phone-error">{phoneError}</div>}
               </div>
-              <div><label className="text-sm font-medium">Mot de passe *</label>
-                <input type="password" name="new-password" autoComplete="new-password" required minLength={8} data-testid="register-password-input" className={inputCls} value={form.password} onChange={setF("password")} placeholder="Minimum 8 caractères, 1 lettre + 1 chiffre"/>
-                {passwordError && <div className="text-xs text-red-600 mt-1" data-testid="register-password-error">{passwordError}</div>}</div>
+              <div>
+                <label className="text-sm font-medium">Mot de passe *</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="new-password"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                    data-testid="register-password-input"
+                    className={`${inputCls} pr-11`}
+                    value={form.password}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm((previous) => ({ ...previous, password: value }));
+                      if (passwordError) setPasswordError(validatePassword(value));
+                    }}
+                    placeholder="Minimum 8 caractères, 1 lettre + 1 chiffre"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((previous) => !previous)}
+                    aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                    data-testid="register-password-toggle"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                  <span className={currentPasswordChecks.length ? "text-green-700" : "text-gray-500"}>{currentPasswordChecks.length ? "✓" : "○"} 8 caractères</span>
+                  <span className={currentPasswordChecks.letter ? "text-green-700" : "text-gray-500"}>{currentPasswordChecks.letter ? "✓" : "○"} 1 lettre</span>
+                  <span className={currentPasswordChecks.digit ? "text-green-700" : "text-gray-500"}>{currentPasswordChecks.digit ? "✓" : "○"} 1 chiffre</span>
+                </div>
+                <div className="mt-1 text-[11px] text-gray-400">Aucune majuscule n’est obligatoire.</div>
+                {passwordError && <div className="text-xs text-red-600 mt-1" data-testid="register-password-error">{passwordError}</div>}
+              </div>
             </div>
 
             <label className="mt-5 flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 cursor-pointer" data-testid="register-legal-consent">
