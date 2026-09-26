@@ -78,7 +78,7 @@ class ActivationTrackingTest(IsolatedAsyncioTestCase):
         self.assertEqual(meta.await_count, 1)
         self.assertEqual(activation_events.update_one.await_count, 2)
         query = activation_events.update_one.call_args_list[0].args[0]
-        self.assertEqual(query, {"agency_id": "agency-1", "event_name": "worker_added"})
+        self.assertEqual(query, {"_id": "agency-1:worker_added"})
         kwargs = meta.await_args.kwargs
         self.assertEqual(kwargs["event_id"], "activation_worker_added_agency-1")
         self.assertEqual(kwargs["event_source_url"], "https://www.shiftflow.io/app/workers")
