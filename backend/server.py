@@ -1019,7 +1019,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
     await db.mission_workers.insert_many(slots)
     await db.shifts.update_one({"id": shift_id}, {"$set": {"status": "in_progress"}})
     await db.missions.update_one({"id": shift["mission_id"]}, {"$set": {"status": "in_progress"}})
-    delivery = await cascade_next_for_shift(shift_id)
+    await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
 
     refreshed_shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
@@ -1027,7 +1027,6 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, user
     remaining = max(0, int(shift.get("people_needed") or 0) - confirmed)
     return {
         "ok": True,
-        "delivery": delivery if isinstance(delivery, dict) else None,
         "slots_created": len(slots),
         "total_candidates": len(existing) + len(slots),
         "remaining_needed": remaining,
@@ -1040,9 +1039,9 @@ async def force_cascade(shift_id: str, user=Depends(get_current_user)):
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
-    delivery = await cascade_next_for_shift(shift_id)
+    await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
-    return {"ok": True, "delivery": delivery if isinstance(delivery, dict) else None}
+    return {"ok": True}
 
 
 @api.post("/mission-workers/{slot_id}/mark-no-answer")

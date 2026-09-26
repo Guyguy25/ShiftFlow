@@ -4,13 +4,108 @@ import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, Arr
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
-import WhatsAppConnectModal from "../components/WhatsAppConnectModal";
+import WhatsAppQrGuide from "../components/WhatsAppQrGuide";
 
 const TYPE_LABEL = {
   montage: "Montage", demontage: "Démontage", montage_demontage: "Montage + Démontage",
   technique: "Technique", autre: "Autre",
 };
 
+function WhatsAppConnectModal({ onClose, onConnected }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+  const completedRef = useRef(false);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get("/whatsapp/status");
+      setStatus(data);
+      setError("");
+      return data;
+    } catch (err) {
+      setError(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp.");
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const startSession = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
+    try {
+      await api.post("/whatsapp/session/start");
+      await refreshStatus();
+    } catch (err) {
+      setError(formatApiError(err.response?.data?.detail) || "Impossible de démarrer WhatsApp.");
+    } finally {
+      setStarting(false);
+    }
+  }, [refreshStatus, starting]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const current = await refreshStatus();
+      if (!cancelled && current && !current.connected && !current.hasQR && !current.starting) {
+        await startSession();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [refreshStatus, startSession]);
+
+  useEffect(() => {
+    if (!status?.connected || completedRef.current) return;
+    completedRef.current = true;
+    onConnected();
+  }, [status?.connected, onConnected]);
+
+  useEffect(() => {
+    if (status?.connected) return undefined;
+    const timer = setInterval(refreshStatus, 1500);
+    return () => clearInterval(timer);
+  }, [status?.connected, refreshStatus]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs uppercase tracking-widest text-green-700 font-bold">WhatsApp requis</div>
+            <h3 className="mt-1 font-display font-bold text-xl">Connectez votre WhatsApp</h3>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-500">×</button>
+        </div>
+        <p className="mt-3 text-sm text-gray-600">
+          ShiftFlow envoie les missions uniquement via votre compte WhatsApp. Connectez-le pour lancer la cascade.
+        </p>
+
+        {status?.connected ? (
+          <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm text-green-800">
+            WhatsApp est connecté. Lancement de la cascade…
+          </div>
+        ) : status?.hasQR && status?.qr ? (
+          <WhatsAppQrGuide qr={status.qr} />
+        ) : (
+          <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
+            <RefreshCw className="w-7 h-7 mx-auto text-gray-400 animate-spin" />
+            <div className="mt-3 text-sm font-medium text-gray-800">Préparation de votre session WhatsApp…</div>
+            <div className="mt-1 text-xs text-gray-500">Le QR code apparaîtra automatiquement.</div>
+          </div>
+        )}
+
+        {error && <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">{error}</div>}
+        {!loading && !status?.connected && !status?.hasQR && !status?.starting && (
+          <button type="button" onClick={startSession} disabled={starting} className="mt-4 w-full py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-60">
+            {starting ? "Connexion…" : "Réessayer"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = [] }) {
   const nav = useNavigate();
@@ -37,9 +132,8 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
     setSaving(true); setError(""); setWaitingForWhatsApp(false); setConnectOpen(false);
     try {
-      const { data } = await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected });
-      if (data.delivery?.sent > 0) toast.success(`${data.delivery.sent} invitation(s) envoyée(s)`);
-      else toast.warning("Sélection enregistrée, mais aucun envoi confirmé. Vérifiez WhatsApp puis réessayez depuis ce créneau.");
+      await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected });
+      toast.success("Cascade démarrée sur ce shift");
       onSelected();
     } catch (err) {
       const detail = formatApiError(err.response?.data?.detail) || err.message;
@@ -213,7 +307,7 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
           </button>
         </div>
       </div>
-      {connectOpen && <WhatsAppConnectModal sending onClose={() => { setConnectOpen(false); setWaitingForWhatsApp(false); }} onConnected={onWhatsAppConnected} />}
+      {connectOpen && <WhatsAppConnectModal onClose={() => { setConnectOpen(false); setWaitingForWhatsApp(false); }} onConnected={onWhatsAppConnected} />}
     </>
   );
 }
@@ -223,23 +317,6 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
   const filled = shift.confirmed_count >= shift.people_needed;
   const [expandSelect, setExpandSelect] = useState(autoExpand && !filled);
   const missing = Math.max(0, shift.people_needed - shift.confirmed_count);
-  const [retrying, setRetrying] = useState(false);
-  const retryLock = useRef(false);
-  const [retryConnect, setRetryConnect] = useState(false);
-  const retry = async () => {
-    if (retryLock.current) return;
-    retryLock.current = true;
-    setRetrying(true);
-    try {
-      const { data: status } = await api.get("/whatsapp/status");
-      if (!status.connected) { setRetryConnect(true); return; }
-      const { data } = await api.post(`/shifts/${shift.id}/next-cascade`);
-      if (data.delivery?.sent > 0) toast.success(`${data.delivery.sent} invitation(s) envoyée(s)`);
-      else toast.warning("Aucun nouvel envoi confirmé. Vérifiez la connexion et les numéros des intervenants.");
-      await onReload();
-    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
-    finally { retryLock.current = false; setRetrying(false); }
-  };
 
   useEffect(() => {
     if (autoExpand && !filled) setExpandSelect(true);
@@ -299,11 +376,6 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
         </div>
       </div>
 
-      {retryConnect && <WhatsAppConnectModal onClose={() => setRetryConnect(false)} onConnected={() => { setRetryConnect(false); toast.success("WhatsApp connecté. Vous pouvez réessayer l’envoi."); }} />}
-      {!filled && mission.status !== "cancelled" && shift.status !== "cancelled" && shift.slots?.some(s => s.status === "pending") && !shift.slots.some(s => s.status === "contacted" || s.status === "confirmed") && <div className="p-4 bg-amber-50 text-sm">
-        <p>Aucune invitation en attente de réponse. Vos intervenants restent sélectionnés.</p>
-        <button type="button" onClick={retry} disabled={retrying} className="mt-2 px-4 py-3 rounded-lg bg-blue-600 text-white disabled:opacity-50">{retrying ? "Envoi…" : "Réessayer l’envoi"}</button>
-      </div>}
       {noSlots ? (
         <div className="px-4 sm:px-6 py-5 sm:py-6">
           {!expandSelect ? (
@@ -380,23 +452,19 @@ export default function MissionDetail() {
   const [searchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [workers, setWorkers] = useState([]);
-  const [loadError, setLoadError] = useState("");
 
   const load = useCallback(async () => {
-    try {
-      const [{ data }, { data: team }] = await Promise.all([api.get(`/missions/${id}`), api.get("/workers")]);
-      setData(data); setWorkers(team.filter(w => w.active !== false)); setLoadError("");
-    } catch { setLoadError("Impossible de charger la mission et ses intervenants. Réessayez."); }
+    const { data } = await api.get(`/missions/${id}`);
+    setData(data);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
-
+  useEffect(() => { api.get("/workers").then((r) => setWorkers(r.data.filter((w) => w.active))); }, []);
   useEffect(() => {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
 
-  if (loadError) return <div role="alert">{loadError}<button onClick={load} className="ml-2 underline text-blue-700">Réessayer</button></div>;
   if (!data) return <div className="text-gray-500">Chargement…</div>;
   const m = data;
   const totalCost = (m.shifts || []).reduce((sum, sh) => sum + (sh.estimated_cost || 0), 0);

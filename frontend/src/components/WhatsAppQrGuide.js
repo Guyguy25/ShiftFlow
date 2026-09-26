@@ -6,7 +6,6 @@ export default function WhatsAppQrGuide({ qr }) {
 
   return (
     <div className="mt-5" data-testid="whatsapp-qr-guide">
-      <p className="mb-4 text-sm text-gray-700"><strong>Pour scanner ce QR, utilisez deux appareils.</strong> Ouvrez cette page sur un ordinateur et utilisez WhatsApp sur votre téléphone. Le téléphone ne peut pas scanner son propre écran.</p>
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-left">
         <div className="flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
@@ -59,7 +58,7 @@ export default function WhatsAppQrGuide({ qr }) {
             <CheckCircle2 className="w-4 h-4" /> Scanner WhatsApp prêt
           </div>
           <div className="mt-4 flex justify-center">
-            <img src={qr} alt="QR code de connexion WhatsApp" className="w-64 max-w-full h-auto border rounded-lg bg-white" />
+            <img src={qr} alt="QR code de connexion WhatsApp" className="w-64 h-64 border rounded-lg bg-white" />
           </div>
           <p className="mt-3 text-xs font-medium text-gray-600">
             Scannez maintenant avec le scanner affiché dans WhatsApp — pas avec l'appareil photo du téléphone.

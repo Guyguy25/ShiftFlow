@@ -5,7 +5,6 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 
-import WhatsAppConnectModal from "../components/WhatsAppConnectModal";
 import { activationNext } from "../lib/activation";
 
 function MissionCard({ m }) {
@@ -45,7 +44,6 @@ export default function Dashboard() {
   const [quota, setQuota] = useState(null);
 
   const [error, setError] = useState("");
-  const [connectOpen, setConnectOpen] = useState(false);
   const load = useCallback(() => {
     setError("");
     api.get("/dashboard/summary").then((r) => setData(r.data)).catch(() => setError("Impossible de charger votre tableau de bord."));
@@ -74,11 +72,10 @@ export default function Dashboard() {
         </Link>}
       </div>
 
-      {connectOpen && <WhatsAppConnectModal onClose={() => setConnectOpen(false)} onConnected={() => { setConnectOpen(false); load(); }} />}
       {next && <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-5" data-testid="activation-next">
         <h2 className="font-semibold text-lg">Votre première recherche de disponibilités</h2>
         <p className="mt-2 text-sm text-gray-700">{next.description}</p>
-        {next.connect ? <button onClick={() => setConnectOpen(true)} className="mt-4 w-full sm:w-auto px-5 py-3 bg-blue-600 text-white rounded-lg font-semibold">{next.label}</button> : <Link to={next.href} className="mt-4 inline-flex justify-center w-full sm:w-auto px-5 py-3 bg-blue-600 text-white rounded-lg font-semibold">{next.label}</Link>}
+        <Link to={next.connect ? "/app/workers?add=1" : next.href} className="mt-4 inline-flex justify-center w-full sm:w-auto px-5 py-3 bg-blue-600 text-white rounded-lg font-semibold">{next.label}</Link>
         <details className="mt-4 text-sm text-gray-700"><summary className="cursor-pointer">Configuration : {steps.filter(Boolean).length}/4</summary>
           <ol className="mt-2 space-y-2">{["Mission créée", "Intervenants ajoutés", "WhatsApp connecté", "Première invitation envoyée"].map((label, i) => <li key={label}>{steps[i] ? "✓" : "○"} {label}</li>)}</ol>
         </details>
@@ -94,7 +91,7 @@ export default function Dashboard() {
             <><strong className="text-amber-900">WhatsApp non connecté</strong><div className="text-xs sm:text-sm text-amber-800 mt-0.5">Connectez-le avant d’envoyer une mission.</div></>
           )}
         </div>
-        {!connected && <button onClick={() => setConnectOpen(true)} className="text-xs font-semibold text-amber-900 bg-white/80 border border-amber-200 rounded-lg px-2.5 py-1.5 shrink-0">Connecter</button>}
+        {!connected && <Link to="/app/workers?add=1" className="text-xs font-semibold text-amber-900 bg-white/80 border border-amber-200 rounded-lg px-2.5 py-1.5 shrink-0">Connecter</Link>}
       </div>}
 
       {!next && quota && quota.plan === "free" && (

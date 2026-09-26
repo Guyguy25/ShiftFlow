@@ -37,15 +37,3 @@ class ActivationTest(IsolatedAsyncioTestCase):
         db = SimpleNamespace(missions=SimpleNamespace(find=Mock(return_value=SimpleNamespace(to_list=AsyncMock(return_value=[]))), distinct=AsyncMock(return_value=[])), notifications=SimpleNamespace(find_one=AsyncMock(return_value=None)), workers=SimpleNamespace(count_documents=AsyncMock(return_value=0)))
         fn = load_function("dashboard_summary", db=db, now_utc=lambda: datetime.now(timezone.utc), twilio_ready=lambda: False)
         self.assertFalse((await fn({"id": "new"}))["activation"]["first_invite_sent"])
-
-    async def test_retry_exposes_delivery_without_changing_cascade(self):
-        for delivery in ({"sent": 0, "failed": 2, "total": 2}, {"sent": 1, "failed": 0, "total": 1}, 0):
-            cascade = AsyncMock(return_value=delivery)
-            access = AsyncMock()
-            shifts = SimpleNamespace(find_one=AsyncMock(return_value={"id": "s1"}))
-            fn = load_function("force_cascade", db=SimpleNamespace(shifts=shifts), ensure_trial_active_or_raise=access, cascade_next_for_shift=cascade, update_shift_and_mission_status=AsyncMock())
-            result = await fn("s1", {"id": "agency"})
-            self.assertEqual(result["delivery"], delivery if isinstance(delivery, dict) else None)
-            access.assert_awaited_once_with({"id": "agency"})
-            cascade.assert_awaited_once_with("s1")
-            shifts.find_one.assert_awaited_once_with({"id": "s1", "agency_id": "agency"}, {"_id": 0})
