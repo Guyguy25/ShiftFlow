@@ -760,29 +760,17 @@ async def update_me(payload: UpdateProfileIn, user=Depends(get_current_user)):
 
 @api.post("/auth/forgot-password")
 async def forgot(payload: ForgotIn):
-    email = payload.email.lower().strip()
-    user = await db.users.find_one({"email": email})
-    if user:
-        token = secrets.token_urlsafe(32)
-        await db.password_reset_tokens.insert_one({
-            "id": new_id(), "user_id": user["id"], "token": token,
-            "expires_at": iso(now_utc() + timedelta(hours=1)), "used": False,
-        })
-        logger.info(f"[RESET LINK] /reset-password?token={token} for {email}")
-        return {"ok": True, "demo_token": token}
+    # Password recovery is unavailable until tokens can be delivered only to
+    # the account owner's email address. Never expose a reset token in an API
+    # response or application log.
     return {"ok": True}
 
 
 @api.post("/auth/reset-password")
 async def reset(payload: ResetIn):
-    rec = await db.password_reset_tokens.find_one({"token": payload.token, "used": False})
-    if not rec:
-        raise HTTPException(status_code=400, detail="Lien invalide ou expiré")
-    if datetime.fromisoformat(rec["expires_at"]) < now_utc():
-        raise HTTPException(status_code=400, detail="Lien expiré")
-    await db.users.update_one({"id": rec["user_id"]}, {"$set": {"password_hash": hash_password(payload.new_password)}})
-    await db.password_reset_tokens.update_one({"id": rec["id"]}, {"$set": {"used": True}})
-    return {"ok": True}
+    # Disable previously issued tokens as well; their secrecy cannot be
+    # guaranteed because the old endpoint returned them to its caller.
+    raise HTTPException(status_code=503, detail="Réinitialisation temporairement indisponible")
 
 
 # ---------------- Workers ----------------
