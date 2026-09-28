@@ -13,12 +13,14 @@ from typing import List, Optional, Literal
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Form
+from fastapi.responses import HTMLResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from meta_capi import send_meta_event
+from onboarding_emails import run_onboarding_emails
 
 # Twilio (optional — fallback to demo if not configured)
 try:
@@ -1547,7 +1549,45 @@ async def cron_reminders(request: Request):
         return {"ok": True, "duplicate": True}
     await db.cron_runs.insert_one({"run_id": run_id, "kind": "reminders", "at": iso(now_utc())})
     sent = await _run_reminders()
-    return {"ok": True, "sent": sent}
+    emails_sent = 0
+    try:
+        emails_sent = await run_onboarding_emails(db, FRONTEND_URL, JWT_SECRET)
+    except Exception:
+        logger.exception("Onboarding email cron failed")
+    return {"ok": True, "sent": sent, "emails_sent": emails_sent}
+
+
+def _unsubscribe_user_id(token: str) -> str:
+    try:
+        data = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if data.get("type") != "onboarding_unsubscribe" or not data.get("sub"):
+            raise ValueError("Invalid token type")
+        return data["sub"]
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(status_code=400, detail="Ce lien n'est plus valide.")
+
+
+@api.get("/email/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe_page(token: str):
+    _unsubscribe_user_id(token)
+    return HTMLResponse(
+        '<!doctype html><html lang="fr"><meta charset="utf-8"><title>Emails ShiftFlow</title>'
+        '<main style="font:16px Arial,sans-serif;max-width:460px;margin:70px auto;padding:20px">'
+        '<h1>Emails de démarrage ShiftFlow</h1><p>Ne plus recevoir ces conseils par email ?</p>'
+        '<form method="post"><input type="hidden" name="token" value="' + token + '">'
+        '<button style="padding:12px 18px">Me désinscrire</button></form></main></html>'
+    )
+
+
+@api.post("/email/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe(token: str = Form(...)):
+    user_id = _unsubscribe_user_id(token)
+    await db.users.update_one({"id": user_id}, {"$set": {"onboarding_email_opt_out": True}})
+    return HTMLResponse(
+        '<!doctype html><html lang="fr"><meta charset="utf-8"><title>Emails ShiftFlow</title>'
+        '<main style="font:16px Arial,sans-serif;max-width:460px;margin:70px auto;padding:20px">'
+        '<h1>Vous êtes désinscrit.</h1><p>Vous ne recevrez plus les conseils de démarrage ShiftFlow.</p></main></html>'
+    )
 
 
 @api.get("/config")
