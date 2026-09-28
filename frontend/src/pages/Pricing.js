@@ -52,7 +52,7 @@ export default function Pricing() {
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
   const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
-  const [billingCycle, setBillingCycle] = useState(() => localStorage.getItem("shiftflow_billing_cycle") || "yearly");
+  const [billingCycle, setBillingCycle] = useState(() => localStorage.getItem("shiftflow_billing_cycle") || "monthly");
   const [highlightConsent, setHighlightConsent] = useState(false);
   const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null, trialStarted: !!user?.trial_started, trialExpired: user?.trial_expired || false, trialDaysRemaining: user?.trial_days_remaining ?? 30 });
   const consentRef = useRef(null);
@@ -135,7 +135,7 @@ export default function Pricing() {
   };
 
   const isPro = planState.plan === "pro" && planState.subscriptionStatus === "active";
-  const selectedBilling = BILLING_OPTIONS[billingCycle] || BILLING_OPTIONS.yearly;
+  const selectedBilling = BILLING_OPTIONS[billingCycle] || BILLING_OPTIONS.monthly;
 
   const selectBilling = (cycle) => {
     setBillingCycle(cycle);
