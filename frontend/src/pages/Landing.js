@@ -184,7 +184,7 @@ export default function Landing() {
               </div>
               <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
                 <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />Sans compte pour les intervenants</span>
-                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />WhatsApp connecté à votre compte</span>
+                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />WhatsApp connecté, même sur mobile</span>
                 <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />Sans engagement</span>
               </div>
             </div>
@@ -278,7 +278,7 @@ export default function Landing() {
             </div>
             <div className="mt-12 grid lg:grid-cols-3 gap-5">
               {[
-                { icon: MessageCircle, title: "Connectez WhatsApp", text: "Scannez une fois le QR depuis Appareils connectés, puis utilisez votre propre session WhatsApp dans ShiftFlow.", badge: "Principal" },
+                { icon: MessageCircle, title: "Connectez WhatsApp, même sur mobile", text: "Sur téléphone, liez votre WhatsApp avec un code depuis Appareils connectés. Sur ordinateur, scannez le QR code. Vous utilisez ensuite votre propre session WhatsApp dans ShiftFlow.", badge: "Principal" },
                 { icon: Users, title: "Importez vos contacts", text: "Récupérez vos contacts WhatsApp et sélectionnez ceux qui doivent devenir des intervenants ShiftFlow.", badge: "Rapide" },
                 { icon: ShieldCheck, title: "Gardez le contrôle", text: "Vous décidez qui contacter, dans quel ordre, et vous voyez l'état de chaque mission en temps réel.", badge: "Clair" },
               ].map(({ icon: Icon, title, text, badge }) => (

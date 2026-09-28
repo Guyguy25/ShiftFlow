@@ -66,7 +66,7 @@ const KB = [
     label: "Tarifs & abonnement",
     keywords: ["tarif", "prix", "abonnement", "payer", "pro", "gratuit", "plan"],
     answer:
-      "Le plan gratuit inclut 1 mission active et jusqu'à 10 intervenants. Le plan Pro est à 49 €/mois pour lever ces limites et continuer à utiliser ShiftFlow sans engagement.",
+      "L'essai gratuit dure 30 jours à partir de ta première mission, avec jusqu'à 3 missions et 30 intervenants, sans carte bancaire. Le plan Pro coûte 49 €/mois ou 499,80 €/an et permet des missions et intervenants illimités.",
   },
 ];
 

@@ -41,7 +41,7 @@ function AppRoutes() {
       <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
       <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
       <Route path="/m/:token" element={<PublicConfirm />} />
-      <Route path="/onboarding" element={<ProtectedRoute requireOnboarding={false}><Onboarding/></ProtectedRoute>} />
+      <Route path="/onboarding" element={<ProtectedRoute><Onboarding/></ProtectedRoute>} />
       <Route path="/payment/success" element={<PaymentSuccess />} />
       <Route path="/payment/cancel" element={<PaymentCancel />} />
       <Route path="/app" element={<ProtectedRoute><Layout><Outlet/></Layout></ProtectedRoute>}>

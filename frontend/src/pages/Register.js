@@ -1,34 +1,13 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap, ArrowRight, ArrowLeft, Check, Eye, EyeOff } from "lucide-react";
+import { Zap, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
 
-const QUESTIONS = [
-  { key: "team_size", q: "Combien d’intervenants mobilisez-vous en moyenne par mission ?",
-    options: ["1-5", "6-15", "16-30", "31+"] },
-  { key: "monthly_missions", q: "En moyenne, combien de missions gérez-vous chaque mois ?",
-    options: ["1-3", "4-10", "11-20", "21+"] },
-  { key: "current_tool", q: "Comment confirmez-vous aujourd’hui la disponibilité de vos intervenants ?",
-    options: ["WhatsApp / SMS manuellement", "Appels téléphoniques", "Excel / Google Sheets", "Outil de planning / staffing", "Au cas par cas"] },
-];
-
-const PAIN_OPTIONS = [
-  "Relancer les intervenants pour obtenir une réponse",
-  "Gérer les annulations de dernière minute",
-  "Trouver rapidement un remplaçant",
-  "Savoir qui est disponible pour une mission",
-  "Suivre les confirmations et les refus",
-  "Passer trop de temps sur WhatsApp / les appels",
-  "Éviter les absences non prévenues",
-];
-
 export default function Register() {
   const nav = useNavigate();
   const { register } = useAuth();
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState({ team_size: "", monthly_missions: "", current_tool: "", main_pain: [] });
   const [form, setForm] = useState({ name: "", agency_name: "", email: "", phone: "", password: "" });
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState("");
@@ -37,15 +16,6 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const setA = (k, v) => setAnswers((prev) => ({ ...prev, [k]: v }));
-  const togglePain = (pain) => {
-    setAnswers((prev) => ({
-      ...prev,
-      main_pain: prev.main_pain.includes(pain)
-        ? prev.main_pain.filter((item) => item !== pain)
-        : [...prev.main_pain, pain],
-    }));
-  };
   const setF = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const isPhoneValid = (raw) => {
     const digits = (raw || "").replace(/[\s.\-()]/g, "");
@@ -74,15 +44,6 @@ export default function Register() {
     }
     return "";
   };
-  const totalSteps = QUESTIONS.length + 2;
-  const progress = Math.round(((step + 1) / totalSteps) * 100);
-
-  const canProceed = () => {
-    if (step < QUESTIONS.length) return !!answers[QUESTIONS[step].key];
-    if (step === QUESTIONS.length) return answers.main_pain.length > 0;
-    return false;
-  };
-
   const readCookie = (name) => {
     const prefix = `${name}=`;
     const item = document.cookie.split("; ").find((part) => part.startsWith(prefix));
@@ -125,10 +86,6 @@ export default function Register() {
 
       await register({
         ...form,
-        onboarding_answers: {
-          ...answers,
-          main_pain: answers.main_pain.join(" | "),
-        },
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "account" },
         meta_consent: metaConsent,
         meta_attribution: metaAttribution,
@@ -143,7 +100,6 @@ export default function Register() {
   };
 
   const inputCls = "mt-1 w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const currentQ = step < QUESTIONS.length ? QUESTIONS[step] : null;
   const currentPasswordChecks = passwordChecks(form.password);
 
   return (
@@ -153,74 +109,11 @@ export default function Register() {
           <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-4 h-4 text-white"/></div>
           <span className="font-display font-bold">ShiftFlow</span>
         </Link>
-        <span className="ml-auto text-xs text-gray-500">Étape {Math.min(step + 1, totalSteps)}/{totalSteps}</span>
       </header>
 
       <main className="flex-1 max-w-xl w-full mx-auto px-6 py-10" data-testid="register-page">
-        <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden mb-8" data-testid="register-progress">
-          <div className="h-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
-        </div>
-
-        {step <= QUESTIONS.length && <button type="button" onClick={() => setStep(QUESTIONS.length + 1)} className="mb-5 text-sm text-blue-700 underline">Passer ces questions facultatives et créer mon compte</button>}
-        {step > 0 && step <= QUESTIONS.length && (
-          <button onClick={()=>setStep(step-1)} data-testid="register-back-btn" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
-            <ArrowLeft className="w-4 h-4"/> Retour
-          </button>
-        )}
-
-        {currentQ && (
-          <div data-testid={`register-step-${step}`}>
-            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Question {step + 1}/{QUESTIONS.length + 1}</div>
-            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">{currentQ.q}</h1>
-            <div className="mt-8 space-y-3">
-              {currentQ.options.map((opt) => (
-                <button key={opt} onClick={()=>setA(currentQ.key, opt)}
-                  data-testid={`register-opt-${currentQ.key}-${opt}`}
-                  className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-colors ${
-                    answers[currentQ.key] === opt ? "border-blue-600 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"
-                  }`}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{opt}</span>
-                    {answers[currentQ.key] === opt && <Check className="w-5 h-5 text-blue-600"/>}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {step === QUESTIONS.length && (
-          <div data-testid="register-pain">
-            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Question {step + 1}/{QUESTIONS.length + 1}</div>
-            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Quels problèmes rencontrez-vous le plus souvent dans la gestion de vos équipes ?</h1>
-            <p className="mt-3 text-sm text-gray-500">Vous pouvez en sélectionner plusieurs.</p>
-            <div className="mt-6 space-y-3">
-              {PAIN_OPTIONS.map((pain) => {
-                const selected = answers.main_pain.includes(pain);
-                return (
-                  <button
-                    key={pain}
-                    type="button"
-                    onClick={() => togglePain(pain)}
-                    data-testid={`register-pain-${pain}`}
-                    className={`w-full text-left px-5 py-4 rounded-xl border-2 transition-colors ${
-                      selected ? "border-blue-600 bg-blue-50" : "border-gray-200 bg-white hover:border-gray-300"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="font-medium">{pain}</span>
-                      {selected && <Check className="w-5 h-5 text-blue-600 shrink-0"/>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {step === QUESTIONS.length + 1 && (
           <form onSubmit={submit} data-testid="register-form" autoComplete="on">
-            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Finalisation</div>
+            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Créer mon compte</div>
             <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Démarrez votre essai gratuit</h1>
             <p className="mt-2 text-gray-600 text-sm">30 jours gratuits à partir de votre première mission · 3 missions · jusqu’à 30 intervenants · aucune carte bancaire requise.</p>
             <div className="mt-6 space-y-4">
@@ -290,14 +183,6 @@ export default function Register() {
               Déjà un compte ? <Link to="/login" data-testid="register-login-link" className="text-blue-600 font-medium hover:text-blue-700">Se connecter</Link>
             </div>
           </form>
-        )}
-
-        {step <= QUESTIONS.length && (
-          <button onClick={()=>setStep(step+1)} disabled={!canProceed()} data-testid="register-next-btn"
-            className="mt-8 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors">
-            Suivant <ArrowRight className="w-4 h-4"/>
-          </button>
-        )}
       </main>
     </div>
   );
