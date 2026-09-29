@@ -1,5 +1,6 @@
 import FirstMissionHelp from "./FirstMissionHelp";
 import React from "react";
+import { Link } from "react-router-dom";
 import { CalendarClock, Check, MessageCircle, Send, Users } from "lucide-react";
 import { useActivation } from "../context/ActivationContext";
 import ActionCoach from "./ActionCoach";
@@ -30,8 +31,9 @@ export default function AccountActivation() {
         <span className="account-step-icon" aria-hidden="true">{step.done ? <Check size={19} /> : <Icon size={19} />}</span><span><span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500">{step.done ? "Terminé" : index === currentIndex ? "À faire maintenant" : `Étape ${index + 1}`}</span><span className="mt-1 block text-sm font-semibold">{step.shortLabel}</span></span>
       </li>; })}
     </ol>
-    <FirstMissionHelp />
     <ActionCoach key={`${currentIndex}-${href}`} id={`account-${currentIndex}`} step={currentIndex + 1 || undefined} href={href} label={next.label} description={next.description} />
-    <p className="mt-4 text-xs leading-relaxed text-gray-500">Cette progression mesure vos actions dans ShiftFlow, indépendamment de vos coordonnées ; aucun message n’est envoyé à cette étape.</p>
+<p className="mt-4 text-sm leading-relaxed text-gray-600">Préparer votre mission n’envoie aucun message. Vous vérifierez les destinataires et le message avant de confirmer les demandes.</p>
+    <Link to="/demo" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline">Besoin de voir un exemple ? Essayer sans envoi</Link>
+    <details className="mt-3"><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium text-gray-700">Questions sur les contacts et les envois</summary><FirstMissionHelp /></details>
   </section>;
 }
