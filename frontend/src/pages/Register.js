@@ -83,7 +83,7 @@ export default function Register() {
   };
   const advance = e => {
     e.preventDefault();
-    if (step === 0 && (!form.name.trim() || !form.agency_name.trim())) { setError("Renseignez votre nom et celui de votre agence."); return; }
+    if (step === 0 && (!form.name.trim() || !form.agency_name.trim())) { setError("Renseignez votre nom et celui de votre organisation."); return; }
     if (step === 1) { const message = validatePhone(form.phone); setPhoneError(message); if (message) return; }
     setStep(s => Math.min(2, s + 1));
   };
@@ -149,7 +149,7 @@ export default function Register() {
   };
 
   const inputCls = "mt-2 block w-full min-h-12 rounded-xl border border-gray-300 bg-white px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const titles = ["Faisons connaissance.", "Comment vous joindre ?", "Votre espace est presque prêt."];
+  const titles = ["Préparez votre première mission", "Comment vous joindre ?", "Votre espace est presque prêt."];
   const input = (key, label, props = {}) => <label className="block text-sm font-medium text-gray-800" key={key}>{label}<input className={inputCls} value={form[key]} onChange={setF(key)} name={key} required maxLength={key === "password" ? 128 : 254} data-testid={`register-${key === "agency_name" ? "agency" : key}-input`} {...props} /></label>;
   return <div className="min-h-screen bg-[#F7F9FC] pb-16">
     <header className="border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between gap-4">
@@ -164,15 +164,16 @@ export default function Register() {
         <ul className="mt-8 space-y-4 text-sm text-gray-700">{["30 jours offerts dès votre première mission", "3 missions et jusqu’à 30 intervenants", "Aucune carte bancaire requise"].map(text => <li key={text} className="flex items-center gap-3"><Check size={18} className="text-emerald-600" />{text}</li>)}</ul>
       </aside>
       <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
-        <div className="flex justify-between gap-3 text-xs font-semibold text-gray-500"><span>{step === 0 ? "Votre agence" : step === 1 ? "Vos coordonnées" : "Sécurité"}</span><span>Étape {step + 1} sur 3</span></div>
+        <div className="flex justify-between gap-3 text-xs font-semibold text-gray-500"><span>{step === 0 ? "Votre organisation" : step === 1 ? "Vos coordonnées" : "Sécurité"}</span><span>Étape {step + 1} sur 3</span></div>
         <div className="mt-3 flex gap-1.5" role="progressbar" aria-label="Inscription" aria-valuemin={0} aria-valuemax={3} aria-valuenow={step + 1} data-testid="register-progress">{titles.map((_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-blue-600" : "bg-gray-100"}`} />)}</div>
         <h1 ref={heading} tabIndex={-1} className="mt-7 text-2xl sm:text-3xl font-display font-bold tracking-tight outline-none">{titles[step]}</h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-500">{step === 0 ? "Deux informations pour personnaliser votre espace." : step === 1 ? "Ces coordonnées seront celles de votre compte." : step === 2 ? "Choisissez un mot de passe pour protéger votre compte." : "Adaptons ShiftFlow à vos besoins. Vous pouvez passer ces questions."}</p>
-        {initial && step === initial.step && <p className="mt-3 text-sm text-blue-700">Bon retour ! Votre saisie a été restaurée, sauf le mot de passe.</p>}
+        {initial && Object.values(initial.form || {}).some(value => typeof value === "string" && value.trim()) && step === initial.step && <p className="mt-3 text-sm text-blue-700">Bon retour ! Votre saisie a été restaurée, sauf le mot de passe.</p>}
+        <p className="mt-3 text-sm text-gray-600">Sans carte bancaire. Aucun message envoyé à vos intervenants pendant l’inscription.</p><Link to="/demo" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline">Découvrir avec des contacts fictifs</Link>
         <form onSubmit={step === 2 ? submit : advance} className="mt-6" data-testid="register-form">
           <div className="space-y-5">
-            {step === 0 && <>{input("name", "Votre nom", { autoComplete: "name", placeholder: "Camille Martin" })}{input("agency_name", "Nom de votre agence", { autoComplete: "organization", placeholder: "Mon agence" })}</>}
-            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "email", placeholder: "vous@agence.fr" })}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
+            {step === 0 && <>{input("name", "Votre nom", { autoComplete: "name", placeholder: "Camille Martin" })}{input("agency_name", "Nom de votre entreprise ou de votre structure", { autoComplete: "organization", placeholder: "Ma structure" })}</>}
+            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "email", placeholder: "vous@entreprise.fr" })}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
             {step === 2 && <>
               {input("password", "Mot de passe", { type: showPassword ? "text" : "password", autoComplete: "new-password", minLength: 8, "aria-describedby": "password-help" })}
               <button type="button" onClick={() => setShowPassword(v => !v)} className="flex min-h-11 items-center gap-2 text-sm text-blue-700" aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}{showPassword ? "Masquer" : "Afficher le mot de passe"}</button>
@@ -187,7 +188,7 @@ export default function Register() {
             {step > 0 && <button type="button" disabled={loading} onClick={() => setStep(s => s - 1)} className="inline-flex min-h-11 items-center gap-1 text-sm text-gray-600"><ArrowLeft size={16} />Retour</button>}
           </div>
         </form>
-        <div className="mt-5 border-t border-gray-100 pt-4 text-xs leading-relaxed text-gray-500"><p className="flex items-start gap-2"><ShieldCheck size={15} className="shrink-0" />{saveStatus}</p><p className="mt-2">Votre saisie est sauvegardée pendant 7 jours pour reprendre votre inscription et comprendre les étapes d’abandon. Le mot de passe n’est pas enregistré dans le brouillon.</p></div>
+        <div className="mt-5 border-t border-gray-100 pt-4 text-xs leading-relaxed text-gray-500"><p className="flex items-start gap-2"><ShieldCheck size={15} className="shrink-0" />{saveStatus}</p><p className="mt-2">Votre saisie est conservée pendant 7 jours pour vous permettre de reprendre votre inscription. Ces étapes nous aident aussi à améliorer le parcours. Votre mot de passe n’est jamais enregistré dans ce brouillon.</p></div>
       </section>
     </main>
   </div>;

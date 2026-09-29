@@ -19,3 +19,26 @@ Run `python registration_report.py` from backend with the usual backend environm
 ## Validation
 
 Frontend production build; activation and draft unit tests; isolated backend activation and draft tests. Browser checks cover the three signup steps, same-browser resume, guided empty states, profile progress, Help, worker-add choices, and mobile layout down to 320px. These checks do not send real invitations or create production accounts.
+
+
+## First-message confidence
+
+Registration speaks to an organisation rather than only agencies. The public `/demo`
+route simulates a one-place cascade with fictitious people using component state only:
+no contact import, mission creation, message request, activation event or trial start.
+It is linked from signup and the first-mission FAQ (landing, activation, help and
+WhatsApp connection/import).
+
+The FAQ distinguishes WhatsApp contact synchronisation from selected worker imports,
+and describes automatic follow-ups after a real cascade has started. It does not
+claim that reconnecting a previously active account suspends its automations.
+
+The mission selector now loads the account's active message template for a personalised
+preview (the response link is a labelled placeholder), lists selected recipients and
+requires an explicit send confirmation. Changing the selection invalidates the review.
+Connecting WhatsApp returns to review instead of automatically submitting the selection.
+Preview failure blocks confirmation; retry and a synchronous submit lock prevent an
+unreviewed send and concurrent duplicate submissions from the confirmation button.
+
+Validation: InvitationReview.test.js covers preview/no-send, failed preview/retry,
+selection invalidation, reconnect/no-send, duplicate clicks and the isolated demo.
