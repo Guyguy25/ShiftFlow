@@ -306,7 +306,7 @@ export default function Layout({ children }) {
       )}
 
       <main className="flex-1 min-w-0 pt-14 lg:pt-0 lg:ml-64">
-        {user?.plan !== "pro" && quota && (
+        {user?.plan !== "pro" && quota && (trialStarted || trialExpired) && (
           <div className={`border-b transition-colors ${tone.banner}`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5">
               <div className="sm:hidden flex items-center justify-between gap-3">
