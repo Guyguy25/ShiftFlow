@@ -1,33 +1,70 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { Zap, ArrowRight, ArrowLeft, Check, ShieldCheck, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { formatApiError } from "../lib/api";
+import { API, formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
+import { DRAFT_KEY, readDraft, newDraftToken, emptyForm, emptyAnswers, draftSnapshot, sendDraft } from "../lib/registrationDraft";
 
 export default function Register() {
   const nav = useNavigate();
   const { register } = useAuth();
-  const [form, setForm] = useState({ name: "", agency_name: "", email: "", phone: "", password: "" });
+  const [initial] = useState(readDraft);
+  const [token] = useState(() => initial?.token || newDraftToken());
+  const [step, setStep] = useState(initial?.step || 0);
+  const [form, setForm] = useState(initial?.form || emptyForm);
+  const [answers] = useState(emptyAnswers);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const setF = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const isPhoneValid = (raw) => {
-    const digits = (raw || "").replace(/[\s.\-()]/g, "");
-    if (!digits) return true;
-    if (digits.startsWith("+33")) return /^\+33[1-9]\d{8}$/.test(digits);
-    if (digits.startsWith("0")) return /^0[1-9]\d{8}$/.test(digits);
-    if (digits.startsWith("+")) return /^\+\d{10,15}$/.test(digits);
-    return false;
-  };
-  const validatePhone = (raw) => {
-    if (isPhoneValid(raw)) return "";
-    return "Téléphone invalide (ex : +33612345678 ou 0612345678).";
+  const [saveStatus, setSaveStatus] = useState("");
+  const finished = useRef(false);
+  const heading = useRef(null);
+  const latest = useRef(null);
+  const queue = useRef(Promise.resolve());
+  const previousStep = useRef(null);
+  const setF = key => e => setForm(prev => ({ ...prev, [key]: e.target.value }));
+  const safeFormKey = JSON.stringify({ name: form.name, agency_name: form.agency_name, email: form.email, phone: form.phone });
+  const answersKey = JSON.stringify(answers);
+  useEffect(() => {
+    const snapshot = draftSnapshot(token, step, JSON.parse(safeFormKey), JSON.parse(answersKey));
+    latest.current = snapshot;
+    let localSaved = false;
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(snapshot)); localSaved = true; } catch {}
+    setSaveStatus(localSaved ? "Brouillon enregistré sur cet appareil." : "Sauvegarde en cours…");
+    const stepChanged = previousStep.current !== step;
+    previousStep.current = step;
+    const timer = setTimeout(() => {
+      queue.current = queue.current.catch(() => {}).then(async () => {
+        if (finished.current || (!stepChanged && latest.current !== snapshot)) return;
+        try {
+          await sendDraft(snapshot);
+          if (latest.current === snapshot) setSaveStatus(localSaved ? "Brouillon enregistré. Vous pouvez reprendre ici." : "Progression enregistrée. Gardez cette page ouverte pour conserver votre saisie.");
+        } catch {
+          if (latest.current === snapshot) setSaveStatus(localSaved ? "Brouillon conservé sur cet appareil · synchronisation indisponible." : "Sauvegarde indisponible. Gardez cette page ouverte.");
+        }
+      });
+    }, stepChanged ? 0 : 800);
+    return () => clearTimeout(timer);
+  }, [token, step, safeFormKey, answersKey]);
+  useEffect(() => {
+    const flush = () => {
+      if (finished.current || !latest.current) return;
+      const snapshot = latest.current;
+      fetch(`${API}/registration/draft`, { method: "PUT", credentials: "include", keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: snapshot.token, step: snapshot.step, revision: snapshot.updatedAt, fields: snapshot.form, answers: snapshot.answers }) }).catch(() => {});
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+  useEffect(() => { heading.current?.focus(); setError(""); }, [step]);
+  const validatePhone = raw => {
+    const value = raw.replace(/[\s.\-()]/g, "");
+    return /^(?:0[1-9]\d{8}|\+33[1-9]\d{8}|\+(?!33)\d{10,15})$/.test(value) ? "" : "Indiquez un numéro valide, par exemple 0612345678.";
   };
   const passwordChecks = (raw) => {
     const v = raw || "";
@@ -43,6 +80,12 @@ export default function Register() {
       return "8 caractères minimum, avec au moins une lettre et un chiffre.";
     }
     return "";
+  };
+  const advance = e => {
+    e.preventDefault();
+    if (step === 0 && (!form.name.trim() || !form.agency_name.trim())) { setError("Renseignez votre nom et celui de votre agence."); return; }
+    if (step === 1) { const message = validatePhone(form.phone); setPhoneError(message); if (message) return; }
+    setStep(s => Math.min(2, s + 1));
   };
   const readCookie = (name) => {
     const prefix = `${name}=`;
@@ -67,6 +110,8 @@ export default function Register() {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+    if (!form.name.trim() || !form.agency_name.trim()) { setStep(0); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) || validatePhone(form.phone)) { setStep(1); return; }
     if (!acceptedTerms) {
       setError("Vous devez accepter les Conditions et la Politique de confidentialité pour créer votre compte.");
       return;
@@ -79,111 +124,71 @@ export default function Register() {
     if (pErr || pwErr) { setLoading(false); return; }
     const acceptedAt = new Date().toISOString();
     try {
-      const metaConsent = localStorage.getItem("shiftflow_cookie_consent") === "accepted";
+      let metaConsent = false;
+      try { metaConsent = localStorage.getItem("shiftflow_cookie_consent") === "accepted"; } catch {}
       const metaAttribution = metaConsent ? readMetaAttribution() : null;
       const metaFbp = metaConsent ? readCookie("_fbp") : "";
       const metaFbc = metaConsent ? (readCookie("_fbc") || buildFallbackFbc(metaAttribution)) : "";
 
       await register({
         ...form,
+        registration_token: token,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "account" },
         meta_consent: metaConsent,
         meta_attribution: metaAttribution,
         meta_fbp: metaFbp || null,
         meta_fbc: metaFbc || null,
       });
-      localStorage.setItem("shiftflow_legal_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, scope: "account" }));
+      try { localStorage.setItem("shiftflow_legal_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, scope: "account" })); } catch {}
+      finished.current = true;
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
       nav("/app/dashboard");
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
     } finally { setLoading(false); }
   };
 
-  const inputCls = "mt-1 w-full h-11 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const currentPasswordChecks = passwordChecks(form.password);
-
-  return (
-    <div className="min-h-screen bg-[#F9FAFB] flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-2">
-        <Link to="/" className="flex items-center gap-2" data-testid="register-logo">
-          <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-4 h-4 text-white"/></div>
-          <span className="font-display font-bold">ShiftFlow</span>
-        </Link>
-      </header>
-
-      <main className="flex-1 max-w-xl w-full mx-auto px-6 py-10" data-testid="register-page">
-          <form onSubmit={submit} data-testid="register-form" autoComplete="on">
-            <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Créer mon compte</div>
-            <h1 className="mt-3 text-3xl font-display font-bold tracking-tight">Démarrez votre essai gratuit</h1>
-            <p className="mt-2 text-gray-600 text-sm">30 jours gratuits à partir de votre première mission · 3 missions · jusqu’à 30 intervenants · aucune carte bancaire requise.</p>
-            <div className="mt-6 space-y-4">
-              <div><label className="text-sm font-medium">Nom de l'agence *</label>
-                <input required data-testid="register-agency-input" className={inputCls} value={form.agency_name} onChange={setF("agency_name")} placeholder="Mon Agence Event"/></div>
-              <div><label className="text-sm font-medium">Votre nom *</label>
-                <input required data-testid="register-name-input" className={inputCls} value={form.name} onChange={setF("name")} placeholder="Tanguy Dupont"/></div>
-              <div><label className="text-sm font-medium">Email *</label>
-                <input type="email" name="email" autoComplete="username" required data-testid="register-email-input" className={inputCls} value={form.email} onChange={setF("email")} placeholder="vous@agence.com"/></div>
-              <div><label className="text-sm font-medium">Téléphone *</label>
-                <input required data-testid="register-phone-input" className={inputCls} value={form.phone} onChange={setF("phone")} placeholder="+33612345678"/>
-                {phoneError && <div className="text-xs text-red-600 mt-1" data-testid="register-phone-error">{phoneError}</div>}
-              </div>
-              <div>
-                <label className="text-sm font-medium">Mot de passe *</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="new-password"
-                    autoComplete="new-password"
-                    required
-                    minLength={8}
-                    data-testid="register-password-input"
-                    className={`${inputCls} pr-11`}
-                    value={form.password}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setForm((previous) => ({ ...previous, password: value }));
-                      if (passwordError) setPasswordError(validatePassword(value));
-                    }}
-                    placeholder="Minimum 8 caractères, 1 lettre + 1 chiffre"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((previous) => !previous)}
-                    aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
-                    data-testid="register-password-toggle"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                  <span className={currentPasswordChecks.length ? "text-green-700" : "text-gray-500"}>{currentPasswordChecks.length ? "✓" : "○"} 8 caractères</span>
-                  <span className={currentPasswordChecks.letter ? "text-green-700" : "text-gray-500"}>{currentPasswordChecks.letter ? "✓" : "○"} 1 lettre</span>
-                  <span className={currentPasswordChecks.digit ? "text-green-700" : "text-gray-500"}>{currentPasswordChecks.digit ? "✓" : "○"} 1 chiffre</span>
-                </div>
-                <div className="mt-1 text-[11px] text-gray-400">Aucune majuscule n’est obligatoire.</div>
-                {passwordError && <div className="text-xs text-red-600 mt-1" data-testid="register-password-error">{passwordError}</div>}
-              </div>
-            </div>
-
-            <label className="mt-5 flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 cursor-pointer" data-testid="register-legal-consent">
-              <input type="checkbox" required checked={acceptedTerms} onChange={(e)=>setAcceptedTerms(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-              <span>
-                J'ai lu et j'accepte les <Link to="/conditions" target="_blank" className="text-blue-600 font-medium hover:underline">Conditions générales d'utilisation et de vente</Link>
-                {" "}et la <Link to="/confidentialite" target="_blank" className="text-blue-600 font-medium hover:underline">Politique de confidentialité</Link>.
-              </span>
-            </label>
-
-            {error && <div className="mt-4 text-sm text-red-600" data-testid="register-error">{error}</div>}
-            <button type="submit" disabled={loading || !acceptedTerms} data-testid="register-submit-btn"
-              className="mt-6 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2">
-              {loading ? "Création…" : "Créer mon compte gratuitement"} <ArrowRight className="w-4 h-4"/>
-            </button>
-            <div className="mt-4 text-center text-sm text-gray-500">
-              Déjà un compte ? <Link to="/login" data-testid="register-login-link" className="text-blue-600 font-medium hover:text-blue-700">Se connecter</Link>
-            </div>
-          </form>
-      </main>
-    </div>
-  );
+  const inputCls = "mt-2 block w-full min-h-12 rounded-xl border border-gray-300 bg-white px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500";
+  const titles = ["Faisons connaissance.", "Comment vous joindre ?", "Votre espace est presque prêt."];
+  const input = (key, label, props = {}) => <label className="block text-sm font-medium text-gray-800" key={key}>{label}<input className={inputCls} value={form[key]} onChange={setF(key)} name={key} required maxLength={key === "password" ? 128 : 254} data-testid={`register-${key === "agency_name" ? "agency" : key}-input`} {...props} /></label>;
+  return <div className="min-h-screen bg-[#F7F9FC] pb-16">
+    <header className="border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between gap-4">
+      <Link to="/" className="flex items-center gap-2 font-display font-bold"><span className="rounded-lg bg-blue-600 p-2"><Zap size={18} className="text-white" /></span>ShiftFlow</Link>
+      <Link to="/login" className="text-sm font-medium text-blue-700">Se connecter</Link>
+    </header>
+    <main className="mx-auto grid max-w-5xl gap-12 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[0.8fr_1fr]" data-testid="register-page">
+      <aside className="hidden lg:block pt-8">
+        <span className="text-xs font-bold uppercase tracking-widest text-blue-700">Moins de relances. Plus de sérénité.</span>
+        <h2 className="mt-5 font-display text-4xl font-bold leading-tight text-gray-900">Votre prochaine mission commence ici.</h2>
+        <p className="mt-5 text-gray-600 leading-relaxed">Créez votre espace, ajoutez votre équipe et envoyez vos demandes de disponibilité depuis WhatsApp.</p>
+        <ul className="mt-8 space-y-4 text-sm text-gray-700">{["30 jours offerts dès votre première mission", "3 missions et jusqu’à 30 intervenants", "Aucune carte bancaire requise"].map(text => <li key={text} className="flex items-center gap-3"><Check size={18} className="text-emerald-600" />{text}</li>)}</ul>
+      </aside>
+      <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
+        <div className="flex justify-between gap-3 text-xs font-semibold text-gray-500"><span>{step === 0 ? "Votre agence" : step === 1 ? "Vos coordonnées" : "Sécurité"}</span><span>Étape {step + 1} sur 3</span></div>
+        <div className="mt-3 flex gap-1.5" role="progressbar" aria-label="Inscription" aria-valuemin={0} aria-valuemax={3} aria-valuenow={step + 1} data-testid="register-progress">{titles.map((_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-blue-600" : "bg-gray-100"}`} />)}</div>
+        <h1 ref={heading} tabIndex={-1} className="mt-7 text-2xl sm:text-3xl font-display font-bold tracking-tight outline-none">{titles[step]}</h1>
+        <p className="mt-3 text-sm leading-relaxed text-gray-500">{step === 0 ? "Deux informations pour personnaliser votre espace." : step === 1 ? "Ces coordonnées seront celles de votre compte." : step === 2 ? "Choisissez un mot de passe pour protéger votre compte." : "Adaptons ShiftFlow à vos besoins. Vous pouvez passer ces questions."}</p>
+        {initial && step === initial.step && <p className="mt-3 text-sm text-blue-700">Bon retour ! Votre saisie a été restaurée, sauf le mot de passe.</p>}
+        <form onSubmit={step === 2 ? submit : advance} className="mt-6" data-testid="register-form">
+          <div className="space-y-5">
+            {step === 0 && <>{input("name", "Votre nom", { autoComplete: "name", placeholder: "Camille Martin" })}{input("agency_name", "Nom de votre agence", { autoComplete: "organization", placeholder: "Mon agence" })}</>}
+            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "email", placeholder: "vous@agence.fr" })}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
+            {step === 2 && <>
+              {input("password", "Mot de passe", { type: showPassword ? "text" : "password", autoComplete: "new-password", minLength: 8, "aria-describedby": "password-help" })}
+              <button type="button" onClick={() => setShowPassword(v => !v)} className="flex min-h-11 items-center gap-2 text-sm text-blue-700" aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}{showPassword ? "Masquer" : "Afficher le mot de passe"}</button>
+              <div className="flex flex-wrap gap-3 text-xs">{[["length", "8 caractères"], ["letter", "1 lettre"], ["digit", "1 chiffre"]].map(([key, label]) => <span key={key} className={passwordChecks(form.password)[key] ? "text-emerald-700" : "text-gray-500"}>{passwordChecks(form.password)[key] ? "✓" : "○"} {label}</span>)}</div>
+              <p id="password-help" className={`text-xs ${passwordError ? "text-red-600" : "text-gray-500"}`}>{passwordError || "8 caractères minimum, dont une lettre et un chiffre."}</p>
+              <label className="flex items-start gap-3 text-sm leading-relaxed text-gray-600"><input type="checkbox" required checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-blue-600" /><span>J’accepte les <Link to="/conditions" target="_blank" className="text-blue-700 underline">Conditions générales</Link> et la <Link to="/confidentialite" target="_blank" className="text-blue-700 underline">Politique de confidentialité</Link>.</span></label>
+            </>}
+          </div>
+          {error && <p className="mt-4 text-sm text-red-600" role="alert">{error}</p>}
+          <button type="submit" disabled={loading} className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50" data-testid={step === 2 ? "register-submit-btn" : "register-next-btn"}>{loading ? "Création…" : step === 2 ? "Créer mon compte gratuitement" : "Continuer"}<ArrowRight size={17} /></button>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            {step > 0 && <button type="button" disabled={loading} onClick={() => setStep(s => s - 1)} className="inline-flex min-h-11 items-center gap-1 text-sm text-gray-600"><ArrowLeft size={16} />Retour</button>}
+          </div>
+        </form>
+        <div className="mt-5 border-t border-gray-100 pt-4 text-xs leading-relaxed text-gray-500"><p className="flex items-start gap-2"><ShieldCheck size={15} className="shrink-0" />{saveStatus}</p><p className="mt-2">Votre saisie est sauvegardée pendant 7 jours pour reprendre votre inscription et comprendre les étapes d’abandon. Le mot de passe n’est pas enregistré dans le brouillon.</p></div>
+      </section>
+    </main>
+  </div>;
 }

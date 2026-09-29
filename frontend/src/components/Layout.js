@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, PlayCircle, Clock3 } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, Menu, X, Zap, LifeBuoy, Clock3 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import GettingStarted from "./GettingStarted";
 import { api } from "../lib/api";
 
 const formatTrialRemaining = (endsAt, nowMs) => {
@@ -39,7 +40,7 @@ const nav = [
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
-  { to: "/app/tutorial", label: "Tutoriel", icon: PlayCircle, id: "nav-tutorial", highlight: true },
+  { to: "/app/help", label: "Aide", icon: LifeBuoy, id: "nav-help" },
   { to: "/app/settings", label: "Paramètres", icon: Settings, id: "nav-settings" },
 ];
 
@@ -360,7 +361,7 @@ export default function Layout({ children }) {
           </div>
         )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-5 sm:py-8">
-          {children}
+          <GettingStarted>{children}</GettingStarted>
         </div>
       </main>
     </div>

@@ -4,6 +4,7 @@ import { Plus, CalendarClock, Copy, Archive } from "lucide-react";
 import { api } from "../lib/api";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
+import JourneyEmpty from "../components/JourneyEmpty";
 import UpgradeModal from "../components/UpgradeModal";
 
 export default function Missions() {
@@ -88,8 +89,8 @@ export default function Missions() {
       <div className="mt-5 sm:mt-8">
         {loading ? <div className="text-gray-500">Chargement…</div> :
          missions.length === 0 ? (
-          <div className="bg-white border border-dashed border-gray-300 rounded-xl p-10 text-center text-gray-500">
-            {showArchived ? "Aucune mission archivée." : <>Aucune mission. <Link to="/app/missions/new" className="text-blue-600 font-medium">Créez-en une</Link>.</>}
+          <div className={showArchived ? "bg-white border border-dashed border-gray-300 rounded-xl p-10 text-center text-gray-500" : ""}>
+            {showArchived ? "Aucune mission archivée." : <JourneyEmpty />}
           </div>
         ) : (
           <>

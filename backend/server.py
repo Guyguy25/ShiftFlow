@@ -433,6 +433,7 @@ class RegisterIn(BaseModel):
     name: str
     agency_name: str
     phone: str = Field(min_length=1)
+    registration_token: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     onboarding_answers: Optional[dict] = None
     meta_consent: bool = False
     meta_attribution: Optional[dict] = None
@@ -642,6 +643,69 @@ async def update_shift_and_mission_status(shift_id: str):
         await db.missions.update_one({"id": mission_id}, {"$set": {"status": "in_progress"}})
 
 
+# Anonymous registration drafts: capability token, bounded payload, seven-day expiry.
+class RegistrationFields(BaseModel):
+    name: str = Field(default="", max_length=254)
+    agency_name: str = Field(default="", max_length=254)
+    email: str = Field(default="", max_length=254)
+    phone: str = Field(default="", max_length=254)
+
+
+class RegistrationAnswers(BaseModel):
+    team_size: str = Field(default="", max_length=80)
+    monthly_missions: str = Field(default="", max_length=80)
+    current_tool: str = Field(default="", max_length=80)
+    main_pain: List[str] = Field(default_factory=list, max_length=7)
+
+    @field_validator("main_pain")
+    @classmethod
+    def bounded_pain(cls, values):
+        if any(len(value) > 120 for value in values):
+            raise ValueError("Réponse trop longue")
+        return values
+
+
+class RegistrationDraftIn(BaseModel):
+    token: str = Field(pattern=r"^[a-f0-9]{64}$")
+    step: int = Field(ge=0, le=2)
+    revision: int = Field(ge=0, le=9999999999999)
+    fields: RegistrationFields
+    answers: RegistrationAnswers
+
+
+@api.put("/registration/draft")
+async def save_registration_draft(payload: RegistrationDraftIn, request: Request):
+    import hashlib
+    from pymongo import ReturnDocument
+    # Use the trusted socket peer, never a client-supplied forwarded header.
+    peer = request.client.host if request.client else "unknown"
+    current = now_utc()
+    bucket = hashlib.sha256(f"{JWT_SECRET}:{peer}:{current.strftime('%Y-%m-%d-%H')}".encode()).hexdigest()
+    counter = await db.registration_limits.find_one_and_update(
+        {"_id": bucket}, {"$inc": {"count": 1}, "$setOnInsert": {"expires_at": current + timedelta(hours=2)}},
+        upsert=True, return_document=ReturnDocument.AFTER)
+    if counter["count"] > 1200:
+        raise HTTPException(status_code=429, detail="Trop de sauvegardes. Réessayez plus tard.")
+    # Hash capability tokens at rest. No anonymous read or listing endpoint exists.
+    draft_id = hashlib.sha256(payload.token.encode()).hexdigest()
+    existing = await db.registration_drafts.find_one({"_id": draft_id}, {"completed_at": 1})
+    if existing and existing.get("completed_at"):
+        return {"saved": True}
+    await db.registration_drafts.update_one({"_id": draft_id},
+        {"$setOnInsert": {"created_at": current, "expires_at": current + timedelta(days=7)}}, upsert=True)
+    await db.registration_drafts.update_one(
+        {"_id": draft_id, "completed_at": {"$exists": False},
+         "$or": [{"revision": {"$exists": False}}, {"revision": {"$lte": payload.revision}}]},
+        {"$set": {"revision": payload.revision, "fields": payload.fields.model_dump(), "answers": payload.answers.model_dump(),
+                  "last_step": payload.step, f"visited.{payload.step}": current, "updated_at": current,
+                  "expires_at": current + timedelta(days=7)},
+         "$max": {"furthest_step": payload.step}})
+    # A concurrent successful registration must not retain personal draft fields.
+    await db.registration_drafts.update_one({"_id": draft_id, "completed_at": {"$exists": True}},
+                                            {"$unset": {"fields": "", "answers": ""}})
+    return {"saved": True}
+
+
 # ---------------- Auth ----------------
 @api.post("/auth/register")
 async def register(payload: RegisterIn, request: Request, response: Response):
@@ -661,6 +725,16 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
             "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
+    if payload.registration_token:
+        import hashlib
+        try:
+            await db.registration_drafts.update_one(
+                {"_id": hashlib.sha256(payload.registration_token.encode()).hexdigest()},
+                {"$set": {"completed_at": created_at, "expires_at": created_at + timedelta(days=7)},
+                 "$unset": {"fields": "", "answers": ""}}, upsert=True)
+        except Exception:
+            logger.warning("Registration draft completion could not be recorded")
+
     await record_activation_event(
         user,
         "sign_up",
@@ -1668,6 +1742,8 @@ async def seed_admin_and_demo():
 
 @app.on_event("startup")
 async def on_startup():
+    await db.registration_drafts.create_index("expires_at", expireAfterSeconds=0)
+    await db.registration_limits.create_index("expires_at", expireAfterSeconds=0)
     await db.users.create_index("email", unique=True)
     await db.workers.create_index("agency_id")
     await db.missions.create_index("agency_id")

@@ -53,7 +53,8 @@ function AppRoutes() {
         <Route path="workers" element={<Workers />} />
         <Route path="calendar" element={<Calendar />} />
         <Route path="history" element={<History />} />
-        <Route path="tutorial" element={<Tutorial />} />
+        <Route path="help" element={<Tutorial />} />
+        <Route path="tutorial" element={<Navigate to="/app/help" replace />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

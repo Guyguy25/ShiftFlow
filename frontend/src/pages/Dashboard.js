@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 
+import JourneyEmpty from "../components/JourneyEmpty";
 import { activationNext } from "../lib/activation";
 
 function MissionCard({ m }) {
@@ -57,7 +58,6 @@ export default function Dashboard() {
   if (!data) return <div className="text-gray-500" data-testid="dashboard-loading">Chargement…</div>;
   const connected = !!whatsappStatus?.connected;
   const next = activationNext(data, whatsappStatus, quota);
-  const steps = [data.missions_total > 0, data.activation?.active_workers > 0, connected, !!data.activation?.first_invite_sent];
 
   return (
     <div data-testid="dashboard-page">
@@ -72,14 +72,6 @@ export default function Dashboard() {
         </Link>}
       </div>
 
-      {next && <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-5" data-testid="activation-next">
-        <h2 className="font-semibold text-lg">Votre première recherche de disponibilités</h2>
-        <p className="mt-2 text-sm text-gray-700">{next.description}</p>
-        <Link to={next.connect ? "/app/workers?add=1" : next.href} className="mt-4 inline-flex justify-center w-full sm:w-auto px-5 py-3 bg-blue-600 text-white rounded-lg font-semibold">{next.label}</Link>
-        <details className="mt-4 text-sm text-gray-700"><summary className="cursor-pointer">Configuration : {steps.filter(Boolean).length}/4</summary>
-          <ol className="mt-2 space-y-2">{["Mission créée", "Intervenants ajoutés", "WhatsApp connecté", "Première invitation envoyée"].map((label, i) => <li key={label}>{steps[i] ? "✓" : "○"} {label}</li>)}</ol>
-        </details>
-      </section>}
       {!next && <div className={`mt-5 rounded-xl border p-4 flex items-start sm:items-center gap-3 ${connected ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`} data-testid="whatsapp-status-banner">
         <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${connected ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
           <Send className="w-4 h-4"/>
@@ -135,10 +127,10 @@ export default function Dashboard() {
       </>}
       <section className="mt-8 sm:mt-10">
         <div className="flex items-center justify-between mb-3 sm:mb-4"><h2 className="font-display font-bold text-lg sm:text-xl">Missions à venir</h2><Link to="/app/missions" className="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="dashboard-see-all">Voir tout →</Link></div>
-        {data.upcoming.length === 0 ? <div className="bg-white border border-dashed border-gray-300 rounded-xl p-10 text-center text-gray-500" data-testid="dashboard-empty-upcoming">Aucune mission à venir. <Link to="/app/missions/new" className="text-blue-600 font-medium">Créez votre première mission</Link>.</div> : <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{data.upcoming.map((m) => <MissionCard key={m.id} m={m}/>)}</div>}
+        {data.upcoming.length === 0 ? <JourneyEmpty /> : <div className={`grid md:grid-cols-2 ${next ? "" : "xl:grid-cols-3"} gap-4`}>{data.upcoming.map((m) => <MissionCard key={m.id} m={m}/>)}</div>}
       </section>
 
-      {data.ongoing.length > 0 && <section className="mt-10"><h2 className="font-display font-bold text-xl mb-4">Missions en cours</h2><div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{data.ongoing.map((m) => <MissionCard key={m.id} m={m}/>)}</div></section>}
+      {data.ongoing.length > 0 && <section className="mt-10"><h2 className="font-display font-bold text-xl mb-4">Missions en cours</h2><div className={`grid md:grid-cols-2 ${next ? "" : "xl:grid-cols-3"} gap-4`}>{data.ongoing.map((m) => <MissionCard key={m.id} m={m}/>)}</div></section>}
     </div>
   );
 }

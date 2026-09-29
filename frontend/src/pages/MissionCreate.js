@@ -1,3 +1,4 @@
+import ContextGuide from "../components/ContextGuide";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
@@ -90,6 +91,7 @@ export default function MissionCreate() {
       <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight">Créer une mission</h1>
       <p className="text-sm sm:text-base text-gray-500 mt-1.5 leading-relaxed">Renseignez les infos essentielles. Vous choisirez ensuite les intervenants pour chaque shift.</p>
 
+      <ContextGuide id="mission" step={1} title="Donnez un cadre à votre première mission">Un nom, un lieu et un créneau : commencez par ces informations. Vous choisirez les intervenants ensuite, avant tout envoi.</ContextGuide>
       <form onSubmit={submit} className="mt-5 sm:mt-8 space-y-4 sm:space-y-6">
         {/* Mission block */}
         <div className="bg-white rounded-2xl sm:rounded-xl border border-gray-200 p-4 sm:p-8 space-y-5">

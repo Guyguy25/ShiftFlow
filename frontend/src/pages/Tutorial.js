@@ -1,51 +1,30 @@
 import React from "react";
-import { MessageCircle, CalendarClock, Users, CheckCircle2 } from "lucide-react";
-
-const steps = [
-  { icon: CalendarClock, title: "Créer une mission", text: "Ajoutez les dates, horaires, le nombre de personnes nécessaires et les informations utiles pour votre équipe." },
-  { icon: Users, title: "Choisir les intervenants", text: "Sélectionnez les intervenants et définissez l'ordre de priorité utilisé par la cascade." },
-  { icon: MessageCircle, title: "Connecter WhatsApp", text: "Connectez votre compte WhatsApp une seule fois afin que ShiftFlow puisse envoyer les missions et les relances." },
-  { icon: CheckCircle2, title: "Laisser ShiftFlow gérer", text: "Les invitations, réponses, relances et rappels sont ensuite centralisés automatiquement." },
-];
+import { Link, useNavigate } from "react-router-dom";
+import { Mail, PlayCircle, Compass, ArrowRight } from "lucide-react";
+import { LEGAL } from "../constants/legal";
+import { useAuth } from "../context/AuthContext";
 
 export default function Tutorial() {
-  return (
-    <div data-testid="tutorial-page" className="max-w-5xl">
-      <div className="text-xs uppercase tracking-widest text-amber-700 font-bold">Tutoriel</div>
-      <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Bien démarrer avec ShiftFlow</h1>
-      <p className="mt-3 text-gray-600 max-w-2xl">
-        Une courte vidéo pour comprendre le fonctionnement de ShiftFlow : créer une mission, connecter WhatsApp, sélectionner les intervenants et lancer la cascade.
-      </p>
-
-      <div className="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-black shadow-sm">
-        <video
-          className="block w-full aspect-video bg-black object-contain"
-          src="/video-tutorial.mp4"
-          controls
-          preload="metadata"
-          playsInline
-          aria-label="Tutoriel de prise en main de ShiftFlow"
-        >
-          Votre navigateur ne permet pas de lire cette vidéo.
-        </video>
-      </div>
-
-      <div className="mt-8 grid sm:grid-cols-2 gap-4">
-        {steps.map((step, index) => (
-          <div key={step.title} className="bg-white border border-gray-200 rounded-xl p-5">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
-                <step.icon className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-bold uppercase tracking-widest text-gray-400">Étape {index + 1}</div>
-                <h2 className="mt-1 font-display font-bold text-lg text-gray-900">{step.title}</h2>
-                <p className="mt-1 text-sm text-gray-600 leading-relaxed">{step.text}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const replay = () => {
+    try { Object.keys(localStorage).filter(key => key.startsWith(`shiftflow_guide_${user.id}_`)).forEach(key => localStorage.removeItem(key)); } catch {}
+    window.dispatchEvent(new Event("shiftflow:replay-guide"));
+    navigate("/app/dashboard");
+  };
+  return <div data-testid="help-page" className="max-w-4xl">
+    <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Aide</p>
+    <h1 className="mt-2 text-3xl font-display font-bold">Un coup de main, au bon moment.</h1>
+    <p className="mt-3 text-gray-600">Suivez les indications dans l’application, écrivez-nous ou regardez le tutoriel à votre rythme.</p>
+    <div className="mt-7 grid gap-4 sm:grid-cols-2">
+      <section className="rounded-2xl border border-gray-200 bg-white p-6"><Mail className="text-blue-600" /><h2 className="mt-4 text-lg font-bold">Contacter le support</h2><p className="mt-2 text-sm leading-relaxed text-gray-600">Décrivez l’étape qui vous bloque. Nous vous aiderons à avancer.</p><a className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 break-all" href={`mailto:${LEGAL.email}?subject=Besoin%20d’aide%20sur%20ShiftFlow`}>{LEGAL.email}</a></section>
+      <section className="rounded-2xl border border-gray-200 bg-white p-6"><Compass className="text-blue-600" /><h2 className="mt-4 text-lg font-bold">Reprendre les premiers pas</h2><p className="mt-2 text-sm leading-relaxed text-gray-600">Réaffichez les conseils contextuels. Vos missions et votre progression sont conservées.</p><button onClick={replay} className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700">Réafficher les conseils<ArrowRight size={16} /></button></section>
     </div>
-  );
+    <details className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+      <summary className="cursor-pointer text-lg font-semibold"><span className="inline-flex items-center gap-2"><PlayCircle size={21} className="text-blue-600" />Voir le tutoriel vidéo</span></summary>
+      <p className="mt-3 text-sm text-gray-600">Une démonstration complète, si vous préférez voir les étapes avant de vous lancer.</p>
+      <video className="mt-5 block w-full aspect-video rounded-xl bg-black" src="/video-tutorial.mp4" controls preload="none" playsInline aria-label="Tutoriel de prise en main de ShiftFlow" />
+    </details>
+    <Link to="/app/dashboard" className="mt-6 inline-flex min-h-11 items-center text-sm font-medium text-blue-700">Retour à mon espace →</Link>
+  </div>;
 }

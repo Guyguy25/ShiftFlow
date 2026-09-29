@@ -1,3 +1,4 @@
+import ContextGuide from "../components/ContextGuide";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
@@ -528,6 +529,7 @@ export default function MissionDetail() {
 
       {m.description && <p className="mt-4 text-gray-600 max-w-3xl">{m.description}</p>}
 
+      {firstSelectableShiftId && <ContextGuide id="select-workers" step={4} title="Choisissez qui contacter pour ce créneau">Sélectionnez vos intervenants dans le créneau ci-dessous. Vérifiez la sélection avant de lancer les invitations : aucun message ne part sans votre action.</ContextGuide>}
       <div className="mt-5 sm:mt-6 bg-white border border-gray-200 rounded-2xl sm:rounded-xl p-4 sm:p-6 grid grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-between" data-testid="mission-total-progress">
         <div>
           <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Équipe totale</div>
