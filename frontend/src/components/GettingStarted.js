@@ -45,8 +45,8 @@ export default function GettingStarted({ children }) {
   const tasks = state?.owner === user.id ? activationSteps(state.summary, state.whatsapp, state.quota) : [];
   const context = { ...(state?.owner === user.id ? state : {}), next, steps: tasks, error, retry: () => setRetryIndex(index => index + 1) };
   // Settings has its own prominent activation card; do not duplicate it in a side rail.
-  if (!next || location.pathname === "/app/settings") return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
-  const nextHref = next.connect ? "/app/workers?connect=1" : next.href;
+  if (!next || ["/app/settings", "/app/dashboard", "/app/missions/new", "/app/workers"].includes(location.pathname)) return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
+  const nextHref = next.href || "/app/workers?connect=1";
   const completed = tasks.filter(t => t.done).length;
   return <ActivationContext.Provider value={context}><div className="getting-started-layout">
     <aside className={`getting-started ${location.pathname === nextHref.split("?")[0] ? "on-current-step" : ""}`} aria-label="Vos premiers pas" data-testid="getting-started">
