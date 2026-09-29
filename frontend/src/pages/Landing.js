@@ -173,15 +173,15 @@ export default function Landing() {
                 Vos équipes événementielles, <span className="text-blue-600">sans les relances à répétition.</span>
               </h1>
               <p className="sf-fade-up sf-fade-up-delay-2 mt-6 max-w-2xl mx-auto text-base sm:text-lg leading-relaxed text-slate-600">
-                Créez une mission, classez vos intervenants par priorité et laissez ShiftFlow envoyer les messages WhatsApp, suivre les réponses et poursuivre la cascade jusqu'à ce que votre équipe soit complète.
+                Avec votre réseau habituel d’intervenants, préparez une mission et choisissez qui contacter en priorité. ShiftFlow envoie les demandes depuis votre WhatsApp et suit les réponses pour vous aider à compléter votre équipe.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <Link to="/register" data-testid="hero-cta-primary" className="sf-shine w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-xl font-semibold shadow-[0_10px_30px_rgba(37,99,235,0.22)] transition-all hover:-translate-y-0.5">
-                  Créer ma première mission <ArrowRight className="w-4 h-4" />
+                  Créer mon compte gratuitement <ArrowRight className="w-4 h-4" />
                 </Link>
-                <a href="#fonctionnement" data-testid="hero-cta-secondary" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 px-6 py-3.5 rounded-xl font-semibold transition-colors">
-                  <PlayCircle className="w-4 h-4" /> Voir comment ça marche
-                </a>
+                <Link to="/demo" data-testid="hero-cta-secondary" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 px-6 py-3.5 rounded-xl font-semibold transition-colors">
+                  <PlayCircle className="w-4 h-4" /> Essayer la simulation
+                </Link>
               </div>
               <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
                 <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />Sans compte pour les intervenants</span>
@@ -316,6 +316,7 @@ export default function Landing() {
           </div>
         </section>
 
+        <div className="mx-auto max-w-3xl px-5 py-8"><FirstMissionHelp /></div>
         <section className="py-20 sm:py-24 bg-blue-600 text-white relative overflow-hidden">
           <div className="absolute inset-0 sf-grid-mask opacity-20" aria-hidden="true" />
           <div className="max-w-4xl mx-auto px-5 sm:px-6 text-center relative">
@@ -331,7 +332,6 @@ export default function Landing() {
         </section>
       </main>
 
-      <div className="mx-auto max-w-3xl px-5 pb-8"><FirstMissionHelp /></div>
       <footer className="border-t border-slate-100 py-8 bg-white">
         <div className="max-w-7xl mx-auto px-5 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
           <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white" /></div><span className="font-semibold text-slate-700">ShiftFlow</span><span>© 2026</span></div>
