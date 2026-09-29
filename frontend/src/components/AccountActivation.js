@@ -17,7 +17,7 @@ export default function AccountActivation() {
   if (!steps?.length || !next) return null;
   const completed = steps.filter(step => step.done).length;
   const currentIndex = next.connect ? 2 : next.href?.startsWith("/app/workers") ? 1 : next.href === "/app/missions/new" ? 0 : next.href === "/pricing" ? -1 : 3;
-  const href = next.connect ? "/app/workers?connect=1" : next.href;
+  const href = next.href || "/app/workers?connect=1";
   return <section className="account-activation mt-6" aria-labelledby="account-activation-title" data-testid="account-activation">
     <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Votre compte est créé · Passons à l’action</p>
     <h2 id="account-activation-title" className="mt-3 text-2xl sm:text-3xl font-display font-bold tracking-tight text-gray-950">{activation.summary.missions_total === 0 ? "Votre première mission vous attend." : "Allons jusqu’à votre première demande."}</h2>
