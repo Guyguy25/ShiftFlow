@@ -1,4 +1,4 @@
-import { activationNext } from "./activation";
+import { activationNext, activationSteps } from "./activation";
 
 const mission = { id: "m1", name: "Salon", status: "draft", shifts: [{ people_needed: 2, confirmed_count: 0 }] };
 const base = { activation: { active_workers: 0, first_invite_sent: false }, missions_total: 0, ongoing: [], upcoming: [] };
@@ -26,4 +26,21 @@ test("expired trial directs to the offer and filled/cancelled shifts are exclude
 });
 test("older API responses do not imply a new account", () => {
   expect(activationNext({ ...base, activation: undefined }, null)).toBeNull();
+});
+
+test("a registered account with complete coordinates still starts at zero actions", () => {
+  const steps = activationSteps({ ...base, name: "Camille", agency_name: "Studio", phone: "0612345678" }, { connected: false });
+  expect(steps).toHaveLength(4);
+  expect(steps.filter(step => step.done)).toHaveLength(0);
+});
+test("progress follows real mission, workers, connection and send outcomes", () => {
+  const summary = { ...base, missions_total: 1, upcoming: [mission], activation: { active_workers: 2, first_invite_sent: false } };
+  expect(activationSteps(summary, { connected: false }).filter(step => step.done)).toHaveLength(2);
+  expect(activationSteps(summary, { connected: true }).filter(step => step.done)).toHaveLength(3);
+  expect(activationSteps({ ...summary, activation: { ...summary.activation, first_invite_sent: true } }, { connected: true }).filter(step => step.done)).toHaveLength(4);
+});
+test("unknown WhatsApp status and missing API data never grant completion", () => {
+  expect(activationSteps(base, null)[2].done).toBe(false);
+  expect(activationSteps(null, null)).toEqual([]);
+  expect(activationSteps({ ...base, activation: undefined }, null)).toEqual([]);
 });

@@ -1,6 +1,5 @@
 import ContextGuide from "../components/ContextGuide";
-import JourneyEmpty from "../components/JourneyEmpty";
-import { useActivation } from "../context/ActivationContext";
+import AccountActivation from "../components/AccountActivation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Crown, ExternalLink, Save, LockKeyhole, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -14,7 +13,6 @@ const DEFAULT_REQUIRED_TOKENS = ["{prenom}", "{mission}", "{date}", "{lien}"];
 
 export default function Settings() {
   const { user, refresh } = useAuth();
-  const activation = useActivation();
   const profileComplete = [user?.name, user?.agency_name, user?.phone].filter(value => value?.trim()).length;
   const [notifs, setNotifs] = useState([]);
   const [quota, setQuota] = useState(null);
@@ -142,6 +140,7 @@ export default function Settings() {
       <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Paramètres</div>
       <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Compte & Agence</h1>
 
+      <div className="max-w-3xl"><AccountActivation /></div>
       <div className="mt-8 grid gap-6 max-w-3xl">
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
           <div className="flex items-center gap-2 font-semibold">
@@ -177,7 +176,6 @@ export default function Settings() {
         <form onSubmit={saveProfile} className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-profile-form">
           <h2 className="font-display font-bold text-lg">Profil</h2>
           <p className="text-xs text-gray-500 mt-1">Vos coordonnées servent à identifier l'agence et à gérer votre compte.</p>
-          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4" data-testid="profile-progress"><div className="flex items-center justify-between gap-3 text-sm font-semibold text-blue-900"><span>{profileComplete === 3 ? "Votre profil est prêt" : "Complétez votre profil d’agence"}</span><span>{profileComplete}/3</span></div><div className="mt-3 h-1.5 rounded-full bg-blue-100" role="progressbar" aria-label="Profil complété" aria-valuemin={0} aria-valuemax={3} aria-valuenow={profileComplete}><div className="h-full rounded-full bg-blue-600" style={{ width: `${profileComplete / 3 * 100}%` }} /></div></div>
           {profileComplete < 3 && <ContextGuide id="profile" always title="Présentez votre agence à votre équipe">Renseignez le nom de votre agence, votre nom et votre téléphone, puis enregistrez. Ces coordonnées permettent de vous identifier.</ContextGuide>}
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="text-sm font-medium">Agence</label>
@@ -196,7 +194,6 @@ export default function Settings() {
           </div>
         </form>
 
-        {profileComplete === 3 && activation?.summary?.missions_total === 0 && <JourneyEmpty kind="profile" />}
         <div className={`relative bg-white border rounded-xl p-6 overflow-hidden ${isPro ? "border-gray-200" : "border-blue-200"}`} data-testid="settings-whatsapp-template-block">
           <div className="flex items-start justify-between gap-4">
             <div>

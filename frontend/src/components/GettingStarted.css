@@ -34,3 +34,34 @@
   .getting-started-next a { margin-top: 4px; }
   .on-current-step .getting-started-next { display: none; }
 }
+
+.account-activation { min-width: 0; padding: 24px; border: 1px solid #d8e5fa; border-radius: 20px; background: linear-gradient(145deg, #f1f6ff, #fff 70%); }
+.account-activation-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 20px 0 24px; }
+.account-activation-steps li { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; color: #475569; }
+.account-activation-steps li.is-next { border-color: #93b4fa; background: #eff6ff; color: #1d4ed8; }
+.account-activation-steps li.is-done { border-color: #a7f3d0; background: #f0fdf4; color: #047857; }
+.account-step-icon { flex-shrink: 0; }
+.action-coach { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 20px; }
+.action-coach-target { grid-row: 2; position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 14px 18px; min-height: 50px; border-radius: 12px; font-size: 14px; font-weight: 700; color: white; background: #2563eb; text-align: center; }
+.action-coach-target svg { flex-shrink: 0; }
+.action-coach-target:hover { background: #1d4ed8; }
+.action-coach-target.is-highlighted { outline: 2px solid #93b4fa; outline-offset: 4px; animation: action-ring 1.8s ease-in-out 3; }
+.action-coach-bubble { grid-row: 1; position: relative; min-width: 0; padding: 16px; border: 1px solid #bfdbfe; border-radius: 14px; background: white; box-shadow: 0 8px 22px #1e40af0d; }
+.action-coach-bubble::after { content: ''; position: absolute; bottom: -7px; left: calc(50% - 6px); width: 12px; height: 12px; background: white; border-bottom: 1px solid #bfdbfe; border-right: 1px solid #bfdbfe; transform: rotate(45deg); }
+.coach-dismiss { flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin: -6px -6px 0 0; border-radius: 8px; color: #64748b; }
+.coach-dismiss:hover { background: #f1f5f9; }
+.action-coach.is-dismissed { grid-template-columns: minmax(0, 1fr); }
+.action-coach.is-dismissed .action-coach-target { grid-row: 1; }
+.guided-action-target { outline: 2px solid #60a5fa; outline-offset: 4px; animation: action-ring 1.8s ease-in-out 3; }
+@keyframes action-ring { 50% { box-shadow: 0 0 0 9px #3b82f620; } }
+@media (min-width: 640px) {
+  .account-activation { padding: 28px; }
+  .action-coach { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 24px; }
+  .action-coach-target { grid-column: 1; grid-row: 1; }
+  .action-coach-bubble { grid-column: 2; grid-row: 1; }
+  .action-coach-bubble::after { bottom: auto; left: -7px; top: calc(50% - 6px); transform: rotate(135deg); }
+  .action-coach.is-dismissed { max-width: 340px; }
+}
+@media (min-width: 768px) { .account-activation-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } .account-activation-steps li { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 380px) { .account-activation { padding: 18px; } .account-activation-steps li { align-items: flex-start; flex-direction: column; padding: 10px; } }
+@media (prefers-reduced-motion: reduce) { .action-coach-target.is-highlighted, .guided-action-target { animation: none; } }

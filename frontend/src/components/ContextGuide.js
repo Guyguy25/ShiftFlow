@@ -3,7 +3,7 @@ import { Sparkles, X, ArrowDown } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useActivation } from "../context/ActivationContext";
 
-export default function ContextGuide({ id, step, title, children, always = false }) {
+export default function ContextGuide({ id, step, title, children, always = false, target }) {
   const { user } = useAuth();
   const activation = useActivation();
   const key = `shiftflow_guide_${user?.id}_${id}`;
@@ -13,7 +13,14 @@ export default function ContextGuide({ id, step, title, children, always = false
     window.addEventListener("shiftflow:replay-guide", replay);
     return () => window.removeEventListener("shiftflow:replay-guide", replay);
   }, []);
-  if (dismissed || (!always && !activation?.next)) return null;
+  const visible = !dismissed && (always || !!activation?.next);
+  useEffect(() => {
+    if (!visible || !target) return;
+    const element = document.querySelector(target);
+    element?.classList.add("guided-action-target");
+    return () => element?.classList.remove("guided-action-target");
+  }, [visible, target]);
+  if (!visible) return null;
   return <aside className="context-guide" aria-label={title} data-testid={`guide-${id}`}>
     <div className="flex items-start gap-3">
       <span className="guide-beacon" aria-hidden="true"><Sparkles size={18} /></span>

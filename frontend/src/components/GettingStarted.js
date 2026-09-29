@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Check, ArrowRight, ChevronDown, Sparkles } from "lucide-react";
 import { api } from "../lib/api";
-import { activationNext } from "../lib/activation";
+import { activationNext, activationSteps } from "../lib/activation";
 import { useAuth } from "../context/AuthContext";
 import "./GettingStarted.css";
 import { ActivationContext } from "../context/ActivationContext";
@@ -11,15 +11,18 @@ export default function GettingStarted({ children }) {
   const { user } = useAuth();
   const location = useLocation();
   const [state, setState] = useState(null);
+  const [error, setError] = useState(null);
+  const [retryIndex, setRetryIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const refresh = useCallback(async (signal) => {
+    setError(null);
     const results = await Promise.allSettled([
       api.get("/dashboard/summary", { signal }),
       api.get("/whatsapp/status", { signal }),
       api.get("/plan/quota", { signal }),
     ]);
     if (signal.aborted) return;
-    if (results[0].status !== "fulfilled") { setState(null); return; }
+    if (results[0].status !== "fulfilled") { setState(null); setError("unavailable"); return; }
     setState({ owner: user.id, summary: results[0].value.data,
       whatsapp: results[1].status === "fulfilled" ? results[1].value.data : null,
       quota: results[2].status === "fulfilled" ? results[2].value.data : null });
@@ -37,19 +40,13 @@ export default function GettingStarted({ children }) {
     window.addEventListener("focus", update);
     document.addEventListener("visibilitychange", update);
     return () => { controller.abort(); clearInterval(timer); window.removeEventListener("focus", update); document.removeEventListener("visibilitychange", update); };
-  }, [refresh, location.pathname, location.search]);
+  }, [refresh, location.pathname, location.search, retryIndex]);
   const next = state?.owner === user.id && activationNext(state.summary, state.whatsapp, state.quota);
-  const context = { ...(state?.owner === user.id ? state : {}), next };
-  if (!next) return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
-  const { summary, whatsapp } = state;
+  const tasks = state?.owner === user.id ? activationSteps(state.summary, state.whatsapp, state.quota) : [];
+  const context = { ...(state?.owner === user.id ? state : {}), next, steps: tasks, error, retry: () => setRetryIndex(index => index + 1) };
+  // Settings has its own prominent activation card; do not duplicate it in a side rail.
+  if (!next || location.pathname === "/app/settings") return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
   const nextHref = next.connect ? "/app/workers?connect=1" : next.href;
-  const tasks = [
-    { label: "Créer votre compte", done: true },
-    { label: "Créer votre première mission", done: summary.missions_total > 0, href: "/app/missions/new" },
-    { label: "Ajouter vos intervenants", done: summary.activation.active_workers > 0, href: "/app/workers?add=1" },
-    { label: whatsapp ? "Connecter WhatsApp" : "Vérifier la connexion WhatsApp", done: !!whatsapp?.connected, href: "/app/workers?connect=1" },
-    { label: "Envoyer votre première demande", done: !!summary.activation.first_invite_sent, href: nextHref },
-  ];
   const completed = tasks.filter(t => t.done).length;
   return <ActivationContext.Provider value={context}><div className="getting-started-layout">
     <aside className={`getting-started ${location.pathname === nextHref.split("?")[0] ? "on-current-step" : ""}`} aria-label="Vos premiers pas" data-testid="getting-started">
@@ -57,9 +54,9 @@ export default function GettingStarted({ children }) {
         <div className="flex items-center gap-2 text-blue-700 text-xs font-bold uppercase tracking-wider"><Sparkles size={16} aria-hidden="true" /> Vos premiers pas</div>
         <span className="text-sm font-semibold text-gray-600" aria-live="polite">{completed}/{tasks.length}</span>
       </div>
-      <h2 className="getting-started-title mt-3 font-display font-bold text-xl text-gray-900">Votre équipe, prête à démarrer.</h2>
-      <div className="mt-4 h-1.5 rounded-full bg-blue-100 overflow-hidden" role="progressbar" aria-label="Configuration terminée" aria-valuemin={0} aria-valuemax={5} aria-valuenow={completed}>
-        <div className="h-full bg-blue-600 motion-safe:transition-all" style={{ width: `${completed / 5 * 100}%` }} />
+      <h2 className="getting-started-title mt-3 font-display font-bold text-xl text-gray-900">Vers votre première équipe confirmée.</h2>
+      <div className="mt-4 h-1.5 rounded-full bg-blue-100 overflow-hidden" role="progressbar" aria-label="Actions de démarrage réalisées" aria-valuemin={0} aria-valuemax={4} aria-valuenow={completed}>
+        <div className="h-full bg-blue-600 motion-safe:transition-all" style={{ width: `${completed / 4 * 100}%` }} />
       </div>
       <button type="button" className="getting-started-toggle" aria-expanded={expanded} aria-controls="getting-started-tasks" onClick={() => setExpanded(!expanded)}>
         {expanded ? "Masquer les étapes" : "Voir les étapes"}<ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
