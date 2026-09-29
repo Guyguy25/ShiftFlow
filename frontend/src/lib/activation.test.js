@@ -13,6 +13,7 @@ test("unknown WhatsApp status is not reported as disconnected", () => {
   const summary = { ...base, upcoming: [mission], activation: { active_workers: 1 } };
   expect(activationNext(summary, null).label).toBe("Vérifier WhatsApp");
   expect(activationNext(summary, { connected: false }).label).toBe("Connecter WhatsApp");
+  expect(new URLSearchParams(activationNext(summary, { connected: false }).href.split("?")[1]).get("returnTo")).toBe("/app/missions/m1?step=select");
   expect(activationNext(summary, { connected: true }).href).toBe("/app/missions/m1?step=select");
 });
 test("successful first invitation removes onboarding even after disconnection", () => {
