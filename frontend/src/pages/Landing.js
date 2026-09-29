@@ -1,3 +1,4 @@
+import FirstMissionHelp from "../components/FirstMissionHelp";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -330,6 +331,7 @@ export default function Landing() {
         </section>
       </main>
 
+      <div className="mx-auto max-w-3xl px-5 pb-8"><FirstMissionHelp /></div>
       <footer className="border-t border-slate-100 py-8 bg-white">
         <div className="max-w-7xl mx-auto px-5 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
           <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white" /></div><span className="font-semibold text-slate-700">ShiftFlow</span><span>© 2026</span></div>
