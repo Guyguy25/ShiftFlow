@@ -1,3 +1,4 @@
+import FirstMissionHelp from "./FirstMissionHelp";
 import React from "react";
 import { CalendarClock, Check, MessageCircle, Send, Users } from "lucide-react";
 import { useActivation } from "../context/ActivationContext";
@@ -29,6 +30,7 @@ export default function AccountActivation() {
         <span className="account-step-icon" aria-hidden="true">{step.done ? <Check size={19} /> : <Icon size={19} />}</span><span><span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500">{step.done ? "Terminé" : index === currentIndex ? "À faire maintenant" : `Étape ${index + 1}`}</span><span className="mt-1 block text-sm font-semibold">{step.shortLabel}</span></span>
       </li>; })}
     </ol>
+    <FirstMissionHelp />
     <ActionCoach key={`${currentIndex}-${href}`} id={`account-${currentIndex}`} step={currentIndex + 1 || undefined} href={href} label={next.label} description={next.description} />
     <p className="mt-4 text-xs leading-relaxed text-gray-500">Cette progression mesure vos actions dans ShiftFlow, indépendamment de vos coordonnées ; aucun message n’est envoyé à cette étape.</p>
   </section>;
