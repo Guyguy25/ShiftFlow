@@ -1,3 +1,5 @@
+import InvitationReview from "../components/InvitationReview";
+import FirstMissionHelp from "../components/FirstMissionHelp";
 import ContextGuide from "../components/ContextGuide";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -80,12 +82,13 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
           <button type="button" onClick={onClose} className="p-1 rounded hover:bg-gray-100 text-gray-500">×</button>
         </div>
         <p className="mt-3 text-sm text-gray-600">
-          ShiftFlow envoie les missions uniquement via votre compte WhatsApp. Connectez-le pour lancer la cascade.
+          ShiftFlow envoie les missions uniquement via votre compte WhatsApp. Après la connexion, vous reviendrez à l’aperçu pour confirmer l’envoi.
         </p>
 
+        <FirstMissionHelp />
         {status?.connected ? (
           <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm text-green-800">
-            WhatsApp est connecté. Lancement de la cascade…
+            WhatsApp est connecté. Retour à la vérification…
           </div>
         ) : status?.hasQR && status?.qr ? (
           <WhatsAppQrGuide qr={status.qr} />
@@ -108,7 +111,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
   );
 }
 
-function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = [] }) {
+export function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = [] }) {
   const nav = useNavigate();
   const returnTo = `/app/missions/${mission.id}?step=select&shift=${encodeURIComponent(shift.id)}`;
   const openAddWorkers = () => nav(`/app/workers?add=1&returnTo=${encodeURIComponent(returnTo)}`);
@@ -116,24 +119,27 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
   const selectableWorkers = workers.filter((worker) => !existingWorkerIds.has(worker.id));
   const missingNeeded = Math.max(0, Number(shift.people_needed || 0) - Number(shift.confirmed_count || 0));
   const [selected, setSelected] = useState([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const submitLock = useRef(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
   const [waitingForWhatsApp, setWaitingForWhatsApp] = useState(false);
 
-  const toggle = (id) => setSelected((s) => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
-  const move = (idx, dir) => setSelected((s) => {
+  const toggle = (id) => { setReviewOpen(false); setSelected((s) => s.includes(id) ? s.filter(x => x !== id) : [...s, id]); };
+  const move = (idx, dir) => { setReviewOpen(false); setSelected((s) => {
     const arr = [...s]; const j = idx + dir;
     if (j < 0 || j >= arr.length) return arr;
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
     return arr;
-  });
+  }); };
 
   const sendSelection = useCallback(async () => {
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
     setSaving(true); setError(""); setWaitingForWhatsApp(false); setConnectOpen(false);
     try {
       await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected });
+      setReviewOpen(false);
       toast.success("Cascade démarrée sur ce shift");
       onSelected();
     } catch (err) {
@@ -148,6 +154,7 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
   }, [onSelected, selected, shift.id]);
 
   const submit = async () => {
+    if (submitLock.current || !reviewOpen) return;
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
     if (selected.length < missingNeeded) {
       const ok = window.confirm(
@@ -155,6 +162,8 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
       );
       if (!ok) return;
     }
+    submitLock.current = true;
+    setSaving(true);
     try {
       const { data } = await api.get("/whatsapp/status");
       if (!data.connected) {
@@ -162,19 +171,22 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
         setConnectOpen(true);
         return;
       }
+      await sendSelection();
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || "Impossible de vérifier la connexion WhatsApp.");
-      return;
+    } finally {
+      submitLock.current = false;
+      setSaving(false);
     }
-    await sendSelection();
   };
 
   const onWhatsAppConnected = useCallback(() => {
     if (!waitingForWhatsApp && !connectOpen) return;
     setConnectOpen(false);
     setWaitingForWhatsApp(false);
-    sendSelection();
-  }, [connectOpen, sendSelection, waitingForWhatsApp]);
+    setReviewOpen(true);
+    toast.success("WhatsApp connecté. Vérifiez puis confirmez votre envoi.");
+  }, [connectOpen, waitingForWhatsApp]);
 
   if (workers.length === 0) {
     return (
@@ -237,7 +249,7 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
               {selectableWorkers.map((w) => {
                 const on = selected.includes(w.id);
                 return (
-                  <button type="button" key={w.id} onClick={()=>toggle(w.id)}
+                  <button type="button" disabled={saving} key={w.id} onClick={()=>toggle(w.id)}
                     data-testid={`select-worker-${shift.id}-${w.id}`}
                     className={`w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 last:border-0 text-left transition-colors ${on ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-gray-50"}`}>
                     <div className="min-w-0">
@@ -286,9 +298,9 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
                     <div className="text-sm font-medium text-gray-900 truncate">{w.first_name} {w.last_name}</div>
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <button type="button" onClick={()=>move(idx,-1)} disabled={idx === 0} title="Monter dans la priorité" className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed"><ArrowUp className="w-4 h-4"/></button>
-                    <button type="button" onClick={()=>move(idx,1)} disabled={idx === selected.length - 1} title="Descendre dans la priorité" className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed"><ArrowDown className="w-4 h-4"/></button>
-                    <button type="button" onClick={()=>toggle(wid)} title="Retirer" className="p-1.5 hover:bg-red-50 text-red-500 rounded-md"><XCircle className="w-4 h-4"/></button>
+                    <button type="button" onClick={()=>move(idx,-1)} disabled={saving || idx === 0} title="Monter dans la priorité" className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed"><ArrowUp className="w-4 h-4"/></button>
+                    <button type="button" onClick={()=>move(idx,1)} disabled={saving || idx === selected.length - 1} title="Descendre dans la priorité" className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 disabled:opacity-25 disabled:cursor-not-allowed"><ArrowDown className="w-4 h-4"/></button>
+                    <button type="button" disabled={saving} onClick={()=>toggle(wid)} title="Retirer" className="p-1.5 hover:bg-red-50 text-red-500 rounded-md"><XCircle className="w-4 h-4"/></button>
                   </div>
                 </div>
               );
@@ -296,18 +308,17 @@ function ShiftSelector({ mission, shift, workers, onSelected, existingSlots = []
           </div>
 
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <button onClick={submit} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`}
+          <button type="button" onClick={() => { setError(""); setReviewOpen(true); }} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`}
             className="mt-3 w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-sm transition-colors shadow-sm disabled:shadow-none">
             {saving
               ? "Envoi…"
               : selected.length === 0
                 ? "Sélectionnez au moins un intervenant"
-                : selected.length < missingNeeded
-                  ? `Lancer avec ${selected.length} · il en manque ${missingNeeded - selected.length}`
-                  : `Lancer la cascade (${selected.length})`}
+                : "Vérifier le message et les destinataires"}
           </button>
         </div>
       </div>
+      {reviewOpen && selected.length > 0 && <InvitationReview workers={selected.map(id => workers.find(worker => worker.id === id)).filter(Boolean)} mission={mission} shift={shift} saving={saving} onConfirm={submit} onCancel={() => setReviewOpen(false)} />}
       {connectOpen && <WhatsAppConnectModal onClose={() => { setConnectOpen(false); setWaitingForWhatsApp(false); }} onConnected={onWhatsAppConnected} />}
     </>
   );
