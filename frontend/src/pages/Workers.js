@@ -1,3 +1,4 @@
+import FirstMissionHelp from "../components/FirstMissionHelp";
 import JourneyEmpty from "../components/JourneyEmpty";
 import ContextGuide from "../components/ContextGuide";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -235,6 +236,7 @@ function WhatsAppImportModal({ onClose, onDone, onQuota }) {
         <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
       </div>
 
+      <FirstMissionHelp />
       {!status?.connected && <div className="mt-6"><ContextGuide id="whatsapp" step={3} title="Reliez le WhatsApp qui enverra vos demandes">Suivez les instructions ci-dessous pour associer votre compte. Une fois connecté, vous pourrez choisir les contacts à ajouter à ShiftFlow.</ContextGuide>
         {mobile ? <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
