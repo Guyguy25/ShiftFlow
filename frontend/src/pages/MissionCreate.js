@@ -89,7 +89,7 @@ export default function MissionCreate() {
       <UpgradeModal open={!!upgrade} onClose={()=>{setUpgrade(null); nav("/app/missions");}} message={upgrade}/>
       <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Nouvelle mission</div>
       <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight">Créer une mission</h1>
-      <p className="text-sm sm:text-base text-gray-500 mt-1.5 leading-relaxed">Renseignez les infos essentielles. Vous choisirez ensuite les intervenants pour chaque shift.</p>
+      <p className="text-sm sm:text-base text-gray-500 mt-1.5 leading-relaxed">Renseignez les infos essentielles. Vous choisirez ensuite les intervenants pour chaque shift. Aucun message ne part à la création de la mission.</p>
 
       <ContextGuide id="mission" step={1} target='[data-testid="mc-name"]' title="Donnez un cadre à votre première mission">Un nom, un lieu et un créneau : commencez par ces informations. Vous choisirez les intervenants ensuite, avant tout envoi.</ContextGuide>
       <form onSubmit={submit} className="mt-5 sm:mt-8 space-y-4 sm:space-y-6">

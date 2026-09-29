@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 
+import FirstMissionHelp from "../components/FirstMissionHelp";
 import JourneyEmpty from "../components/JourneyEmpty";
 import { activationNext } from "../lib/activation";
 
@@ -125,6 +126,11 @@ export default function Dashboard() {
       )}
 
       </>}
+      {next && <section className="mt-6 rounded-xl border border-gray-200 bg-white p-4" aria-label="Découvrir avant le premier envoi">
+        <p className="text-sm text-gray-600">Vos demandes partiront après vérification du message et confirmation de l’envoi.</p>
+        <Link to="/demo" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline">Voir un exemple sans envoyer de message</Link>
+        <details><summary className="min-h-11 cursor-pointer py-3 text-sm font-medium text-gray-700">Questions sur les contacts et les envois</summary><FirstMissionHelp /></details>
+      </section>}
       <section className="mt-8 sm:mt-10">
         <div className="flex items-center justify-between mb-3 sm:mb-4"><h2 className="font-display font-bold text-lg sm:text-xl">Missions à venir</h2><Link to="/app/missions" className="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="dashboard-see-all">Voir tout →</Link></div>
         {data.upcoming.length === 0 ? <JourneyEmpty /> : <div className={`grid md:grid-cols-2 ${next ? "" : "xl:grid-cols-3"} gap-4`}>{data.upcoming.map((m) => <MissionCard key={m.id} m={m}/>)}</div>}

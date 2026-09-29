@@ -169,7 +169,7 @@ export default function Register() {
         <h1 ref={heading} tabIndex={-1} className="mt-7 text-2xl sm:text-3xl font-display font-bold tracking-tight outline-none">{titles[step]}</h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-500">{step === 0 ? "Deux informations pour personnaliser votre espace." : step === 1 ? "Ces coordonnées seront celles de votre compte." : step === 2 ? "Choisissez un mot de passe pour protéger votre compte." : "Adaptons ShiftFlow à vos besoins. Vous pouvez passer ces questions."}</p>
         {initial && Object.values(initial.form || {}).some(value => typeof value === "string" && value.trim()) && step === initial.step && <p className="mt-3 text-sm text-blue-700">Bon retour ! Votre saisie a été restaurée, sauf le mot de passe.</p>}
-        <p className="mt-3 text-sm text-gray-600">Sans carte bancaire. Aucun message envoyé à vos intervenants pendant l’inscription.</p><Link to="/demo" className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline">Découvrir avec des contacts fictifs</Link>
+        <p className="mt-3 text-sm text-gray-600">Sans carte bancaire. Aucun message envoyé à vos intervenants pendant l’inscription.</p>
         <form onSubmit={step === 2 ? submit : advance} className="mt-6" data-testid="register-form">
           <div className="space-y-5">
             {step === 0 && <>{input("name", "Votre nom", { autoComplete: "name", placeholder: "Camille Martin" })}{input("agency_name", "Nom de votre entreprise ou de votre structure", { autoComplete: "organization", placeholder: "Ma structure" })}</>}

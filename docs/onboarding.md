@@ -26,8 +26,9 @@ Frontend production build; activation and draft unit tests; isolated backend act
 Registration speaks to an organisation rather than only agencies. The public `/demo`
 route simulates a one-place cascade with fictitious people using component state only:
 no contact import, mission creation, message request, activation event or trial start.
-It is linked from signup and the first-mission FAQ (landing, activation, help and
-WhatsApp connection/import).
+It is linked from the landing page, the dashboard, account activation and the
+first-mission FAQ (help and WhatsApp connection/import). Signup deliberately keeps
+only the reassurance text: no demo detour while completing the registration form.
 
 The FAQ distinguishes WhatsApp contact synchronisation from selected worker imports,
 and describes automatic follow-ups after a real cascade has started. It does not
@@ -42,3 +43,15 @@ unreviewed send and concurrent duplicate submissions from the confirmation butto
 
 Validation: InvitationReview.test.js covers preview/no-send, failed preview/retry,
 selection invalidation, reconnect/no-send, duplicate clicks and the isolated demo.
+
+
+## Focused entry points
+
+Ads continue to land on the homepage. Its primary CTA announces account creation;
+the secondary CTA opens the optional simulation. The message specifies the user's
+existing network and WhatsApp. The signup form contains no simulation link.
+After signup the next activation action stays primary; simulation and expandable
+questions are secondary help, also available from the dashboard before first send.
+Mission creation explicitly states it does not send invitations. These are usability
+changes, not a measured conversion lift; assess completion and first-send rates over
+comparable cohorts before drawing performance conclusions.
