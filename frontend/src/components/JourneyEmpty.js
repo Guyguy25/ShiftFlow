@@ -10,7 +10,9 @@ export default function JourneyEmpty({ kind = "mission", onAction }) {
   const returning = activation?.summary?.missions_total > 0;
   const title = team ? "Votre prochaine équipe commence ici." : returning ? "Préparez votre prochaine équipe." : "Bientôt, votre première équipe confirmée.";
   const description = team ? "Ajoutez vos intervenants une seule fois. Vous pourrez ensuite leur proposer vos missions et suivre leurs réponses au même endroit." : "Créez votre mission, choisissez les personnes à contacter et retrouvez leurs confirmations ici. Vous saurez qui vient, sans multiplier les relances.";
-  const label = team ? "Ajouter mes intervenants" : activation?.next?.label || "Créer ma première mission";
+  const label = team
+    ? "Ajouter mes intervenants"
+    : activation?.next?.label || (returning ? "Créer une nouvelle mission" : "Créer ma première mission");
   const href = team ? "/app/workers?add=1" : activation?.next?.connect ? "/app/workers?connect=1" : activation?.next?.href || "/app/missions/new";
   return <section className="journey-empty" data-testid={`journey-empty-${kind}`}>
     <div className="journey-illustration" aria-hidden="true">
@@ -27,3 +29,4 @@ export default function JourneyEmpty({ kind = "mission", onAction }) {
     <Link to="/app/help" className="mt-4 inline-flex min-h-11 items-center text-sm font-medium text-blue-700 underline underline-offset-4">Besoin d’un coup de main ?</Link>
   </section>;
 }
+
