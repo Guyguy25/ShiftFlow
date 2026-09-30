@@ -1,10 +1,11 @@
+import MissionFollowUp, { invitationStatusLabel } from "../components/MissionFollowUp";
 import MissionTeamSetup from "../components/MissionTeamSetup";
 import InvitationReview from "../components/InvitationReview";
 import FirstMissionHelp from "../components/FirstMissionHelp";
 import ContextGuide from "../components/ContextGuide";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { CalendarClock, MapPin, Euro, Users, Copy, Trash2, XCircle, ArrowUp, ArrowDown, ExternalLink, Ban, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
+import { CalendarClock, MapPin, Users, Copy, XCircle, ArrowUp, ArrowDown, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
@@ -325,15 +326,16 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
   );
 }
 
-function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
+export function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
   const noSlots = !shift.slots || shift.slots.length === 0;
   const filled = shift.confirmed_count >= shift.people_needed;
-  const [expandSelect, setExpandSelect] = useState(autoExpand && !filled);
+  const [expandSelect, setExpandSelect] = useState(autoExpand && noSlots && !filled);
   const missing = Math.max(0, shift.people_needed - shift.confirmed_count);
 
   useEffect(() => {
-    if (autoExpand && !filled) setExpandSelect(true);
-  }, [autoExpand, filled]);
+    if (!noSlots || filled) setExpandSelect(false);
+    else if (autoExpand) setExpandSelect(true);
+  }, [autoExpand, filled, noSlots]);
 
   const copyLink = (token) => {
     const url = `${window.location.origin}/m/${token}`;
@@ -362,14 +364,12 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
         <div>
           <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">{TYPE_LABEL[shift.mission_type]}</div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-700">
-            <div className="flex items-center gap-1.5 font-medium"><CalendarClock className="w-4 h-4 text-gray-400"/>{shift.date}</div>
+            <div className="flex items-center gap-1.5 font-medium"><CalendarClock className="w-4 h-4 text-gray-400"/>{shift.date.split("-").reverse().join("/")}</div>
             <div>{shift.start_time} → {shift.end_time}</div>
             <div className="flex items-center gap-1.5"><Users className="w-4 h-4 text-gray-400"/>{shift.confirmed_count}/{shift.people_needed}</div>
-            <div className="flex items-center gap-1.5"><Euro className="w-4 h-4 text-gray-400"/>{shift.rate_hourly} €/h</div>
+
           </div>
-          <div className="mt-1 text-xs text-gray-500" data-testid={`shift-estimate-${shift.id}`}>
-            Estimation coût : <span className="font-semibold text-gray-900">{shift.estimated_cost} €</span>
-          </div>
+
         </div>
         <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto">
           {filled ? (
@@ -378,14 +378,12 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
             </span>
           ) : missing > 0 && mission.status !== "cancelled" ? (
             <span className="text-xs px-2 py-1 rounded-md border font-medium status-waiting inline-flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5"/>{missing} manquant{missing>1?"s":""}
+              <AlertTriangle className="w-3.5 h-3.5"/>{missing} à confirmer
             </span>
           ) : (
             <span className={`text-xs px-2 py-1 rounded-md border font-medium ${slotClass(shift.status)}`}>{MISSION_STATUS_LABEL[shift.status] || shift.status}</span>
           )}
-          <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} title="Dupliquer ce shift" className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
-            <CopyPlus className="w-4 h-4"/>
-          </button>
+
         </div>
       </div>
 
@@ -402,6 +400,7 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
         </div>
       ) : (
         <div>
+          <div className="px-4 sm:px-6 pt-4 pb-2 text-sm font-semibold text-gray-900">Demandes et réponses</div>
           <div className="divide-y divide-gray-100">
           {shift.slots.map((s) => (
             <div key={s.id} className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" data-testid={`slot-${s.id}`}>
@@ -414,19 +413,16 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`text-xs px-2 py-1 rounded-md border font-medium ${slotClass(s.status)}`} data-testid={`slot-status-${s.id}`}>
-                  {SLOT_STATUS_LABEL[s.status]}
+                  {invitationStatusLabel(s.status)}
                 </span>
-                {s.status === "contacted" && (
-                  <button onClick={()=>markNoAnswer(s.id)} data-testid={`no-answer-${s.id}`} className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 text-gray-600">
-                    Sans réponse
-                  </button>
-                )}
-                <button onClick={()=>copyLink(s.token)} data-testid={`copy-link-${s.id}`} className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 flex items-center gap-1 text-gray-700">
-                  <Copy className="w-3 h-3"/> Copier
-                </button>
-                <a href={`/m/${s.token}`} target="_blank" rel="noreferrer" data-testid={`open-link-${s.id}`} className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 flex items-center gap-1 text-gray-700">
-                  <ExternalLink className="w-3 h-3"/> Ouvrir
-                </a>
+                {s.status === "contacted" && <span className="text-xs text-gray-500">En attente de réponse</span>}
+                <details className="w-full text-xs text-gray-500">
+                  <summary className="cursor-pointer py-2">Actions pour {s.worker?.first_name || "cet intervenant"}</summary>
+                  <div className="flex flex-wrap gap-2 pb-2">
+                    <button onClick={()=>copyLink(s.token)} data-testid={`copy-link-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 flex items-center gap-1 text-gray-700"><Copy className="w-3 h-3"/> Copier le lien</button>
+                    {s.status === "contacted" && <button onClick={()=>markNoAnswer(s.id)} data-testid={`no-answer-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-700">Marquer sans réponse</button>}
+                  </div>
+                </details>
               </div>
             </div>
           ))}
@@ -455,6 +451,11 @@ function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
           )}
         </div>
       )}
+      <details className="border-t border-gray-100 px-4 sm:px-6 py-2 text-sm text-gray-500">
+        <summary className="cursor-pointer min-h-11 py-3">Détails du créneau</summary>
+        <p data-testid={`shift-estimate-${shift.id}`}>{shift.rate_hourly} €/h · Coût brut estimé : {shift.estimated_cost} €</p>
+        <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} className="min-h-11 mt-2 inline-flex items-center gap-2 text-gray-600"><CopyPlus size={16}/> Dupliquer ce créneau</button>
+      </details>
     </div>
   );
 }
@@ -525,63 +526,29 @@ export default function MissionDetail() {
   </>;
 
   return (
-    <div data-testid="mission-detail-page">
+    <div className="max-w-4xl pb-20" data-testid="mission-detail-page">
       <Toaster position="top-right" richColors/>
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div>
-          <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Mission</div>
-          <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight break-words" data-testid="mission-title">{m.name}</h1>
-          <div className="mt-2 flex flex-col sm:flex-row sm:flex-wrap gap-1.5 sm:gap-4 text-sm text-gray-600">
-            <div className="flex items-center gap-2"><MapPin className="w-4 h-4"/> {m.location}</div>
-            {m.first_date && <div className="flex items-center gap-2"><CalendarClock className="w-4 h-4"/> {m.first_date}{m.last_date && m.last_date !== m.first_date ? ` → ${m.last_date}` : ""}</div>}
-            <div className="flex items-center gap-2"><Users className="w-4 h-4"/> {m.total_confirmed}/{m.total_needed} confirmés</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs px-3 py-1.5 rounded-md border font-medium ${m.status === "filled" ? "status-confirmed" : m.status === "cancelled" ? "status-cancelled" : "status-contacted"}`}>
-            {MISSION_STATUS_LABEL[m.status] || m.status}
-          </span>
-          <button onClick={duplicateMission} data-testid="mission-duplicate-btn" title="Dupliquer la mission" className="p-2 rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-300">
-            <CopyPlus className="w-4 h-4"/>
-          </button>
-          {m.status !== "cancelled" && (
-            <button onClick={cancelMission} data-testid="mission-cancel-btn" className="p-2 rounded-md border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-300">
-              <Ban className="w-4 h-4"/>
-            </button>
-          )}
-          <button onClick={deleteMission} data-testid="mission-delete-btn" className="p-2 rounded-md border border-gray-300 text-gray-600 hover:text-red-600 hover:border-red-300">
-            <Trash2 className="w-4 h-4"/>
-          </button>
-        </div>
+      <p className="text-xs uppercase tracking-widest text-blue-700 font-bold">Mission</p>
+      <h1 className="mt-2 text-[28px] sm:text-3xl font-display font-bold leading-tight break-words" data-testid="mission-title">{m.name}</h1>
+      <div className="mt-2 space-y-1 text-sm text-gray-600">
+        <p className="flex items-center gap-2"><MapPin size={16}/>{m.location}</p>
+        {m.first_date && <p className="flex items-center gap-2"><CalendarClock size={16}/>{m.first_date.split("-").reverse().join("/")}{m.last_date && m.last_date !== m.first_date ? ` – ${m.last_date.split("-").reverse().join("/")}` : ""}</p>}
       </div>
-
-      {m.description && <p className="mt-4 text-gray-600 max-w-3xl">{m.description}</p>}
-
-      {firstSelectableShiftId && workers.length > 0 && <ContextGuide id="select-workers" step={4} title="Choisissez qui contacter pour ce créneau">Sélectionnez vos intervenants dans le créneau ci-dessous. Vérifiez la sélection avant de lancer les invitations : aucun message ne part sans votre action.</ContextGuide>}
-      <div className="mt-5 sm:mt-6 bg-white border border-gray-200 rounded-2xl sm:rounded-xl p-4 sm:p-6 grid grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-between" data-testid="mission-total-progress">
-        <div>
-          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Équipe totale</div>
-          <div className="mt-1 text-2xl font-display font-bold">{m.total_confirmed}/{m.total_needed} confirmés</div>
+      <MissionFollowUp mission={m} />
+      {!m.shifts.some(sh => sh.slots?.length) && firstSelectableShiftId && workers.length > 0 && <ContextGuide id="select-workers" step={4} title="Choisissez qui contacter pour ce créneau">Sélectionnez vos intervenants puis vérifiez le message avant de confirmer l’envoi.</ContextGuide>}
+      <h2 className="mt-6 font-display font-bold text-lg">Suivi par créneau</h2>
+      <div className="mt-3 space-y-4">{m.shifts.map(sh => <ShiftCard key={sh.id} mission={m} shift={sh} workers={workers} onReload={load} autoExpand={sh.id === autoExpandShiftId} />)}</div>
+      <details className="mt-5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
+        <summary className="min-h-11 py-3 cursor-pointer text-gray-600">Détails et gestion de la mission</summary>
+        {m.description && <p className="mb-3 text-gray-600">{m.description}</p>}
+        <p className="mb-4 text-gray-500" data-testid="mission-total-cost">Coût brut estimé : {totalCost.toFixed(2)} €</p>
+        <p className="mb-2 text-gray-500">{MISSION_STATUS_LABEL[m.status] || m.status}</p>
+        <div className="flex flex-wrap gap-2 pb-2">
+          <button onClick={duplicateMission} data-testid="mission-duplicate-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Dupliquer</button>
+          {m.status !== "cancelled" && <button onClick={cancelMission} data-testid="mission-cancel-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Annuler la mission</button>}
+          <button onClick={deleteMission} data-testid="mission-delete-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Archiver</button>
         </div>
-        <div className="text-right sm:text-right">
-          <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Coût brut estimé</div>
-          <div className="mt-1 text-2xl font-display font-bold" data-testid="mission-total-cost">{totalCost.toFixed(2)} €</div>
-        </div>
-      </div>
-
-      <h2 className="mt-10 font-display font-bold text-xl">Shifts</h2>
-      <div className="mt-4 space-y-4">
-        {m.shifts.map((sh) => (
-          <ShiftCard
-            key={sh.id}
-            mission={m}
-            shift={sh}
-            workers={workers}
-            onReload={load}
-            autoExpand={sh.id === autoExpandShiftId}
-          />
-        ))}
-      </div>
+      </details>
     </div>
   );
 }
