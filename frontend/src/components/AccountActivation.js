@@ -16,7 +16,7 @@ export default function AccountActivation() {
   const { steps, next } = activation;
   if (!steps?.length || !next) return null;
   const completed = steps.filter(step => step.done).length;
-  const currentIndex = next.connect ? 2 : next.href?.startsWith("/app/workers") ? 1 : next.href === "/app/missions/new" ? 0 : next.href === "/pricing" ? -1 : 3;
+  const currentIndex = next.connect ? 2 : (next.stage === "workers" || next.href?.startsWith("/app/workers")) ? 1 : next.href === "/app/missions/new" ? 0 : next.href === "/pricing" ? -1 : 3;
   const href = next.href || "/app/workers?connect=1";
   return <section className="account-activation mt-6" aria-labelledby="account-activation-title" data-testid="account-activation">
     <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Votre compte est créé · Passons à l’action</p>
