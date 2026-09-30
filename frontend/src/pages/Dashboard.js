@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Plus, Users, AlertTriangle, CalendarClock, CheckCircle2, Send, MessageSquare, TrendingUp } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Plus, Users, AlertTriangle, CalendarClock, CheckCircle2, Send, MessageSquare, TrendingUp, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
@@ -40,6 +40,7 @@ function MissionCard({ m }) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [whatsappStats, setWhatsappStats] = useState(null);
   const [whatsappStatus, setWhatsappStatus] = useState(null);
@@ -59,11 +60,37 @@ export default function Dashboard() {
   if (!data) return <div className="text-gray-500" data-testid="dashboard-loading">Chargement…</div>;
   const connected = !!whatsappStatus?.connected;
   const next = activationNext(data, whatsappStatus, quota);
+  const replayGuide = searchParams.get("guide") === "1";
+
+  const closeReplayGuide = () => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("guide");
+    setSearchParams(nextParams, { replace: true });
+  };
 
   if (next) return <ActivationHome summary={data} whatsapp={whatsappStatus} quota={quota} next={next} />;
 
   return (
     <div data-testid="dashboard-page">
+      {replayGuide && (
+        <section data-testid="dashboard-replay-guide" className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Vos repères</p>
+              <h2 className="mt-1 text-lg font-bold text-blue-950">Retrouvez l’essentiel en quelques secondes</h2>
+            </div>
+            <button type="button" onClick={closeReplayGuide} aria-label="Fermer les conseils" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-blue-700 hover:bg-blue-100">
+              <X size={19} />
+            </button>
+          </div>
+          <div className="mt-4 grid gap-2 text-sm text-blue-950 sm:grid-cols-3">
+            <Link to="/app/missions" className="rounded-xl bg-white p-3 font-medium shadow-sm">1. Missions : suivez les demandes et les réponses.</Link>
+            <Link to="/app/workers" className="rounded-xl bg-white p-3 font-medium shadow-sm">2. Équipe : gérez vos intervenants et WhatsApp.</Link>
+            <Link to="/app/missions/new" className="rounded-xl bg-white p-3 font-medium shadow-sm">3. Créer : préparez une nouvelle mission.</Link>
+          </div>
+          <p className="mt-3 text-xs text-blue-800">Aucun message ne part sans votre confirmation.</p>
+        </section>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div className="min-w-0">
           <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Tableau de bord</div>
@@ -137,3 +164,4 @@ export default function Dashboard() {
     </div>
   );
 }
+
