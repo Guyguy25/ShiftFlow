@@ -1,3 +1,4 @@
+import MissionTeamSetup from "../components/MissionTeamSetup";
 import InvitationReview from "../components/InvitationReview";
 import FirstMissionHelp from "../components/FirstMissionHelp";
 import ContextGuide from "../components/ContextGuide";
@@ -464,6 +465,14 @@ export default function MissionDetail() {
   const [searchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [workers, setWorkers] = useState([]);
+  const [workersLoading, setWorkersLoading] = useState(true);
+  const [workersError, setWorkersError] = useState("");
+  const reloadWorkers = useCallback(async () => {
+    setWorkersLoading(true); setWorkersError("");
+    try { const { data } = await api.get("/workers"); setWorkers(data.filter(w => w.active)); }
+    catch { setWorkersError("Impossible de charger vos intervenants."); }
+    finally { setWorkersLoading(false); }
+  }, []);
 
   const load = useCallback(async () => {
     const { data } = await api.get(`/missions/${id}`);
@@ -471,7 +480,7 @@ export default function MissionDetail() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get("/workers").then((r) => setWorkers(r.data.filter((w) => w.active))); }, []);
+  useEffect(() => { reloadWorkers(); }, [reloadWorkers]);
   useEffect(() => {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
@@ -482,7 +491,7 @@ export default function MissionDetail() {
   const totalCost = (m.shifts || []).reduce((sum, sh) => sum + (sh.estimated_cost || 0), 0);
   const shouldOpenSelection = searchParams.get("step") === "select";
   const requestedShiftId = searchParams.get("shift");
-  const firstSelectableShiftId = (m.shifts || []).find((sh) => !sh.slots || sh.slots.length === 0)?.id;
+  const firstSelectableShiftId = (m.shifts || []).find((sh) => sh.status !== "cancelled" && (!sh.slots || sh.slots.length === 0))?.id;
   const autoExpandShiftId = shouldOpenSelection
     ? ((requestedShiftId && (m.shifts || []).some((sh) => sh.id === requestedShiftId)) ? requestedShiftId : firstSelectableShiftId)
     : null;
@@ -506,6 +515,14 @@ export default function MissionDetail() {
       nav(`/app/missions/${data.id}`);
     } catch (e) { toast.error("Erreur de duplication"); }
   };
+
+  const setupShift = (m.shifts || []).find(sh => sh.id === autoExpandShiftId && sh.status !== "cancelled" && !sh.slots?.length);
+  if (shouldOpenSelection && setupShift && m.status !== "cancelled") return <>
+    <Toaster position="top-right" richColors />
+    <MissionTeamSetup mission={m} shift={setupShift} workers={workers} loading={workersLoading} error={workersError} onReloadWorkers={reloadWorkers} onShiftChange={shiftId => nav(`/app/missions/${id}?step=select&shift=${encodeURIComponent(shiftId)}`)}>
+      <ShiftSelector key={setupShift.id} mission={m} shift={setupShift} workers={workers} onSelected={() => { nav(`/app/missions/${id}`); load(); }} />
+    </MissionTeamSetup>
+  </>;
 
   return (
     <div data-testid="mission-detail-page">
@@ -540,7 +557,7 @@ export default function MissionDetail() {
 
       {m.description && <p className="mt-4 text-gray-600 max-w-3xl">{m.description}</p>}
 
-      {firstSelectableShiftId && <ContextGuide id="select-workers" step={4} title="Choisissez qui contacter pour ce créneau">Sélectionnez vos intervenants dans le créneau ci-dessous. Vérifiez la sélection avant de lancer les invitations : aucun message ne part sans votre action.</ContextGuide>}
+      {firstSelectableShiftId && workers.length > 0 && <ContextGuide id="select-workers" step={4} title="Choisissez qui contacter pour ce créneau">Sélectionnez vos intervenants dans le créneau ci-dessous. Vérifiez la sélection avant de lancer les invitations : aucun message ne part sans votre action.</ContextGuide>}
       <div className="mt-5 sm:mt-6 bg-white border border-gray-200 rounded-2xl sm:rounded-xl p-4 sm:p-6 grid grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-between" data-testid="mission-total-progress">
         <div>
           <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Équipe totale</div>
