@@ -1,38 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Clock3, Plus } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import GettingStarted from "./GettingStarted";
 import { api } from "../lib/api";
-
-const formatTrialRemaining = (endsAt, nowMs) => {
-  if (!endsAt) return null;
-  const endMs = new Date(endsAt).getTime();
-  if (!Number.isFinite(endMs)) return null;
-  const remaining = Math.max(0, endMs - nowMs);
-
-  if (remaining <= 0) return { expired: true, label: "Essai terminé", remainingMs: 0 };
-
-  const dayMs = 24 * 60 * 60 * 1000;
-  const hourMs = 60 * 60 * 1000;
-  const minuteMs = 60 * 1000;
-
-  if (remaining < dayMs) {
-    const hours = Math.floor(remaining / hourMs);
-    const minutes = Math.max(0, Math.ceil((remaining % hourMs) / minuteMs));
-    const label = hours > 0
-      ? `${hours} h ${minutes} min restantes`
-      : `${minutes} min restantes`;
-    return { expired: false, label, remainingMs: remaining };
-  }
-
-  const days = Math.ceil(remaining / dayMs);
-  return {
-    expired: false,
-    label: `${days} jour${days > 1 ? "s" : ""} restant${days > 1 ? "s" : ""}`,
-    remainingMs: remaining,
-  };
-};
 
 const nav = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
@@ -62,7 +33,6 @@ export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const [quota, setQuota] = useState(null);
-  const [clockNow, setClockNow] = useState(Date.now());
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -80,93 +50,8 @@ export default function Layout({ children }) {
     return () => { cancelled = true; };
   }, [location.pathname, location.search, user]);
 
-  useEffect(() => {
-    if (!quota?.trial_ends_at || user?.plan === "pro") return undefined;
-    setClockNow(Date.now());
-    const interval = window.setInterval(() => setClockNow(Date.now()), 30 * 1000);
-    return () => window.clearInterval(interval);
-  }, [quota?.trial_ends_at, user?.plan]);
-
-  const focusedMission = /^\/app\/missions\/[^/]+$/.test(location.pathname) && new URLSearchParams(location.search).get("step") === "select";
-  const trialStarted = !!quota?.trial_started;
-  const trialCountdown = trialStarted ? formatTrialRemaining(quota?.trial_ends_at, clockNow) : null;
-  const trialExpired = !!(quota?.trial_expired || trialCountdown?.expired);
-
-  const trialTone = (() => {
-    if (!trialStarted) return "ready";
-    if (trialExpired || (trialCountdown?.remainingMs ?? Infinity) < 24 * 60 * 60 * 1000) return "danger";
-    if ((trialCountdown?.remainingMs ?? Infinity) <= 3 * 24 * 60 * 60 * 1000) return "urgent";
-    if ((trialCountdown?.remainingMs ?? Infinity) <= 7 * 24 * 60 * 60 * 1000) return "warning";
-    return "calm";
-  })();
-
-  const toneClasses = {
-    ready: {
-      card: "border-emerald-200 bg-emerald-50/80",
-      icon: "bg-white text-emerald-700",
-      kicker: "text-emerald-700",
-      text: "text-emerald-950",
-      banner: "bg-emerald-50 border-emerald-200",
-      bannerText: "text-emerald-900",
-      link: "text-emerald-700 hover:text-emerald-900",
-      track: "bg-emerald-100",
-      fill: "bg-emerald-500",
-    },
-    calm: {
-      card: "border-blue-100 bg-blue-50/70",
-      icon: "bg-white text-blue-700",
-      kicker: "text-blue-600",
-      text: "text-gray-900",
-      banner: "bg-blue-50 border-blue-100",
-      bannerText: "text-blue-900",
-      link: "text-blue-700 hover:text-blue-900",
-      track: "bg-blue-100",
-      fill: "bg-blue-600",
-    },
-    warning: {
-      card: "border-amber-200 bg-amber-50",
-      icon: "bg-white text-amber-700",
-      kicker: "text-amber-700",
-      text: "text-amber-950",
-      banner: "bg-amber-50 border-amber-200",
-      bannerText: "text-amber-900",
-      link: "text-amber-700 hover:text-amber-950",
-      track: "bg-amber-100",
-      fill: "bg-amber-500",
-    },
-    urgent: {
-      card: "border-orange-200 bg-orange-50",
-      icon: "bg-white text-orange-700",
-      kicker: "text-orange-700",
-      text: "text-orange-950",
-      banner: "bg-orange-50 border-orange-200",
-      bannerText: "text-orange-950",
-      link: "text-orange-700 hover:text-orange-950",
-      track: "bg-orange-100",
-      fill: "bg-orange-500",
-    },
-    danger: {
-      card: "border-red-200 bg-red-50",
-      icon: "bg-white text-red-700",
-      kicker: "text-red-700",
-      text: "text-red-950",
-      banner: "bg-red-50 border-red-200",
-      bannerText: "text-red-900",
-      link: "text-red-700 hover:text-red-950",
-      track: "bg-red-100",
-      fill: "bg-red-600",
-    },
-  };
-  const tone = toneClasses[trialTone];
-
-  const trialProgress = (() => {
-    if (!quota?.trial_started_at || !quota?.trial_ends_at) return null;
-    const start = new Date(quota.trial_started_at).getTime();
-    const end = new Date(quota.trial_ends_at).getTime();
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-    const elapsed = Math.min(end - start, Math.max(0, clockNow - start));
-    return Math.round((elapsed / (end - start)) * 100);
-  })();
+  const focusedMission = /^\/app\/missions\/[^/]+$/.test(location.pathname);
+  const remaining = (quota?.free_missions_remaining || 0) + (quota?.mission_credits || 0);
 
   const handleLogout = async () => {
     await logout();
@@ -212,33 +97,16 @@ export default function Layout({ children }) {
         </nav>
         <div className="border-t border-gray-200 p-4 shrink-0 bg-white">
           {user?.plan !== "pro" && quota && (
-            <div className={`mb-3 rounded-xl border p-3 transition-colors ${tone.card}`} data-testid="trial-countdown-card">
-              <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tone.icon}`}>
-                  {trialStarted ? <Clock3 className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
-                </div>
-                <div className="min-w-0">
-                  <div className={`text-[10px] uppercase tracking-widest font-bold ${tone.kicker}`}>{trialStarted ? "Essai en cours" : "Essai disponible"}</div>
-                  <div className={`text-sm font-semibold truncate ${tone.text}`}>
-                    {trialStarted ? (trialCountdown?.label || "30 jours") : "30 jours offerts"}
-                  </div>
-                </div>
-              </div>
-              {!trialStarted ? (
-                <div className="mt-2 text-[11px] leading-relaxed text-emerald-800">
-                  Votre essai commence à la création de votre première mission.
-                </div>
-              ) : trialProgress !== null && !trialExpired ? (
-                <div className={`mt-2 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
-                  <div className={`h-full rounded-full transition-all duration-500 ${tone.fill}`} style={{ width: `${trialProgress}%` }} />
-                </div>
-              ) : null}
+            <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 p-3" data-testid="mission-balance-card">
+              <p className="text-sm font-semibold text-blue-950">{remaining} mission(s) disponible(s)</p>
+              <p className="mt-1 text-xs text-blue-800">{quota.free_missions_remaining} offerte(s) · {quota.mission_credits} achetée(s)</p>
+              <p className="mt-2 text-xs text-gray-600">Sans expiration. Vos missions existantes restent utilisables.</p>
             </div>
           )}
           {user?.plan !== "pro" && (
             <NavLink to="/pricing" data-testid="nav-upgrade-cta"
               className="mb-3 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-700 text-white text-sm font-semibold transition-all shadow-sm">
-              <Crown className="w-4 h-4" /> {trialExpired ? "Essai terminé — Passer au Pro" : "Passer au Pro"}
+              <Crown className="w-4 h-4" /> Voir les offres
             </NavLink>
           )}
           <div className="text-xs text-gray-500">Connecté en tant que</div>
@@ -320,58 +188,10 @@ export default function Layout({ children }) {
       </nav>
 
       <main className="flex-1 min-w-0 pt-14 pb-20 lg:pb-0 lg:pt-0 lg:ml-64">
-        {user?.plan !== "pro" && quota && (trialStarted || trialExpired) && (!focusedMission || trialExpired) && (
-          <div className={`border-b transition-colors ${tone.banner}`}>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-2.5">
-              <div className="sm:hidden flex items-center justify-between gap-3">
-                <div className={`min-w-0 text-sm ${tone.bannerText}`}>
-                  {!trialStarted ? (
-                    <div className="font-semibold inline-flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 shrink-0" /> Essai disponible</div>
-                  ) : trialExpired ? (
-                    <div className="font-semibold">Essai terminé</div>
-                  ) : (
-                    <div className="font-semibold inline-flex items-center gap-1.5"><Clock3 className="w-3.5 h-3.5 shrink-0" /> {trialCountdown?.label}</div>
-                  )}
-                  <div className="text-xs mt-0.5 opacity-80 truncate">
-                    {trialStarted ? `${quota.missions_used}/${quota.mission_limit} missions · ${quota.workers}/${quota.worker_limit} intervenants` : `${quota.workers}/${quota.worker_limit} intervenants préparés`}
-                  </div>
-                </div>
-                <Link to={!trialStarted ? "/app/missions/new" : "/pricing"} className={`text-xs font-semibold shrink-0 px-3 py-1.5 rounded-lg bg-white/80 border border-current/10 ${tone.link}`}>
-                  {!trialStarted ? "Démarrer" : trialExpired ? "Pro" : "Voir Pro"}
-                </Link>
-              </div>
-
-              <div className="hidden sm:flex sm:items-center sm:justify-between gap-2">
-                <div className={`text-sm flex flex-wrap items-center gap-x-2 gap-y-1 ${tone.bannerText}`}>
-                  {!trialStarted ? (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 font-semibold"><Zap className="w-3.5 h-3.5" /> 30 jours d’essai disponibles</span>
-                      <span className="opacity-40">·</span>
-                      <span>Votre essai commence à la création de votre première mission</span>
-                      <span className="opacity-40">·</span>
-                      <span>{quota.workers}/{quota.worker_limit} intervenants préparés</span>
-                    </>
-                  ) : trialExpired ? (
-                    <><strong>Votre essai de 30 jours est terminé.</strong> <span>Vos données restent accessibles, mais les actions ShiftFlow sont verrouillées.</span></>
-                  ) : (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 font-semibold"><Clock3 className="w-3.5 h-3.5" /> {trialCountdown?.label}</span>
-                      <span className="opacity-40">·</span>
-                      <span>{quota.missions_used}/{quota.mission_limit} missions</span>
-                      <span className="opacity-40">·</span>
-                      <span>{quota.workers}/{quota.worker_limit} intervenants</span>
-                    </>
-                  )}
-                </div>
-                {!trialStarted ? (
-                  <Link to="/app/missions/new" className={`text-sm font-semibold shrink-0 ${tone.link}`}>Créer ma première mission →</Link>
-                ) : (
-                  <Link to="/pricing" className={`text-sm font-semibold shrink-0 ${tone.link}`}>
-                    {trialExpired ? "Débloquer avec Pro" : "Voir le plan Pro"} →
-                  </Link>
-                )}
-              </div>
-            </div>
+        {user?.plan !== "pro" && quota && !focusedMission && (
+          <div className="border-b border-blue-100 bg-blue-50 px-4 py-3 sm:px-6 lg:px-10 flex items-center justify-between gap-3">
+            <p className="text-sm text-blue-950">{remaining > 0 ? <><strong>{remaining} mission(s) disponible(s)</strong> · sans expiration</> : <>Vos missions restent accessibles. <strong>La prochaine à 4,90 € ou Pro à 49 €/mois.</strong></>}</p>
+            <Link to="/pricing" className="shrink-0 text-sm font-semibold text-blue-700 underline">Les offres</Link>
           </div>
         )}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-5 sm:py-8">
@@ -381,4 +201,5 @@ export default function Layout({ children }) {
     </div>
   );
 }
+
 

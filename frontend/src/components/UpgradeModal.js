@@ -27,10 +27,10 @@ export default function UpgradeModal({ open, onClose, title, message }) {
             <Crown className="w-6 h-6" />
           </div>
           <h2 className="mt-4 text-2xl font-display font-bold tracking-tight">
-            {title || "Limite de l’essai gratuit atteinte"}
+            {title || "Continuez avec votre prochaine mission"}
           </h2>
           <p className="mt-2 text-blue-100 text-sm">
-            {message || "Passez au Pro pour un accès illimité aux missions et intervenants."}
+            {message || "Vos missions existantes restent utilisables. Pour la prochaine : 4,90 € à l’unité ou 49 €/mois en illimité."}
           </p>
         </div>
         <div className="p-6">
@@ -59,7 +59,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
               data-testid="upgrade-modal-cta"
               className="w-full h-11 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center justify-center gap-2 transition-colors"
             >
-              <Crown className="w-4 h-4" /> Passer au Pro — 49 €/mois
+              <Crown className="w-4 h-4" /> Choisir : 4,90 € la mission ou Pro
             </Link>
             <button
               onClick={onClose}
@@ -74,3 +74,4 @@ export default function UpgradeModal({ open, onClose, title, message }) {
     </div>
   );
 }
+

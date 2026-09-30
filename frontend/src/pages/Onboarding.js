@@ -178,10 +178,10 @@ export default function Onboarding() {
             <h1 className="mt-6 text-3xl font-display font-bold tracking-tight">Vous êtes prêt !</h1>
             <p className="mt-3 text-gray-600">Votre compte gratuit ShiftFlow est prêt. Créez votre première mission dès maintenant.</p>
             <div className="mt-6 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-gray-700 text-left">
-              <div className="font-semibold text-blue-900 mb-1">Essai gratuit — commence à la première mission</div>
+              <div className="font-semibold text-blue-900 mb-1">3 missions offertes — à votre rythme</div>
               <ul className="space-y-1 text-gray-700">
-                <li>• 30 jours · 3 missions maximum</li>
-                <li>• 30 intervenants maximum</li>
+                <li>• 3 missions offertes sans expiration</li>
+                <li>• Intervenants illimités, sans supplément</li>
                 <li>• Toutes les fonctionnalités : cascade WhatsApp, suivi des réponses</li>
               </ul>
             </div>
@@ -209,3 +209,4 @@ export default function Onboarding() {
     </div>
   );
 }
+

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import UpgradeModal from "../components/UpgradeModal";
 
 const TYPES = [
@@ -33,21 +34,31 @@ function estimate(sh) {
 }
 
 export default function MissionCreate() {
+  const { user } = useAuth();
+  const draftKey = `shiftflow_mission_draft_${user?.id || "anonymous"}`;
+  const [savedDraft] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem(draftKey) || "null"); } catch (_) { return null; }
+  });
+
   const nav = useNavigate();
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(Math.min(2, savedDraft?.step || 0));
   const heading = useRef(null);
   const submitting = useRef(false);
   useEffect(() => { heading.current?.focus(); }, [step]);
-  const [mission, setMission] = useState({
+  const [mission, setMission] = useState(savedDraft?.mission || {
     name: "", location: "", address: "", description: "",
     cascade_enabled: true, followup_hours: 2,
   });
-  const [shifts, setShifts] = useState([emptyShift()]);
+  const [shifts, setShifts] = useState(Array.isArray(savedDraft?.shifts) && savedDraft.shifts.length ? savedDraft.shifts : [emptyShift()]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [upgrade, setUpgrade] = useState(null);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(draftKey, JSON.stringify({ mission, shifts, step })); } catch (_) { /* Storage can be unavailable. */ }
+  }, [draftKey, mission, shifts, step]);
 
   const setM = (k, v) => setMission({ ...mission, [k]: v });
   const setS = (i, k, v) => setShifts(shifts.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
@@ -82,6 +93,7 @@ export default function MissionCreate() {
         })),
       };
       const { data } = await api.post("/missions", payload);
+      sessionStorage.removeItem(draftKey);
       nav(`/app/missions/${data.id}?step=select`);
     } catch (err) {
       const status = err.response?.status;
@@ -203,7 +215,7 @@ export default function MissionCreate() {
             </div>
           </label>
           <p className="text-sm text-gray-600">Aucune demande ne part à la création. Vous choisirez vos contacts et vérifierez le message avant de confirmer l’envoi.</p>
-          <p className="text-xs text-gray-500">Si votre essai gratuit n’a pas encore commencé, créer cette mission le démarre pour 30 jours.</p>
+          <p className="text-xs text-gray-500">Créer cette mission utilise une mission offerte ou un crédit disponible. Aucun paiement automatique. Les créneaux de ce même événement sont inclus.</p>
         </section>}
         {error && <div role="alert" className="text-sm text-red-600" data-testid="mc-error">{error}</div>}
         <div className="flex justify-end gap-3">
@@ -216,3 +228,4 @@ export default function MissionCreate() {
     </div>
   );
 }
+

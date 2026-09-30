@@ -30,11 +30,11 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
                     if mission and mission.get("id") else "/app/dashboard")
     if stage == "no_mission":
         subject = "Créez votre première mission sur ShiftFlow"
-        message = "Créez votre première mission pour préparer les horaires, le lieu et votre équipe. Votre essai de 30 jours commence à cette étape."
+        message = "Créez votre première mission pour préparer les horaires, le lieu et votre équipe. Vos 3 premières missions sont offertes, sans date limite ni carte bancaire."
         label, path = "Créer ma mission", "/app/missions/new"
     elif stage == "no_mission_followup":
-        subject = "Votre essai ShiftFlow vous attend toujours"
-        message = "Votre essai ne démarre qu'à la création de votre première mission. Quelques minutes suffisent pour renseigner le lieu, les horaires et le nombre de personnes recherchées."
+        subject = "Vos 3 missions offertes vous attendent"
+        message = "Vos 3 missions offertes restent disponibles sans expiration. Quelques minutes suffisent pour renseigner le lieu, les horaires et le nombre de personnes recherchées."
         label, path = "Préparer ma première mission", "/app/missions/new"
     elif stage == "no_workers":
         subject = "Votre mission est prête — ajoutez vos intervenants"
@@ -60,18 +60,20 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
         subject = "Votre équipe est prête pour la mission"
         message = f"L'équipe de « {mission_name} » est complète. Vous pouvez retrouver les personnes confirmées et les horaires à tout moment dans ShiftFlow."
         label, path = "Voir mon équipe", mission_path
-    elif stage == "trial_ending_7d":
-        subject = "Il reste 7 jours à votre essai ShiftFlow"
-        message = "Votre essai arrive dans sa dernière semaine. Vous pouvez continuer à préparer vos missions et centraliser les réponses de votre équipe avant son échéance."
-        label, path = "Voir mon espace", "/app/dashboard"
-    elif stage == "trial_ending_2d":
-        subject = "Plus que 2 jours d'essai ShiftFlow"
-        message = "Votre essai se termine bientôt. Passez au plan Pro si vous souhaitez continuer à créer des missions et contacter vos intervenants sans interruption."
-        label, path = "Découvrir le plan Pro", "/pricing"
+    elif stage == "last_free_mission":
+        subject = "Il vous reste une mission offerte sur ShiftFlow"
+        message = "Vous pouvez encore créer une mission gratuitement, quand vous le souhaitez. Ensuite, choisissez 4,90 € par nouvelle mission ou 49 €/mois en illimité. Vos missions existantes restent utilisables."
+        label, path = "Préparer ma prochaine mission", "/app/missions/new"
+    elif stage == "free_missions_used":
+        subject = "Votre prochaine mission : à l’unité ou en illimité ?"
+        message = "Vos 3 missions offertes ont été utilisées. Pour la prochaine, choisissez un crédit à 4,90 €, sans abonnement, ou Pro à 49 €/mois. Vos équipes et vos missions existantes restent accessibles. Aucun paiement n’est automatique."
+        label, path = "Comparer les deux offres", "/pricing"
+    elif stage == "pro_relevant":
+        subject = "Plusieurs missions ce mois-ci ? Comparez avec Pro"
+        message = "Vous avez acheté plusieurs missions ce mois-ci. Pro coûte 49 €/mois, soit le prix de 10 missions à l’unité, et devient moins cher dès la 11e. Choisissez selon vos besoins à venir : les achats déjà effectués ne sont pas déduits de l’abonnement."
+        label, path = "Comparer pour mes prochaines missions", "/pricing"
     else:
-        subject = "Votre essai ShiftFlow est terminé"
-        message = "Votre espace et vos données restent disponibles. Passez au plan Pro pour reprendre la création de missions et les demandes de disponibilité."
-        label, path = "Continuer avec ShiftFlow", "/pricing"
+        raise ValueError("Unknown lifecycle stage")
     url = f"{base}{path}?utm_source=lifecycle_email&utm_medium=email&utm_campaign={stage}"
     safe_url = html.escape(url, quote=True)
     safe_unsubscribe = html.escape(unsubscribe_url, quote=True)
@@ -99,9 +101,11 @@ async def _eligible_stages(db, user, now):
     stages = []
     if not mission:
         account_age = now - (_date(user.get("created_at")) or now)
-        if account_age >= timedelta(hours=3):
+        history = await db.missions.find_one({"agency_id": agency_id}, {"id": 1})
+        is_new = not history and not user.get("free_missions_used") and not user.get("credited_checkout_sessions")
+        if is_new and account_age >= timedelta(hours=3):
             stages.append(("no_mission", None))
-        if account_age >= timedelta(hours=48):
+        if is_new and account_age >= timedelta(hours=48):
             stages.append(("no_mission_followup", None))
     else:
         mission_age = now - (_date(mission.get("created_at")) or now)
@@ -139,15 +143,19 @@ async def _eligible_stages(db, user, now):
                 elif not fully_staffed and invite_age >= timedelta(hours=24):
                     stages.append(("pending_responses", mission))
 
-    trial_end = _date(user.get("trial_ends_at"))
-    if trial_end:
-        remaining = trial_end - now
-        if timedelta(days=2) < remaining <= timedelta(days=7):
-            stages.append(("trial_ending_7d", mission))
-        if timedelta(0) < remaining <= timedelta(days=2):
-            stages.append(("trial_ending_2d", mission))
-        if timedelta(days=-7) <= remaining <= timedelta(0):
-            stages.append(("trial_expired", mission))
+    # Commercial nudges follow usage, never an artificial deadline.
+    free_used = user.get("free_missions_used")
+    if free_used == 2 and mission and now - (_date(mission.get("created_at")) or now) >= timedelta(hours=24):
+        stages.append(("last_free_mission", mission))
+    elif free_used is not None and free_used >= 3 and not user.get("mission_credits"):
+        stages.append(("free_missions_used", mission))
+    if user.get("credited_checkout_sessions"):
+        purchases = await db.payment_transactions.count_documents({
+            "user_id": user["id"], "lookup_key": "shiftflow_mission", "fulfilled": True,
+            "created_at": {"$gte": (now - timedelta(days=30)).isoformat()},
+        })
+        if purchases >= 6:
+            stages.append(("pro_relevant", mission))
     return stages
 
 
@@ -173,11 +181,11 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
     })
     if already_sent_today >= 90:
         return 0
-    # Cover the complete 30-day trial plus a short post-trial recovery window.
+    # Recent signups and recently active agencies; inactive accounts are not chased forever.
     cutoff = (now - timedelta(days=40)).isoformat()
-    cursor = db.users.find({"created_at": {"$gte": cutoff}, "onboarding_email_opt_out": {"$ne": True}},
+    cursor = db.users.find({"$or": [{"created_at": {"$gte": cutoff}}, {"last_mission_created_at": {"$gte": cutoff}}, {"last_mission_purchase_at": {"$gte": cutoff}}], "onboarding_email_opt_out": {"$ne": True}},
                            {"_id": 0, "id": 1, "name": 1, "email": 1, "created_at": 1,
-                            "plan": 1, "trial_started_at": 1, "trial_ends_at": 1,
+                            "plan": 1, "free_missions_used": 1, "mission_credits": 1, "credited_checkout_sessions": 1,
                             "onboarding_email_last_sent_at": 1})
     sent_count = 0
     async with httpx.AsyncClient(timeout=8) as client:
@@ -240,12 +248,12 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
                 if not record:
                     continue
                 # Recheck progression just before delivery, in case the user acted since the scan.
-                current_user = await db.users.find_one({"id": user["id"]}, {"onboarding_email_opt_out": 1})
-                current_stage, _ = await _stage(db, user, now, sent_stages)
-                if not current_user or current_user.get("onboarding_email_opt_out") or current_stage != stage:
+                current_user = await db.users.find_one({"id": user["id"]})
+                current_stage, _ = await _stage(db, current_user or user, now, sent_stages)
+                if not current_user or current_user.get("plan") == "pro" or current_user.get("onboarding_email_opt_out") or current_stage != stage:
                     await db.onboarding_emails.update_one({"_id": record_id}, {"$set": {"status": "skipped"}})
                     continue
-                data = record["payload"]
+                data = payload  # Refresh wording after an offer change; do not send stale trial promises.
                 response = await client.post("https://api.resend.com/emails", headers={
                     "Authorization": f"Bearer {key}", "Idempotency-Key": f"shiftflow-onboarding-{record_id}",
                 }, json={"from": sender, "to": [record["to"]], "reply_to": "hello@shiftflow.io",
@@ -265,4 +273,5 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
             finally:
                 await db.users.update_one({"id": user["id"]}, {"$unset": {"onboarding_email_locked_until": ""}})
     return sent_count
+
 

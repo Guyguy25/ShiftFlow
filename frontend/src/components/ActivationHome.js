@@ -28,6 +28,7 @@ export default function ActivationHome({ summary, whatsapp, quota, next }) {
     </section>
     <details className="mt-6 border-t border-gray-200 pt-2"><summary className="cursor-pointer py-3 text-sm font-medium text-gray-600">Contacts, WhatsApp et envois : comment ça marche ?</summary><FirstMissionHelp /></details>
     <Link to="/demo" className="inline-flex min-h-11 items-center text-sm text-blue-700 underline">Voir un exemple avec des contacts fictifs</Link>
-    {quota?.plan === "free" && !quota.trial_started && <p className="mt-3 text-xs leading-relaxed text-gray-500">Votre essai de 30 jours commence à la création de votre première mission.</p>}
+    {quota?.plan === "free" && !quota.trial_started && <p className="mt-3 text-xs leading-relaxed text-gray-500">Vos 3 premières missions sont offertes, sans date limite ni carte bancaire.</p>}
   </div>;
 }
+

@@ -66,7 +66,7 @@ const KB = [
     label: "Tarifs & abonnement",
     keywords: ["tarif", "prix", "abonnement", "payer", "pro", "gratuit", "plan"],
     answer:
-      "L'essai gratuit dure 30 jours à partir de ta première mission, avec jusqu'à 3 missions et 30 intervenants, sans carte bancaire. Le plan Pro coûte 49 €/mois ou 499,80 €/an et permet des missions et intervenants illimités.",
+      "Vos 3 premières missions sont offertes sans expiration ni carte bancaire. Ensuite : 4,90 € par nouvelle mission ou 49 €/mois pour des missions illimitées. Les intervenants sont illimités dans toutes les offres.",
   },
 ];
 
@@ -184,3 +184,4 @@ export default function HelpChatbot() {
     </div>
   );
 }
+

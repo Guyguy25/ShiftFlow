@@ -146,7 +146,7 @@ export default function Settings() {
           <div className="flex items-center gap-2 font-semibold">
             <Crown className="w-5 h-5"/> Abonnement
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
-              {isPro ? "PRO ACTIF" : quota?.trial_expired ? "ESSAI TERMINÉ" : "ESSAI GRATUIT"}
+              {isPro ? "PRO ACTIF" : "À LA MISSION"}
             </span>
           </div>
           {quota && (
@@ -154,7 +154,7 @@ export default function Settings() {
               {isPro ? (
                 <>Missions et intervenants <strong>illimités</strong>. Merci pour votre soutien !</>
               ) : (
-                <>Missions : <strong>{quota.missions_used ?? quota.active_missions}/{quota.mission_limit}</strong> · Intervenants : <strong>{quota.workers}/{quota.worker_limit}</strong> · {!quota.trial_started ? <strong className="text-emerald-700">30 jours disponibles — l’essai commence à la création de votre 1re mission</strong> : quota.trial_expired ? <strong className="text-red-600">Essai terminé</strong> : <><strong>{quota.trial_days_remaining}</strong> jour{quota.trial_days_remaining > 1 ? "s" : ""} restant{quota.trial_days_remaining > 1 ? "s" : ""}</>}</>
+                <>{quota.free_missions_remaining} mission(s) offerte(s) restante(s) · {quota.mission_credits} crédit(s) acheté(s) · <strong>sans expiration</strong>. Vos missions existantes restent utilisables.</>
               )}
             </div>
           )}
@@ -167,7 +167,7 @@ export default function Settings() {
             ) : (
               <Link to="/pricing" data-testid="settings-upgrade-link"
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                <Crown className="w-4 h-4"/> Passer au Pro
+                <Crown className="w-4 h-4"/> Acheter une mission ou choisir Pro
               </Link>
             )}
           </div>
@@ -313,3 +313,4 @@ export default function Settings() {
     </div>
   );
 }
+

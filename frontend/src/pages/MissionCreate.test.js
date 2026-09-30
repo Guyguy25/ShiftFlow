@@ -6,9 +6,11 @@ const mockNavigate = jest.fn();
 jest.mock("react-router-dom", () => ({ useNavigate: () => mockNavigate }), { virtual: true });
 jest.mock("../lib/api", () => ({ api: { post: jest.fn() }, formatApiError: value => value }));
 jest.mock("../components/UpgradeModal", () => () => null);
+jest.mock("../context/AuthContext", () => ({ useAuth: () => ({ user: { id: "test" } }) }));
 let root, host;
 beforeEach(async () => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
+  sessionStorage.clear();
   jest.clearAllMocks(); api.post.mockResolvedValue({ data: { id: "test" } });
   host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
   await act(async () => root.render(<MissionCreate />));
@@ -37,3 +39,4 @@ test("missing and past dates cannot advance to creation", async () => {
   await fill("mc-shift-0-date", "2000-01-01"); await fill("mc-shift-0-start", "08:00"); await fill("mc-shift-0-end", "12:00");
   await submit(); expect(host.textContent).toContain("date déjà passée"); expect(api.post).not.toHaveBeenCalled();
 });
+

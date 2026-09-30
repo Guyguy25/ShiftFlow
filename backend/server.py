@@ -21,6 +21,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
+import mission_billing
 
 # Twilio (optional — fallback to demo if not configured)
 try:
@@ -38,8 +39,7 @@ JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MINUTES = 60 * 24
 REFRESH_TOKEN_DAYS = 90  # "rester connecté" : la session glisse tant que l'utilisateur revient dans les 90 jours
-FREE_TRIAL_DAYS = 30
-TRIAL_MODEL_VERSION = 2  # v2 starts the 30-day clock on the first mission
+TRIAL_MODEL_VERSION = 3  # v3: three free missions, no expiry
 
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -198,81 +198,24 @@ def _parse_account_datetime(value: Optional[str]) -> Optional[datetime]:
 
 
 def trial_info(u: dict) -> dict:
-    if u.get("plan", "free") == "pro":
-        return {
-            "trial_started": bool(u.get("trial_started_at")),
-            "trial_started_at": u.get("trial_started_at"),
-            "trial_ends_at": u.get("trial_ends_at"),
-            "trial_days_remaining": None,
-            "trial_expired": False,
-        }
-
-    start = _parse_account_datetime(u.get("trial_started_at"))
-    if not start:
-        return {
-            "trial_started": False,
-            "trial_started_at": None,
-            "trial_ends_at": None,
-            "trial_days_remaining": FREE_TRIAL_DAYS,
-            "trial_expired": False,
-        }
-
-    end = _parse_account_datetime(u.get("trial_ends_at")) or (start + timedelta(days=FREE_TRIAL_DAYS))
-    seconds_left = max(0, int((end - now_utc()).total_seconds()))
-    days_remaining = 0 if seconds_left <= 0 else (seconds_left + 86399) // 86400
-    expired = now_utc() >= end
-    return {
-        "trial_started": True,
-        "trial_started_at": iso(start),
-        "trial_ends_at": iso(end),
-        "trial_days_remaining": int(days_remaining),
-        "trial_expired": bool(expired),
-    }
+    # Retain response compatibility for older clients; the clock no longer expires.
+    return {"trial_started": bool(u.get("trial_started_at")),
+            "trial_started_at": u.get("trial_started_at"), "trial_ends_at": None,
+            "trial_days_remaining": None, "trial_expired": False}
 
 
 def has_active_product_access(u: dict) -> bool:
-    # Before the first mission the trial clock has not started yet, so setup
-    # actions (WhatsApp, contacts, etc.) remain available.
-    return u.get("plan", "free") == "pro" or not trial_info(u)["trial_expired"]
+    # Existing missions, responses, reminders and team setup remain usable.
+    # Only the creation of an additional mission consumes an entitlement.
+    return bool(u)
 
 
 async def ensure_trial_active_or_raise(user: dict):
-    if has_active_product_access(user):
-        return
-    raise HTTPException(
-        status_code=402,
-        detail=f"Votre essai gratuit de {FREE_TRIAL_DAYS} jours est terminé. Passez au Pro pour continuer à utiliser ShiftFlow.",
-    )
+    return
 
 
 async def ensure_trial_model(user: dict) -> dict:
-    """One-time migration to the 'trial starts on first mission' model."""
-    if not user or user.get("plan", "free") == "pro" or int(user.get("trial_model_version") or 0) >= TRIAL_MODEL_VERSION:
-        return user
-
-    first = await db.missions.find(
-        {"agency_id": user["id"]},
-        {"_id": 0, "created_at": 1},
-    ).sort("created_at", 1).limit(1).to_list(1)
-
-    update = {"trial_model_version": TRIAL_MODEL_VERSION}
-    unset = {}
-    if first:
-        start = _parse_account_datetime(first[0].get("created_at")) or now_utc()
-        update["trial_started_at"] = iso(start)
-        update["trial_ends_at"] = iso(start + timedelta(days=FREE_TRIAL_DAYS))
-        user.update(update)
-    else:
-        unset = {"trial_started_at": "", "trial_ends_at": ""}
-        user.pop("trial_started_at", None)
-        user.pop("trial_ends_at", None)
-        user.update(update)
-
-    mongo_update = {"$set": update}
-    if unset:
-        mongo_update["$unset"] = unset
-    await db.users.update_one({"id": user["id"]}, mongo_update)
-    return user
+    return await mission_billing.account(db, user["id"])
 
 
 def public_user(u: dict) -> dict:
@@ -1005,7 +948,15 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
         "status": "draft",
         "created_at": iso(mission_created_at),
     }
-    await db.missions.insert_one(mission)
+    source = await mission_billing.reserve(db, user["id"])
+    mission["billing_source"] = source
+    try:
+        await db.missions.insert_one(mission)
+    except Exception:
+        # A network timeout may hide a successful write; do not refund blindly.
+        if not await db.missions.find_one({"id": mission["id"]}):
+            await mission_billing.release(db, user["id"], source)
+        raise
     for s in payload.shifts:
         shift = {
             "id": new_id(),
@@ -1022,17 +973,17 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
 
     if is_first_mission:
         trial_started_at = mission_created_at
-        trial_ends_at = trial_started_at + timedelta(days=FREE_TRIAL_DAYS)
+        trial_ends_at = None
         await db.users.update_one(
             {"id": user["id"]},
             {"$set": {
                 "trial_started_at": iso(trial_started_at),
-                "trial_ends_at": iso(trial_ends_at),
+                "trial_ends_at": trial_ends_at,
                 "trial_model_version": TRIAL_MODEL_VERSION,
             }},
         )
         user["trial_started_at"] = iso(trial_started_at)
-        user["trial_ends_at"] = iso(trial_ends_at)
+        user["trial_ends_at"] = trial_ends_at
 
         await record_activation_event(
             user,
@@ -1055,7 +1006,7 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
                 client_ip_address=request_client_ip(request),
                 fbp=user.get("meta_fbp"),
                 fbc=user.get("meta_fbc"),
-                custom_data={"trial_days": FREE_TRIAL_DAYS},
+                custom_data={"free_missions": 3},
             )
 
             # Separate activation signal: the user has actually used ShiftFlow.
@@ -1365,7 +1316,14 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
         "status": "draft",
         "created_at": iso(now_utc()),
     }
-    await db.missions.insert_one(new_mission)
+    source = await mission_billing.reserve(db, user["id"])
+    new_mission["billing_source"] = source
+    try:
+        await db.missions.insert_one(new_mission)
+    except Exception:
+        if not await db.missions.find_one({"id": new_mission["id"]}):
+            await mission_billing.release(db, user["id"], source)
+        raise
     new_mission.pop("_id", None)
     original_shifts = await db.shifts.find({"mission_id": mission_id}, {"_id": 0}).sort("date", 1).to_list(500)
     for sh in original_shifts:
@@ -1771,11 +1729,12 @@ import stripe as stripe_lib
 stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 ALLOWED_STRIPE_PRICES = {
+    mission_billing.MISSION_LOOKUP: {"interval": "one_time", "amount": mission_billing.MISSION_AMOUNT},
     "shiftflow_pro_monthly": {"interval": "month", "amount": 4900},
     "shiftflow_pro_yearly": {"interval": "year", "amount": 49980},
 }
 FREE_MISSION_LIMIT = 3
-FREE_WORKER_LIMIT = 30
+FREE_WORKER_LIMIT = None
 
 
 async def _get_plan(user_id: str) -> str:
@@ -1802,25 +1761,14 @@ async def _active_missions_count(user_id: str) -> int:
 
 
 async def _missions_created_count(user_id: str) -> int:
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "trial_started_at": 1})
-    start = (user or {}).get("trial_started_at")
-    if not start:
-        return 0
-    return await db.missions.count_documents({"agency_id": user_id, "created_at": {"$gte": start}})
+    return await db.missions.count_documents({"agency_id": user_id})
 
 
 async def check_quota_or_raise(user, kind: str):
-    if (await _get_plan(user["id"])) == "pro":
-        return
-    await ensure_trial_active_or_raise(user)
     if kind == "mission":
-        if (await _missions_created_count(user["id"])) >= FREE_MISSION_LIMIT:
-            raise HTTPException(status_code=402,
-                detail=f"Limite de l'essai atteinte ({FREE_MISSION_LIMIT} missions max). Passez au Pro pour créer des missions illimitées.")
-    elif kind == "worker":
-        if (await db.workers.count_documents({"agency_id": user["id"]})) >= FREE_WORKER_LIMIT:
-            raise HTTPException(status_code=402,
-                detail=f"Limite de l'essai atteinte ({FREE_WORKER_LIMIT} intervenants max). Passez au Pro pour un nombre illimité.")
+        current = await mission_billing.account(db, user["id"])
+        if not mission_billing.balance(current)["can_create_mission"]:
+            raise HTTPException(402, "Choisissez une mission à 4,90 € ou Pro à 49 €/mois. Vos missions existantes restent utilisables.")
 
 
 class OnboardingIn(BaseModel):
@@ -1858,6 +1806,7 @@ async def get_quota(user=Depends(get_current_user)):
         "active_missions": missions,
         "missions_used": missions_used,
         "mission_limit": None if plan == "pro" else FREE_MISSION_LIMIT,
+        **mission_billing.balance(await mission_billing.account(db, user["id"])),
         "workers": workers,
         "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
         "subscription_status": (u or {}).get("subscription_status"),
@@ -1869,6 +1818,7 @@ class CheckoutIn(BaseModel):
     lookup_key: str
     origin_url: str
     meta_consent: bool = False
+    legal_acceptance: dict = Field(default_factory=dict)
 
 
 async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optional[str] = None):
@@ -1911,36 +1861,50 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
+    if payload.legal_acceptance.get("version") != "2026-09-30":
+        raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
     expected_price = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
     if not expected_price:
         raise HTTPException(status_code=400, detail="Offre Stripe non autorisée")
     expected_interval = expected_price["interval"]
     expected_amount = expected_price["amount"]
 
-    prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
-    if not prices:
-        raise HTTPException(status_code=400, detail=f"Prix Stripe introuvable: {payload.lookup_key}")
+    current = await mission_billing.account(db, user["id"])
+    if current.get("plan") == "pro":
+        raise HTTPException(409, "Votre abonnement Pro est déjà actif. Gérez-le depuis votre compte.")
+    if payload.lookup_key == mission_billing.MISSION_LOOKUP and mission_billing.balance(current)["can_create_mission"]:
+        raise HTTPException(409, "Vous avez déjà une mission disponible. Utilisez-la avant d'en acheter une autre.")
+    pending = await db.payment_transactions.find_one({
+        "user_id": user["id"], "lookup_key": payload.lookup_key, "status": "initiated",
+    }, sort=[("created_at", -1)])
+    if pending:
+        previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
+        if previous.status == "open":
+            return {"checkout_url": previous.url, "session_id": previous.id}
+    if payload.lookup_key == mission_billing.MISSION_LOOKUP:
+        line_items = [{"price_data": {"currency": "eur", "unit_amount": expected_amount,
+            "product_data": {"name": "ShiftFlow — 1 mission",
+                             "description": "Un crédit sans expiration pour créer une mission. Paiement unique, sans abonnement."}}, "quantity": 1}]
+    else:
+        prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
+        if not prices:
+            raise HTTPException(503, "Cette offre est temporairement indisponible. Contactez le support.")
+        price = prices[0]
+        if (not price.recurring or price.recurring.interval != expected_interval
+                or price.currency != "eur" or int(price.unit_amount or 0) != expected_amount):
+            raise HTTPException(503, "Le tarif de paiement doit être vérifié par le support.")
+        line_items = [{"price": price.id, "quantity": 1}]
 
-    price = prices[0]
-    if not price.recurring or price.recurring.interval != expected_interval:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Le prix Stripe {payload.lookup_key} doit être un abonnement récurrent {expected_interval}.",
-        )
-    if price.currency != "eur" or int(price.unit_amount or 0) != expected_amount:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Le montant Stripe de {payload.lookup_key} ne correspond pas au tarif ShiftFlow attendu.",
-        )
-
-    origin = payload.origin_url.rstrip("/")
+    origin = FRONTEND_URL or "https://www.shiftflow.io"
     # French micro-entrepreneur franchise en base de TVA (art. 293 B du CGI): no VAT applied.
     session = stripe_lib.checkout.Session.create(
-        line_items=[{"price": price.id, "quantity": 1}],
-        mode="subscription" if price.recurring else "payment",
+        line_items=line_items,
+        mode="payment" if expected_interval == "one_time" else "subscription",
+        payment_method_types=["card"],
+        idempotency_key=f"checkout-{user['id']}-{payload.lookup_key}-{int(now_utc().timestamp()) // 600}",
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
-        customer_email=user.get("email"),
+        **({"customer": current["stripe_customer_id"]} if current.get("stripe_customer_id") else {"customer_email": user.get("email")}),
         allow_promotion_codes=True,
         metadata={
             "user_id": user["id"],
@@ -1951,17 +1915,18 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             "submit": {"message": "TVA non applicable, art. 293 B du CGI"},
         },
     )
-    await db.payment_transactions.insert_one({
+    await db.payment_transactions.update_one({"_id": session.id}, {"$setOnInsert": {
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
         "lookup_key": payload.lookup_key, "billing_interval": expected_interval,
-        "amount": (price.unit_amount or 0),
-        "currency": price.currency, "status": "initiated", "payment_status": "pending",
+        "amount": expected_amount,
+        "currency": "eur", "status": "initiated", "payment_status": "pending",
         "origin_url": origin,
+        "legal_acceptance": payload.legal_acceptance,
         "client_user_agent": request.headers.get("user-agent"),
         "client_ip_address": request_client_ip(request),
         "meta_consent": payload.meta_consent,
         "created_at": iso(now_utc()), "updated_at": iso(now_utc()),
-    })
+    }}, upsert=True)
 
     if payload.meta_consent:
         await send_meta_event(
@@ -1976,94 +1941,96 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             fbp=user.get("meta_fbp"),
             fbc=user.get("meta_fbc"),
             custom_data={
-                "currency": str(price.currency or "eur").upper(),
-                "value": float(price.unit_amount or 0) / 100,
+                "currency": "EUR",
+                "value": expected_amount / 100,
             },
         )
 
     return {"checkout_url": session.url, "session_id": session.id}
 
 
-@api.get("/payments/status/{session_id}")
-async def payment_status_endpoint(session_id: str):
-    record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+async def fulfill_checkout(obj):
+    # Never grant access on "complete" alone: asynchronous payments can be unpaid.
+    settled = obj.get("payment_status") == "paid" or (
+        obj.get("payment_status") == "no_payment_required" and
+        obj.get("status") == "complete" and obj.get("amount_total") == 0)
+    if not settled:
+        return
+    record = await db.payment_transactions.find_one({"session_id": obj["id"]})
     if not record:
-        raise HTTPException(status_code=404, detail="Transaction inconnue")
-    if record.get("payment_status") != "paid":
+        raise HTTPException(503, "Transaction en cours de création, réessayez")
+    metadata = obj.get("metadata") or {}
+    if metadata.get("user_id") != record["user_id"] or metadata.get("lookup_key") != record["lookup_key"]:
+        raise HTTPException(400, "Transaction incohérente")
+    if record.get("fulfilled"):
+        return
+    uid = record["user_id"]
+    if record["lookup_key"] == mission_billing.MISSION_LOOKUP:
+        if obj.get("mode") != "payment":
+            raise HTTPException(400, "Mode de paiement incorrect")
+        await mission_billing.grant_credit(db, uid, obj["id"])
+    else:
+        if obj.get("mode") != "subscription" or not obj.get("subscription"):
+            raise HTTPException(400, "Abonnement absent")
+        # Fetch the subscription on retries too: a stale checkout must not reactivate
+        # an already cancelled subscription.
+        subscription = stripe_lib.Subscription.retrieve(obj["subscription"])
+        active = subscription.status in ("active", "trialing")
+        await db.users.update_one({"id": uid}, {"$set": {
+            "plan": "pro" if active else "free", "subscription_status": subscription.status,
+            "stripe_customer_id": obj.get("customer"), "stripe_subscription_id": obj["subscription"],
+            "subscription_billing_interval": record.get("billing_interval"),
+        }})
+        if active:
+            paid_user = await db.users.find_one({"id": uid})
+            await record_activation_event(paid_user, "subscription_started",
+                metadata={"subscription_id": obj["subscription"], "session_id": obj["id"]})
+            await _send_subscribe_meta_if_needed(obj["id"], obj["subscription"])
+    await db.payment_transactions.update_one({"session_id": obj["id"]}, {"$set": {
+        "status": "completed", "payment_status": "paid", "fulfilled": True,
+        "stripe_subscription_id": obj.get("subscription"), "updated_at": iso(now_utc()),
+    }})
+
+
+@api.get("/payments/status/{session_id}")
+async def payment_status_endpoint(session_id: str, user=Depends(get_current_user)):
+    record = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["id"]}, {"_id": 0})
+    if not record:
+        raise HTTPException(404, "Transaction inconnue")
+    if not record.get("fulfilled"):
         try:
-            s = stripe_lib.checkout.Session.retrieve(session_id)
-            if s.payment_status == "paid" or s.status == "complete":
-                await db.payment_transactions.update_one(
-                    {"session_id": session_id, "payment_status": {"$ne": "paid"}},
-                    {"$set": {"status": "completed", "payment_status": "paid",
-                              "stripe_subscription_id": s.subscription,
-                              "updated_at": iso(now_utc())}},
-                )
-                if s.metadata and s.metadata.get("user_id"):
-                    uid = s.metadata["user_id"]
-                    await db.users.update_one({"id": uid}, {"$set": {
-                        "plan": "pro", "subscription_status": "active",
-                        "stripe_customer_id": s.customer, "stripe_subscription_id": s.subscription,
-                        "subscription_billing_interval": (s.metadata or {}).get("billing_interval"),
-                    }})
-                    paid_user = await db.users.find_one({"id": uid}, {"_id": 0})
-                    if paid_user:
-                        await record_activation_event(
-                            paid_user,
-                            "subscription_started",
-                            metadata={"subscription_id": s.subscription, "session_id": session_id},
-                        )
-                if s.payment_status == "paid":
-                    await _send_subscribe_meta_if_needed(session_id, s.subscription)
-                record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+            session = stripe_lib.checkout.Session.retrieve(session_id)
+            await fulfill_checkout(session)
+            record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
         except stripe_lib.error.StripeError:
             pass
-    return {"session_id": record["session_id"],
-            "status": record["status"], "payment_status": record["payment_status"]}
+    return {"session_id": record["session_id"], "status": record["status"],
+            "payment_status": record["payment_status"], "lookup_key": record["lookup_key"],
+            "fulfilled": bool(record.get("fulfilled"))}
 
 
 @api.post("/stripe/webhook")
 async def stripe_webhook(request: Request):
     payload = await request.body()
-    sig = request.headers.get("stripe-signature", "")
     try:
-        event = stripe_lib.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+        event = stripe_lib.Webhook.construct_event(payload, request.headers.get("stripe-signature", ""), STRIPE_WEBHOOK_SECRET)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid signature")
-    obj = event["data"]["object"]
-    t = event["type"]
-    if t == "checkout.session.completed":
-        await db.payment_transactions.update_one(
-            {"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
-            {"$set": {"status": "completed", "payment_status": obj.get("payment_status", "paid"),
-                      "stripe_subscription_id": obj.get("subscription"),
-                      "updated_at": iso(now_utc())}},
-        )
-        uid = (obj.get("metadata") or {}).get("user_id")
-        if uid:
-            await db.users.update_one({"id": uid}, {"$set": {
-                "plan": "pro", "subscription_status": "active",
-                "stripe_customer_id": obj.get("customer"),
-                "stripe_subscription_id": obj.get("subscription"),
-                "subscription_billing_interval": (obj.get("metadata") or {}).get("billing_interval"),
-            }})
-            paid_user = await db.users.find_one({"id": uid}, {"_id": 0})
-            if paid_user and obj.get("payment_status") == "paid":
-                await record_activation_event(
-                    paid_user,
-                    "subscription_started",
-                    metadata={"subscription_id": obj.get("subscription"), "session_id": obj["id"]},
-                )
-        if obj.get("payment_status") == "paid":
-            await _send_subscribe_meta_if_needed(obj["id"], obj.get("subscription"))
-    elif t == "customer.subscription.deleted":
-        await db.users.update_one({"stripe_customer_id": obj.get("customer")}, {"$set": {
-            "plan": "free", "subscription_status": "canceled",
-            "subscription_billing_interval": None,
+        raise HTTPException(400, "Invalid signature")
+    obj, kind = event["data"]["object"], event["type"]
+    if kind in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
+        await fulfill_checkout(obj)
+    elif kind in ("customer.subscription.deleted", "customer.subscription.updated"):
+        # Resolve the current state to tolerate out-of-order Stripe deliveries.
+        subscription = stripe_lib.Subscription.retrieve(obj["id"])
+        status = subscription.status
+        await db.users.update_one({"stripe_subscription_id": obj["id"]}, {"$set": {
+            "plan": "pro" if status in ("active", "trialing") else "free",
+            "subscription_status": status,
         }})
-    elif t == "checkout.session.expired":
-        await db.payment_transactions.update_one({"session_id": obj["id"]},
-            {"$set": {"status": "expired", "payment_status": "expired", "updated_at": iso(now_utc())}})
+    elif kind in ("checkout.session.expired", "checkout.session.async_payment_failed"):
+        status = "expired" if kind.endswith("expired") else "failed"
+        await db.payment_transactions.update_one({"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"status": status, "payment_status": status, "updated_at": iso(now_utc())}})
     return {"status": "ok"}
 
 
@@ -2125,3 +2092,4 @@ else:
         allow_headers=["*"],
         expose_headers=["*"],
     )
+

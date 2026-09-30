@@ -20,8 +20,9 @@ test("unknown WhatsApp status is not reported as disconnected", () => {
 test("successful first invitation removes onboarding even after disconnection", () => {
   expect(activationNext({ ...base, activation: { first_invite_sent: true } }, { connected: false })).toBeNull();
 });
-test("expired trial directs to the offer and filled/cancelled shifts are excluded", () => {
-  expect(activationNext(base, null, { trial_expired: true }).href).toBe("/pricing");
+test("empty mission balance directs to the offer and filled/cancelled shifts are excluded", () => {
+  expect(activationNext(base, null, { can_create_mission: false }).href).toBe("/pricing");
+  expect(activationNext({ ...base, upcoming: [mission] }, null, { can_create_mission: false }).href).toBe("/app/missions/m1?step=select");
   for (const shifts of [[{ people_needed: 2, confirmed_count: 2 }], [{ people_needed: 2, status: "cancelled" }]]) {
     expect(activationNext({ ...base, upcoming: [{ ...mission, shifts }] }, null).href).toBe("/app/missions/new");
   }
@@ -46,3 +47,4 @@ test("unknown WhatsApp status and missing API data never grant completion", () =
   expect(activationSteps(null, null)).toEqual([]);
   expect(activationSteps({ ...base, activation: undefined }, null)).toEqual([]);
 });
+

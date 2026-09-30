@@ -161,7 +161,7 @@ export default function Register() {
         <span className="text-xs font-bold uppercase tracking-widest text-blue-700">Moins de relances. Plus de sérénité.</span>
         <h2 className="mt-5 font-display text-4xl font-bold leading-tight text-gray-900">Votre prochaine mission commence ici.</h2>
         <p className="mt-5 text-gray-600 leading-relaxed">Créez votre espace, ajoutez votre équipe et envoyez vos demandes de disponibilité depuis WhatsApp.</p>
-        <ul className="mt-8 space-y-4 text-sm text-gray-700">{["30 jours offerts dès votre première mission", "3 missions et jusqu’à 30 intervenants", "Aucune carte bancaire requise"].map(text => <li key={text} className="flex items-center gap-3"><Check size={18} className="text-emerald-600" />{text}</li>)}</ul>
+        <ul className="mt-8 space-y-4 text-sm text-gray-700">{["3 missions offertes sans date limite", "Tous vos intervenants, sans supplément", "Aucune carte bancaire requise"].map(text => <li key={text} className="flex items-center gap-3"><Check size={18} className="text-emerald-600" />{text}</li>)}</ul>
       </aside>
       <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
         <div className="flex justify-between gap-3 text-xs font-semibold text-gray-500"><span>{step === 0 ? "Votre organisation" : step === 1 ? "Vos coordonnées" : "Sécurité"}</span><span>Étape {step + 1} sur 3</span></div>
@@ -193,3 +193,4 @@ export default function Register() {
     </main>
   </div>;
 }
+

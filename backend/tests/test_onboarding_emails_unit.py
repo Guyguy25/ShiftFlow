@@ -39,12 +39,13 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(await _stage(db, user, now), ("team_ready", mission))
 
-    async def test_sent_activation_stage_yields_to_trial_reminder(self):
+    async def test_sent_activation_stage_yields_to_usage_reminder(self):
         now = datetime(2026, 9, 28, 16, tzinfo=timezone.utc)
         user = {
             "id": "agency-1",
             "created_at": (now - timedelta(days=25)).isoformat(),
             "trial_ends_at": (now + timedelta(days=6)).isoformat(),
+            "free_missions_used": 2,
         }
         mission = {"id": "mission-1", "name": "Montage", "created_at": (now - timedelta(days=25)).isoformat()}
         db = SimpleNamespace(
@@ -58,10 +59,10 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
                 to_list=AsyncMock(return_value=[{"people_needed": 2, "confirmed_count": 2}]))),
         )
         stages = [stage for stage, _ in await _eligible_stages(db, user, now)]
-        self.assertEqual(stages, ["team_ready", "trial_ending_7d"])
+        self.assertEqual(stages, ["team_ready", "last_free_mission"])
         self.assertEqual(
             await _stage(db, user, now, {"team_ready"}),
-            ("trial_ending_7d", mission),
+            ("last_free_mission", mission),
         )
 
     def test_mission_name_is_escaped_in_html(self):
@@ -71,7 +72,20 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("&lt;script&gt;", msg["html"])
         self.assertIn("/app/workers?utm_source=lifecycle_email", msg["url"])
 
+    async def test_no_false_free_offer_after_archiving_all_missions(self):
+        now = datetime(2026, 9, 30, tzinfo=timezone.utc)
+        db = SimpleNamespace(missions=SimpleNamespace(find_one=AsyncMock(return_value=None)))
+        user = {"id": "u", "created_at": (now - timedelta(days=5)).isoformat(), "free_missions_used": 3}
+        self.assertEqual(await _stage(db, user, now), ("free_missions_used", None))
+        user["mission_credits"] = 1
+        self.assertEqual(await _stage(db, user, now), (None, None))
+
+    def test_old_deadline_messages_cannot_be_rendered(self):
+        with self.assertRaises(ValueError):
+            _message({}, "trial_expired", None, "https://www.shiftflow.io", "https://www.shiftflow.io/unsubscribe")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

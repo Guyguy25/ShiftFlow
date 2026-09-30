@@ -1,326 +1,118 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Zap, ArrowLeft, Loader2, AlertCircle, CalendarDays, ShieldCheck } from "lucide-react";
+import { Check, Zap, ArrowLeft, Loader2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { LEGAL_VERSION } from "../constants/legal";
 
-const FREE_PLAN = {
-  name: "Essai gratuit",
-  price: "0 €",
-  period: "30 jours",
-  features: ["30 jours à partir de la 1re mission", "Jusqu'à 3 missions", "Jusqu'à 30 intervenants", "Cascade automatique", "Messages WhatsApp", "Historique"],
-  cta: "Essayer 30 jours",
-};
-
-const PRO_FEATURES = [
-  "Missions illimitées",
-  "Intervenants illimités",
-  "Cascade & relances",
-  "Rappels 24h WhatsApp",
-  "Message de cascade personnalisable",
-  "Historique complet",
-  "Support prioritaire",
-];
-
-const BILLING_OPTIONS = {
-  monthly: {
-    key: "monthly",
-    label: "Mensuel",
-    lookup: "shiftflow_pro_monthly",
-    displayPrice: "49 €",
-    period: "/mois",
-    billedText: "49 € facturés chaque mois",
-    savingsText: null,
-    testid: "pricing-monthly-cta",
-  },
-  yearly: {
-    key: "yearly",
-    label: "Annuel",
-    lookup: "shiftflow_pro_yearly",
-    displayPrice: "41,65 €",
-    period: "/mois",
-    billedText: "499,80 € facturés une fois par an",
-    savingsText: "Vous économisez 88,20 € par an",
-    badge: "−15 %",
-    testid: "pricing-yearly-cta",
-  },
-};
-
+const features = ["Intervenants illimités", "Demandes et rappels WhatsApp", "Cascade automatique", "Suivi des réponses et historique"];
 export default function Pricing() {
   const { user } = useAuth();
+  const [quota, setQuota] = useState(null);
+  const [checking, setChecking] = useState(!!user);
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
-  const [acceptedPaidTerms, setAcceptedPaidTerms] = useState(false);
-  const [billingCycle, setBillingCycle] = useState(() => localStorage.getItem("shiftflow_billing_cycle") || "monthly");
-  const [highlightConsent, setHighlightConsent] = useState(false);
-  const [planState, setPlanState] = useState({ loading: !!user, plan: user?.plan || "free", subscriptionStatus: user?.subscription_status || null, trialStarted: !!user?.trial_started, trialExpired: user?.trial_expired || false, trialDaysRemaining: user?.trial_days_remaining ?? 30 });
+  const [accepted, setAccepted] = useState(false);
+  const [consentError, setConsentError] = useState(false);
   const consentRef = useRef(null);
-
+  const [volume, setVolume] = useState(5);
   useEffect(() => {
     let cancelled = false;
-
-    const loadPlan = async () => {
-      if (!user) {
-        setPlanState({ loading: false, plan: "free", subscriptionStatus: null, trialStarted: false, trialExpired: false, trialDaysRemaining: 30 });
-        return;
-      }
-
-      try {
-        const { data } = await api.get("/plan/quota", {
-          headers: { "Cache-Control": "no-cache" },
-          params: { _ts: Date.now() },
-        });
-        if (!cancelled) {
-          setPlanState({
-            loading: false,
-            plan: data?.plan || "free",
-            subscriptionStatus: data?.subscription_status || null,
-            trialStarted: !!data?.trial_started,
-            trialExpired: !!data?.trial_expired,
-            trialDaysRemaining: data?.trial_days_remaining ?? 0,
-          });
-        }
-      } catch (_) {
-        if (!cancelled) {
-          setPlanState({
-            loading: false,
-            plan: user?.plan || "free",
-            subscriptionStatus: user?.subscription_status || null,
-            trialStarted: !!user?.trial_started,
-            trialExpired: !!user?.trial_expired,
-            trialDaysRemaining: user?.trial_days_remaining ?? 0,
-          });
-        }
-      }
-    };
-
-    loadPlan();
+    if (!user) { setChecking(false); return; }
+    setChecking(true);
+    api.get("/plan/quota").then(({ data }) => { if (!cancelled) setQuota(data); })
+      .catch(() => { if (!cancelled) setError("Impossible de vérifier votre offre. Rechargez la page avant de payer."); })
+      .finally(() => { if (!cancelled) setChecking(false); });
     return () => { cancelled = true; };
   }, [user]);
-
-  const startCheckout = async (lookup) => {
+  const pro = quota?.plan === "pro" || user?.plan === "pro";
+  const available = !!quota?.can_create_mission;
+  const checkout = async (lookup) => {
     if (!user) { window.location.href = "/register"; return; }
-    if (!acceptedPaidTerms) {
-      setError("");
-      setHighlightConsent(true);
-      requestAnimationFrame(() => consentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    if (!accepted) {
+      setConsentError(true);
+      consentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      consentRef.current?.querySelector("input")?.focus();
       return;
     }
-    setHighlightConsent(false);
+    if (loading) return;
     setLoading(lookup); setError("");
-    const acceptedAt = new Date().toISOString();
-    localStorage.setItem("shiftflow_paid_terms_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, plan: lookup }));
     try {
       const { data } = await api.post("/payments/checkout", {
-        lookup_key: lookup,
-        origin_url: window.location.origin,
-        legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "pro_subscription" },
+        lookup_key: lookup, origin_url: window.location.origin,
+        legal_acceptance: { version: LEGAL_VERSION, accepted_at: new Date().toISOString(), scope: lookup === "shiftflow_mission" ? "mission_purchase" : "pro_subscription" },
         meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
       });
       window.location.href = data.checkout_url;
-    } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || err.message);
-      setLoading(null);
-    }
+    } catch (err) { setError(formatApiError(err.response?.data?.detail) || "Le paiement n’a pas pu être ouvert."); setLoading(null); }
   };
-
-  const handleTermsChange = (e) => {
-    const checked = e.target.checked;
-    setAcceptedPaidTerms(checked);
-    if (checked) {
-      setHighlightConsent(false);
-      setError("");
-    }
-  };
-
-  const isPro = planState.plan === "pro" && planState.subscriptionStatus === "active";
-  const selectedBilling = BILLING_OPTIONS[billingCycle] || BILLING_OPTIONS.monthly;
-
-  const selectBilling = (cycle) => {
-    setBillingCycle(cycle);
-    localStorage.setItem("shiftflow_billing_cycle", cycle);
-    setError("");
-  };
-
-  return (
-    <div className="min-h-screen bg-[#F9FAFB]">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2" data-testid="pricing-logo">
-            <div className="w-8 h-8 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-4 h-4 text-white"/></div>
-            <span className="font-display font-bold text-lg">ShiftFlow</span>
-          </Link>
-          <Link to={user ? "/app/dashboard" : "/"} data-testid="pricing-back" className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4"/> Retour
-          </Link>
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto px-6 py-16">
-        <div className="text-center">
-          <h1 className="text-4xl sm:text-5xl font-bold font-display tracking-tight">Un tarif simple, sans surprise.</h1>
-          <p className="mt-4 text-gray-600 text-lg">30 jours pour tester ShiftFlow sur de vraies missions, sans carte bancaire. Votre essai commence à la création de votre première mission.</p>
-          {!planState.loading && isPro && (
-            <div className="mt-6 inline-flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 rounded-full px-4 py-2 text-sm font-medium" data-testid="pricing-current-plan">
-              <Check className="w-4 h-4"/> Vous êtes déjà abonné Pro
-            </div>
-          )}
-        </div>
-
-        {error && <div className="mt-6 text-sm text-red-600 text-center" data-testid="pricing-error">{error}</div>}
-
-        <div className="mt-10 flex justify-center">
-          <div className="inline-flex items-center rounded-xl border border-gray-200 bg-white p-1 shadow-sm" data-testid="billing-toggle">
-            <button
-              type="button"
-              onClick={() => selectBilling("monthly")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${billingCycle === "monthly" ? "bg-gray-900 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
-            >
-              Mensuel
-            </button>
-            <button
-              type="button"
-              onClick={() => selectBilling("yearly")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 ${billingCycle === "yearly" ? "bg-gray-900 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
-            >
-              Annuel
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${billingCycle === "yearly" ? "bg-emerald-400/20 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>
-                −15 %
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-8 grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
-          <div className="rounded-2xl p-7 border bg-white border-gray-200 flex flex-col" data-testid="pricing-card-free">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-display font-bold">{FREE_PLAN.name}</h3>
-              <span className="text-[10px] uppercase tracking-widest bg-emerald-50 text-emerald-700 px-2 py-1 rounded-md font-bold">Sans CB</span>
-            </div>
-            <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-4xl font-display font-bold">{FREE_PLAN.price}</span>
-              <span className="text-gray-500">/{FREE_PLAN.period}</span>
-            </div>
-            <div className="mt-2 text-sm text-gray-500">L’essai démarre à la création de votre première mission.</div>
-            <ul className="mt-6 space-y-2.5 flex-1">
-              {FREE_PLAN.features.map((feature) => (
-                <li key={feature} className="flex items-start gap-2 text-sm">
-                  <Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600"/>
-                  <span className="text-gray-700">{feature}</span>
-                </li>
-              ))}
-            </ul>
-            <Link to={user ? "/app/dashboard" : "/register"} data-testid="pricing-free-cta"
-              className="mt-6 block text-center w-full py-2.5 rounded-lg font-semibold bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 transition-colors">
-              {user ? (planState.trialExpired ? "Essai terminé" : planState.trialStarted ? `${planState.trialDaysRemaining} j restants` : "30 jours d’essai disponibles") : FREE_PLAN.cta}
-            </Link>
-          </div>
-
-          <div className="relative rounded-2xl p-7 border bg-gray-900 text-white border-gray-900 shadow-[0_20px_50px_rgba(0,0,0,0.15)] flex flex-col overflow-hidden" data-testid="pricing-card-pro">
-            {billingCycle === "yearly" && (
-              <div className="absolute top-0 right-0 rounded-bl-xl bg-emerald-400 text-emerald-950 px-3 py-1.5 text-[11px] font-extrabold">
-                ÉCONOMISEZ 15 %
-              </div>
-            )}
-
-            <div className="flex items-center justify-between pr-24">
-              <h3 className="text-lg font-display font-bold">Pro</h3>
-              <span className="text-[10px] uppercase tracking-widest bg-blue-500 text-white px-2 py-1 rounded-md font-bold">Recommandé</span>
-            </div>
-
-            <div className="mt-4 flex items-end gap-1">
-              <span className="text-4xl font-display font-bold">{selectedBilling.displayPrice}</span>
-              <span className="text-gray-400 pb-1">{selectedBilling.period}</span>
-            </div>
-
-            <div className="mt-2 min-h-[44px]">
-              <div className="text-sm text-gray-300">{selectedBilling.billedText}</div>
-              {selectedBilling.savingsText && (
-                <div className="mt-1 text-sm font-semibold text-emerald-300">{selectedBilling.savingsText}</div>
-              )}
-            </div>
-
-            <div className="mt-5 rounded-xl border border-white/10 bg-white/5 px-4 py-3 flex items-start gap-3">
-              <CalendarDays className="w-4 h-4 text-blue-300 mt-0.5 shrink-0"/>
-              <div className="text-xs text-gray-300 leading-relaxed">
-                {billingCycle === "yearly"
-                  ? "Un seul paiement de 499,80 € couvre 12 mois de Pro."
-                  : "Facturation mensuelle flexible, renouvelée chaque mois."}
-              </div>
-            </div>
-
-            <ul className="mt-6 space-y-2.5 flex-1">
-              {PRO_FEATURES.map((feature) => (
-                <li key={feature} className="flex items-start gap-2 text-sm">
-                  <Check className="w-4 h-4 mt-0.5 shrink-0 text-blue-400"/>
-                  <span className="text-gray-200">{feature}</span>
-                </li>
-              ))}
-            </ul>
-
-            <button
-              onClick={()=>startCheckout(selectedBilling.lookup)}
-              disabled={loading === selectedBilling.lookup || planState.loading || isPro}
-              data-testid={selectedBilling.testid}
-              className="mt-6 flex items-center justify-center gap-2 w-full py-3 rounded-lg font-semibold transition-colors bg-blue-500 hover:bg-blue-400 text-white disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {(loading === selectedBilling.lookup || planState.loading) && <Loader2 className="w-4 h-4 animate-spin"/>}
-              {isPro
-                ? "Déjà Pro"
-                : loading === selectedBilling.lookup
-                  ? "Redirection…"
-                  : planState.loading
-                    ? "Vérification…"
-                    : billingCycle === "yearly"
-                      ? "Choisir Pro annuel"
-                      : "Choisir Pro mensuel"}
-            </button>
-
-            <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-gray-400">
-              <ShieldCheck className="w-3.5 h-3.5"/>
-              Paiement sécurisé via Stripe
-            </div>
-          </div>
-        </div>
-
-        {!planState.loading && !isPro && (
-          <div ref={consentRef} className="max-w-4xl mx-auto mt-6">
-            {highlightConsent && (
-              <div className="mb-2 flex items-center justify-center gap-2 text-sm font-semibold text-red-600" role="alert">
-                <AlertCircle className="h-4 w-4" />
-                Une dernière étape : cochez la case ci-dessous pour continuer.
-              </div>
-            )}
-            <label className={`flex items-start gap-3 rounded-xl p-4 text-sm cursor-pointer transition-all duration-200 ${
-              highlightConsent
-                ? "border-2 border-red-500 bg-red-50 text-red-950 shadow-[0_0_0_4px_rgba(239,68,68,0.10)]"
-                : acceptedPaidTerms
-                  ? "border-2 border-green-400 bg-green-50 text-gray-800"
-                  : "border border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-            }`} data-testid="pricing-legal-consent">
-              <input
-                type="checkbox"
-                checked={acceptedPaidTerms}
-                onChange={handleTermsChange}
-                aria-invalid={highlightConsent ? "true" : "false"}
-                className={`mt-0.5 h-5 w-5 shrink-0 rounded cursor-pointer ${highlightConsent ? "border-red-500 text-red-600 focus:ring-red-500" : "border-gray-300 text-blue-600 focus:ring-blue-500"}`}
-              />
-              <span>
-                <span className="font-semibold">J'accepte les conditions nécessaires pour souscrire au Pro.</span>{" "}
-                <span className={highlightConsent ? "text-red-800" : "text-gray-600"}>
-                  J'ai lu et j'accepte les <Link to="/conditions" target="_blank" className="text-blue-600 font-medium hover:underline">Conditions générales d'utilisation et de vente</Link>,
-                  {" "}la <Link to="/confidentialite" target="_blank" className="text-blue-600 font-medium hover:underline">Politique de confidentialité</Link> et le <Link to="/dpa" target="_blank" className="text-blue-600 font-medium hover:underline">DPA</Link>.
-                </span>
-              </span>
-            </label>
-          </div>
-        )}
-
-        <p className="mt-10 text-center text-xs text-gray-500">
-          Paiement sécurisé via Stripe · Renouvellement automatique selon la fréquence choisie · Résiliation à tout moment · Pas de remboursement au prorata d'une période commencée, sauf obligation légale ou erreur de facturation
-        </p>
+  const money = value => value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+  const button = "mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-center font-semibold disabled:opacity-50 disabled:cursor-not-allowed";
+  return <div className="min-h-screen bg-[#F9FAFB]">
+    <header className="border-b border-gray-100 bg-white"><div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
+      <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold"><Zap className="text-blue-600"/>ShiftFlow</Link>
+      <Link to={user ? "/app/dashboard" : "/"} className="flex min-h-11 items-center gap-2 text-sm text-gray-600"><ArrowLeft size={16}/>Retour</Link>
+    </div></header>
+    <main className="mx-auto max-w-6xl px-5 py-10 sm:py-16">
+      <div className="mx-auto max-w-3xl text-center">
+        <p className="text-sm font-semibold text-blue-700">À votre rythme, puis selon votre activité</p>
+        <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
+        <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans carte bancaire, sans date limite. Ensuite, payez une mission quand vous en avez besoin ou choisissez l’illimité.</p>
       </div>
-    </div>
-  );
+      {error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
+      {pro && <p className="mt-6 text-center font-semibold text-emerald-700">Votre abonnement Pro est actif. Vos missions sont illimitées.</p>}
+      <div className="mt-10 grid gap-5 lg:grid-cols-3">
+        <section className="flex flex-col rounded-2xl border border-gray-200 bg-white p-6" data-testid="pricing-card-free">
+          <p className="text-sm font-semibold text-emerald-700">Pour découvrir</p><h2 className="mt-2 text-xl font-bold">3 missions offertes</h2>
+          <p className="mt-5 text-4xl font-bold">0 €</p><p className="mt-2 text-sm text-gray-500">Une seule fois par compte · sans expiration</p>
+          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Testez ShiftFlow sur vos vrais événements. Aucun passage automatique au payant.</p>
+          <Link to={user ? (available || pro ? "/app/missions/new" : "/app/dashboard") : "/register"} className={button + " border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"} data-testid="pricing-free-cta">
+            {user ? quota ? (quota.free_missions_remaining ?? 0) + " mission(s) offerte(s) restante(s)" : "Ouvrir mon espace" : "Commencer gratuitement"}
+          </Link>
+        </section>
+        <section className="flex flex-col rounded-2xl border-2 border-blue-200 bg-white p-6" data-testid="pricing-card-mission">
+          <p className="text-sm font-semibold text-blue-700">Pour les besoins ponctuels</p><h2 className="mt-2 text-xl font-bold">À la mission</h2>
+          <p className="mt-5 text-4xl font-bold">4,90 €<span className="text-base font-normal text-gray-500"> / mission</span></p><p className="mt-2 text-sm text-gray-500">Paiement unique · aucun abonnement</p>
+          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Un crédit pour créer votre prochaine mission, utilisable quand vous voulez. Son suivi reste accessible ensuite.</p>
+          {available && !pro ? <Link to="/app/missions/new" className={button + " bg-blue-600 text-white hover:bg-blue-700"}>Utiliser ma mission disponible</Link> : <button onClick={() => checkout("shiftflow_mission")} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-blue-600 text-white hover:bg-blue-700"} data-testid="pricing-mission-cta">
+            {loading === "shiftflow_mission" && <Loader2 size={18} className="animate-spin"/>}{pro ? "Inclus dans votre Pro" : user ? "Acheter 1 mission — 4,90 €" : "Essayer avec 3 missions offertes"}
+          </button>}
+        </section>
+        <section className="flex flex-col rounded-2xl border border-gray-900 bg-gray-900 p-6 text-white" data-testid="pricing-card-pro">
+          <p className="text-sm font-semibold text-blue-300">Pour une activité régulière</p><h2 className="mt-2 text-xl font-bold">Pro illimité</h2>
+          <p className="mt-5 text-4xl font-bold">49 €<span className="text-base font-normal text-gray-300"> / mois</span></p><p className="mt-2 text-sm text-gray-300">Renouvelé chaque mois · résiliable à tout moment</p>
+          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Créez autant de missions que nécessaire. Au prix de 10 missions à l’unité ; plus économique dès la 11e mission payante du mois.</p>
+          <button onClick={() => checkout("shiftflow_pro_monthly")} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === "shiftflow_pro_monthly" && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : "Choisir Pro — 49 €/mois"}</button>
+        </section>
+      </div>
+      <section className="mt-7 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
+        <h2 className="font-semibold">Les mêmes outils pour réussir chaque mission</h2>
+        <ul className="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">{features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="shrink-0 text-emerald-600"/>{feature}</li>)}</ul>
+      </section>
+      {!pro && <div ref={consentRef} className={"mt-6 rounded-xl border p-4 " + (consentError ? "border-red-500 bg-red-50" : "border-gray-200 bg-white")}>
+        <label className="flex cursor-pointer items-start gap-3 text-sm text-gray-700"><input type="checkbox" checked={accepted} onChange={e => { setAccepted(e.target.checked); setConsentError(false); }} className="mt-0.5 h-5 w-5 shrink-0" aria-invalid={consentError}/><span>Avant un achat, j’accepte les <Link className="text-blue-700 underline" to="/conditions" target="_blank">conditions de vente</Link>, la <Link className="text-blue-700 underline" to="/confidentialite" target="_blank">politique de confidentialité</Link> et le <Link className="text-blue-700 underline" to="/dpa" target="_blank">DPA</Link>.</span></label>
+        {consentError && <p role="alert" className="mt-2 text-sm text-red-700">Acceptez les conditions pour ouvrir le paiement.</p>}
+      </div>}
+      <section className="mx-auto mt-12 max-w-2xl rounded-2xl bg-blue-50 p-6">
+        <h2 className="text-xl font-bold">Quelle formule pour votre rythme ?</h2>
+        <label htmlFor="mission-volume" className="mt-4 block text-sm text-gray-700">Missions payantes prévues par mois : <strong>{volume}</strong></label>
+        <input id="mission-volume" type="range" min="1" max="30" value={volume} onChange={e => setVolume(Number(e.target.value))} className="mt-4 w-full accent-blue-600"/>
+        <div aria-live="polite" className="mt-4 grid grid-cols-2 gap-3 text-sm"><p>À la mission<br/><strong className="text-xl">{money(volume * 4.9)}</strong></p><p>Pro illimité<br/><strong className="text-xl">49 €/mois</strong></p></div>
+        <p className="mt-4 text-sm font-medium text-blue-900">{volume < 10 ? "À ce rythme, l’unité vous coûte " + money(49 - volume * 4.9) + " de moins par mois." : volume === 10 ? "Même prix : Pro vous permet de créer davantage de missions sans supplément." : "Pro vous fait économiser " + money(volume * 4.9 - 49) + " par mois à ce rythme."}</p>
+        <p className="mt-2 text-xs text-gray-500">Comparaison après vos 3 missions offertes. Aucun abonnement n’est choisi automatiquement.</p>
+      </section>
+      <section className="mx-auto mt-12 max-w-3xl space-y-3">
+        <h2 className="mb-4 text-2xl font-bold">Tout savoir avant de commencer</h2>
+        {[
+          ["Qu’est-ce qu’une mission ?", "Un événement ou une intervention, avec ses créneaux (montage, démontage…), ses intervenants et son suivi. Un nouvel événement correspond à une nouvelle mission ; plusieurs créneaux du même événement restent inclus."],
+          ["Quand une mission est-elle décomptée ?", "À sa création, y compris en cas de duplication. Modifier ses créneaux ou suivre les réponses ne consomme pas de nouvelle mission. Archiver ou annuler ne recrédite pas la mission. La simulation gratuite permet de découvrir le fonctionnement sans consommer de mission."],
+          ["Les 3 missions offertes expirent-elles ?", "Non. Elles sont offertes une seule fois par compte, sans carte bancaire ni renouvellement mensuel. Les missions déjà créées sont prises en compte pour les comptes existants, sans facturation rétroactive."],
+          ["Que se passe-t-il après les 3 missions ?", "Vos missions existantes, leurs réponses et leurs rappels restent utilisables. Pour en créer une nouvelle, achetez un crédit à 4,90 € ou choisissez Pro à 49 €/mois. Les crédits achetés n’expirent pas."],
+          ["Et si j’arrête Pro ?", "Pro reste actif jusqu’à la fin de la période payée. Ensuite, vos missions existantes restent utilisables et vous pouvez acheter les nouvelles à l’unité. Aucun paiement à l’unité n’est prélevé automatiquement."],
+        ].map(([question, answer]) => <details key={question} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer font-semibold">{question}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{answer}</p></details>)}
+      </section>
+      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via Stripe. Aucun prélèvement sans votre choix.</p>
+    </main>
+  </div>;
 }
+
