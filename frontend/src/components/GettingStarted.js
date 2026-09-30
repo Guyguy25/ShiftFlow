@@ -45,7 +45,7 @@ export default function GettingStarted({ children }) {
   const tasks = state?.owner === user.id ? activationSteps(state.summary, state.whatsapp, state.quota) : [];
   const context = { ...(state?.owner === user.id ? state : {}), next, steps: tasks, error, retry: () => setRetryIndex(index => index + 1) };
   // Settings has its own prominent activation card; do not duplicate it in a side rail.
-  if (!next || ["/app/settings", "/app/dashboard", "/app/missions/new", "/app/workers"].includes(location.pathname)) return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
+  if (!next || /^\/app\/missions\/[^/]+$/.test(location.pathname) || ["/app/settings", "/app/dashboard", "/app/missions/new", "/app/workers"].includes(location.pathname)) return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
   const nextHref = next.href || "/app/workers?connect=1";
   const completed = tasks.filter(t => t.done).length;
   return <ActivationContext.Provider value={context}><div className="getting-started-layout">

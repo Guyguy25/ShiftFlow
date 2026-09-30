@@ -5,7 +5,7 @@ export function activationNext(summary, whatsapp, quota) {
     m.status !== "cancelled" && m.shifts?.some(s => s.status !== "cancelled" && Number(s.confirmed_count || 0) < Number(s.people_needed)));
   const href = mission ? `/app/missions/${mission.id}?step=select` : "/app/missions/new";
   if (!mission) return { label: summary.missions_total ? "Créer une mission à venir" : "Créer ma première mission", href, description: "Indiquez où, quand et combien de personnes vous cherchez." };
-  if (!summary.activation.active_workers) return { label: "Ajouter mes intervenants", href: `/app/workers?add=1&returnTo=${encodeURIComponent(href)}`, description: `Préparez les personnes à contacter pour « ${mission.name} ».` };
+  if (!summary.activation.active_workers) return { label: "Ajouter mes intervenants via WhatsApp", stage: "workers", href, description: `Préparez les personnes à contacter pour « ${mission.name} ».` };
   if (!whatsapp) return { label: "Vérifier WhatsApp", connect: true, href: `/app/workers?connect=1&returnTo=${encodeURIComponent(href)}`, description: "La connexion WhatsApp n’a pas pu être vérifiée. Ouvrez-la pour réessayer." };
   if (!whatsapp.connected) return { label: "Connecter WhatsApp", connect: true, href: `/app/workers?connect=1&returnTo=${encodeURIComponent(href)}`, description: "Connectez le compte qui enverra vos demandes de disponibilité." };
   return { label: "Préparer ma première recherche", href, description: `Choisissez les intervenants pour « ${mission.name} », puis lancez l’envoi.` };

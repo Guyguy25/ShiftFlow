@@ -7,7 +7,8 @@ test("guides a new account to mission creation", () => {
 });
 test("adding workers preserves the mission destination", () => {
   const next = activationNext({ ...base, missions_total: 1, upcoming: [mission] }, null);
-  expect(new URLSearchParams(next.href.split("?")[1]).get("returnTo")).toBe("/app/missions/m1?step=select");
+  expect(next.href).toBe("/app/missions/m1?step=select");
+  expect(next.stage).toBe("workers");
 });
 test("unknown WhatsApp status is not reported as disconnected", () => {
   const summary = { ...base, upcoming: [mission], activation: { active_workers: 1 } };

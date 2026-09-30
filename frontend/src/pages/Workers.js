@@ -1,6 +1,5 @@
 import FirstMissionHelp from "../components/FirstMissionHelp";
 import JourneyEmpty from "../components/JourneyEmpty";
-import ContextGuide from "../components/ContextGuide";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, Trash2, Edit2, X, Info, MessageCircle, Smartphone, Check, RefreshCw, ArrowRight, UserPlus, AlertTriangle, RotateCcw } from "lucide-react";
@@ -28,9 +27,9 @@ function isMobileViewport() {
 }
 function splitFullName(fullName) { const parts = (fullName || "").trim().split(/\s+/).filter(Boolean); if (parts.length === 0) return { first_name: "", last_name: "" }; if (parts.length === 1) return { first_name: parts[0], last_name: parts[0] }; return { first_name: parts[0], last_name: parts.slice(1).join(" ") }; }
 function PhoneContactsUnsupportedModal({ onClose }) { return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl text-center"><div className="w-14 h-14 mx-auto rounded-full bg-amber-50 flex items-center justify-center"><Smartphone className="w-7 h-7 text-amber-700" /></div><h3 className="mt-4 font-display font-bold text-xl">Répertoire non accessible depuis ce navigateur</h3><p className="mt-2 text-sm text-gray-600">Sur iPhone, Safari ne donne actuellement pas aux sites web l'accès au sélecteur natif de contacts. iOS n'affiche donc aucune demande d'autorisation, même si ShiftFlow est ouvert dans Safari.</p><p className="mt-2 text-sm text-gray-600">Pour le moment, utilisez <strong>« Depuis WhatsApp »</strong> sur iPhone. L'import direct du répertoire reste disponible sur les navigateurs mobiles qui exposent cette fonction.</p><button type="button" onClick={onClose} className="mt-5 w-full px-4 py-2.5 rounded-md bg-blue-600 text-white font-medium">Compris</button></div></div>; }
-function PhoneContactsImportModal({ onClose, onDone, onQuota }) { const [rows, setRows] = useState([]); const [selected, setSelected] = useState(new Set()); const [search, setSearch] = useState(""); const [picking, setPicking] = useState(false); const [importing, setImporting] = useState(false); const pickFromDevice = async () => { if (picking) return; setPicking(true); try { const picked = await navigator.contacts.select(["name", "tel", "email"], { multiple: true }); const built = picked.map((c, idx) => { const { first_name, last_name } = splitFullName((c.name && c.name[0]) || ""); const phone = (c.tel && c.tel[0]) || ""; const email = (c.email && c.email[0]) || ""; const errs = validateWorker({ first_name, last_name, phone, email }); return { key: `${idx}-${phone || first_name}`, first_name, last_name, phone, email, valid: Object.keys(errs).length === 0, reason: errs.phone || errs.first_name || errs.last_name || "" }; }); setRows(built); setSelected(new Set(built.filter((r) => r.valid).map((r) => r.key))); } catch (err) { if (err?.name !== "AbortError") toast.error("Impossible d'accéder aux contacts du téléphone."); } finally { setPicking(false); } }; const toggle = (key) => setSelected((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); const filteredRows = rows.filter((r) => `${r.first_name} ${r.last_name} ${r.phone}`.toLowerCase().includes(search.toLowerCase())); const submit = async () => { const workers = rows.filter((r) => r.valid && selected.has(r.key)).map(({ first_name, last_name, phone, email }) => ({ first_name, last_name, phone, email, skills: [], note: "", active: true })); if (workers.length === 0) return toast.error("Sélectionnez au moins un contact."); setImporting(true); try { const { data } = await api.post("/workers/bulk", { workers }); if (data.quota_hit) onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`); else toast.success(`${data.created} intervenant${data.created > 1 ? "s" : ""} ajouté${data.created > 1 ? "s" : ""}`); onDone(); onClose(); } catch (err) { const statusCode = err.response?.status; const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import des contacts."; if (statusCode === 402) { onQuota(detail); onClose(); } else toast.error(detail); } finally { setImporting(false); } }; const invalidCount = rows.filter((r) => !r.valid).length; return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col"><div className="flex items-center justify-between"><div><h3 className="font-display font-bold text-xl">Importer les contacts</h3><p className="text-sm text-gray-500 mt-1">Choisissez les contacts à ajouter comme intervenants.</p></div><button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button></div>{rows.length === 0 ? <div className="py-12 text-center"><div className="w-14 h-14 mx-auto rounded-full bg-blue-50 flex items-center justify-center"><Smartphone className="w-7 h-7 text-blue-600" /></div><h4 className="mt-4 font-semibold text-gray-900">Ouvrir le répertoire du téléphone</h4><p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">Le navigateur exige que l'ouverture des contacts parte directement d'un clic. Appuyez sur le bouton ci-dessous pour afficher le sélecteur natif.</p><button type="button" onClick={pickFromDevice} disabled={picking} className="mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60"><Smartphone className="w-4 h-4" />{picking ? "Ouverture…" : "Choisir dans mes contacts"}</button></div> : <><div className="relative mt-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300" /></div>{invalidCount > 0 && <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">{invalidCount} contact{invalidCount > 1 ? "s" : ""} ignoré{invalidCount > 1 ? "s" : ""} (numéro manquant ou invalide).</div>}<div className="mt-3 border border-gray-200 rounded-lg overflow-y-auto flex-1">{filteredRows.map((row) => { const checked = row.valid && selected.has(row.key); return <label key={row.key} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 ${row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50"}`}><input type="checkbox" checked={checked} disabled={!row.valid} onChange={() => toggle(row.key)} className="w-4 h-4 accent-blue-600" /><div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{`${row.first_name}${row.last_name}`.slice(0, 2).toUpperCase() || "?"}</div><div className="flex-1 min-w-0"><div className="font-medium truncate">{row.first_name} {row.last_name}</div><div className="text-sm text-gray-500 truncate">{row.phone || row.reason}</div></div></label>; })}</div><div className="mt-5 flex items-center justify-between"><button type="button" onClick={pickFromDevice} disabled={picking} className="text-sm text-blue-700 font-medium disabled:opacity-60">{picking ? "Ouverture…" : "Modifier la sélection"}</button><div className="flex gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button><button type="button" onClick={submit} disabled={importing || selected.size === 0} className="px-4 py-2 rounded-md bg-blue-600 text-white disabled:opacity-60">{importing ? "Import…" : `Importer ${selected.size} contact(s)`}</button></div></div></>}</div></div>; }
+function PhoneContactsImportModal({ onClose, onDone, onQuota }) { const [rows, setRows] = useState([]); const [selected, setSelected] = useState(new Set()); const [search, setSearch] = useState(""); const [picking, setPicking] = useState(false); const [importing, setImporting] = useState(false); const pickFromDevice = async () => { if (picking) return; setPicking(true); try { const picked = await navigator.contacts.select(["name", "tel", "email"], { multiple: true }); const built = picked.map((c, idx) => { const { first_name, last_name } = splitFullName((c.name && c.name[0]) || ""); const phone = (c.tel && c.tel[0]) || ""; const email = (c.email && c.email[0]) || ""; const errs = validateWorker({ first_name, last_name, phone, email }); return { key: `${idx}-${phone || first_name}`, first_name, last_name, phone, email, valid: Object.keys(errs).length === 0, reason: errs.phone || errs.first_name || errs.last_name || "" }; }); setRows(built); setSelected(new Set(built.filter((r) => r.valid).map((r) => r.key))); } catch (err) { if (err?.name !== "AbortError") toast.error("Impossible d'accéder aux contacts du téléphone."); } finally { setPicking(false); } }; const toggle = (key) => setSelected((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); const filteredRows = rows.filter((r) => `${r.first_name} ${r.last_name} ${r.phone}`.toLowerCase().includes(search.toLowerCase())); const submit = async () => { const workers = rows.filter((r) => r.valid && selected.has(r.key)).map(({ first_name, last_name, phone, email }) => ({ first_name, last_name, phone, email, skills: [], note: "", active: true })); if (workers.length === 0) return toast.error("Sélectionnez au moins un contact."); setImporting(true); try { const { data } = await api.post("/workers/bulk", { workers }); if (data.quota_hit) onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`); else toast.success(`${data.created} intervenant${data.created > 1 ? "s" : ""} ajouté${data.created > 1 ? "s" : ""}`); onDone(); onClose(); } catch (err) { const statusCode = err.response?.status; const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import des contacts."; if (statusCode === 402) { onQuota(detail); onClose(); } else toast.error(detail); } finally { setImporting(false); } }; const invalidCount = rows.filter((r) => !r.valid).length; return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col"><div className="flex items-center justify-between"><div><h3 className="font-display font-bold text-xl">Importer les contacts</h3><p className="text-sm text-gray-500 mt-1">Choisissez les contacts à ajouter comme intervenants.</p></div><button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button></div>{rows.length === 0 ? <div className="py-12 text-center"><div className="w-14 h-14 mx-auto rounded-full bg-blue-50 flex items-center justify-center"><Smartphone className="w-7 h-7 text-blue-600" /></div><h4 className="mt-4 font-semibold text-gray-900">Ouvrir le répertoire du téléphone</h4><p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">Le navigateur exige que l'ouverture des contacts parte directement d'un clic. Appuyez sur le bouton ci-dessous pour afficher le sélecteur natif.</p><button type="button" onClick={pickFromDevice} disabled={picking} className="mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60"><Smartphone className="w-4 h-4" />{picking ? "Ouverture…" : "Choisir dans mes contacts"}</button></div> : <><div className="relative mt-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300" /></div>{invalidCount > 0 && <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">{invalidCount} contact{invalidCount > 1 ? "s" : ""} ignoré{invalidCount > 1 ? "s" : ""} (numéro manquant ou invalide).</div>}<div className="mt-3 border border-gray-200 rounded-lg overflow-y-auto flex-1">{filteredRows.map((row) => { const checked = row.valid && selected.has(row.key); return <label key={row.key} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 ${row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50"}`}><input type="checkbox" checked={checked} disabled={!row.valid} onChange={() => toggle(row.key)} className="w-4 h-4 accent-blue-600" /><div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{`${row.first_name}${row.last_name}`.slice(0, 2).toUpperCase() || "?"}</div><div className="flex-1 min-w-0"><div className="font-medium truncate">{row.first_name} {row.last_name}</div><div className="text-sm text-gray-500 truncate">{row.phone || row.reason}</div></div></label>; })}</div><div className="mt-5 flex items-center justify-between"><button type="button" onClick={pickFromDevice} disabled={picking} className="text-sm text-blue-700 font-medium disabled:opacity-60">{picking ? "Ouverture…" : "Modifier la sélection"}</button><div className="flex gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button><button type="button" onClick={submit} disabled={importing || selected.size === 0} className="px-4 py-2 rounded-md bg-blue-600 text-white disabled:opacity-60">{importing ? "Import…" : `Ajouter ${selected.size} contact(s)`}</button></div></div></>}</div></div>; }
 
-function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false }) {
+export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false, inline = false }) {
   const mobile = isMobileViewport();
   const [status, setStatus] = useState(null);
   const [contacts, setContacts] = useState([]);
@@ -38,6 +37,9 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
+  const [contactsError, setContactsError] = useState("");
+  const importLock = useRef(false);
   const [contactsReady, setContactsReady] = useState(false);
   const [loadingSeconds, setLoadingSeconds] = useState(0);
   const [startingSession, setStartingSession] = useState(false);
@@ -69,6 +71,7 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
     try {
       const { data } = await api.get("/whatsapp/status");
       setStatus(data);
+      setConnectionError("");
       if (data.refreshCooldown > 0) setRefreshCooldown(data.refreshCooldown);
       if (!data.connected) {
         setContacts([]);
@@ -82,14 +85,17 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
       setLoading(false);
       try {
         const { data: loadedContacts } = await api.get("/whatsapp/contacts");
+        setContactsError("");
         setContacts(Array.isArray(loadedContacts) ? loadedContacts : []);
         setContactsReady(true);
       } catch (contactsError) {
         console.error("Erreur récupération contacts :", contactsError);
+        setContactsError("Impossible de charger vos contacts. Réessayez sans reconnecter WhatsApp.");
         setContactsReady(true);
       }
     } catch (err) {
       console.error("Erreur statut WhatsApp :", err);
+      setConnectionError("Impossible de vérifier la connexion. Réessayez dans quelques instants.");
       const statusCode = err.response?.status;
       if (statusCode !== 400 && statusCode !== 503) toast.error(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp.");
       setLoading(false);
@@ -133,6 +139,7 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
       const { data: loadedContacts } = await api.get("/whatsapp/contacts");
       setContacts(Array.isArray(loadedContacts) ? loadedContacts : []);
       setContactsReady(true);
+      setContactsError("");
     } catch (err) {
       const statusCode = err.response?.status;
       const retryAfter = err.response?.data?.retryAfter || err.response?.data?.detail?.match?.(/(\\d+)s/)?.[1];
@@ -168,7 +175,6 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
   };
 
   useEffect(() => {
-    startWhatsAppSession();
     fetchStatusAndContacts();
   }, [fetchStatusAndContacts, startWhatsAppSession]);
 
@@ -201,13 +207,15 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
   });
 
   const importContacts = async () => {
+    if (importLock.current) return;
     if (selected.size === 0) return toast.error("Sélectionnez au moins un contact.");
+    importLock.current = true;
     setImporting(true);
     try {
       const { data } = await api.post("/whatsapp/import", { contacts: Array.from(selected) });
       if (data.quota_hit) onQuota(`${data.created} contact(s) ajouté(s). La limite du plan gratuit a été atteinte.`);
       else toast.success(`${data.created} intervenant(s) ajouté(s).`);
-      onDone();
+      await onDone();
       onClose();
     } catch (err) {
       const statusCode = err.response?.status;
@@ -217,6 +225,7 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
         onClose();
       } else toast.error(detail);
     } finally {
+      importLock.current = false;
       setImporting(false);
     }
   };
@@ -225,19 +234,20 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
   const refreshDisabled = refreshing || refreshCooldown > 0;
   const refreshLabel = refreshing ? "Actualisation..." : refreshCooldown > 0 ? `Actualiser (${refreshCooldown}s)` : "Actualiser";
 
-  return <div className={`fixed inset-0 bg-black/40 z-50 flex justify-center ${mobile ? "items-end" : "items-center p-4"}`} onClick={onClose}>
-    <div onClick={(event) => event.stopPropagation()} className={`bg-white w-full shadow-xl max-h-[92dvh] overflow-y-auto ${mobile ? "rounded-t-2xl p-5" : "max-w-3xl rounded-xl p-6"}`}>
-      {mobile && <div className="w-10 h-1 rounded-full bg-gray-200 mx-auto mb-4" />}
-      <div className="flex items-start justify-between gap-4">
+  return <div className={inline ? "" : `fixed inset-0 bg-black/40 z-50 flex justify-center ${mobile ? "items-end" : "items-center p-4"}`} onClick={inline || importing ? undefined : onClose}>
+    <div onClick={event => event.stopPropagation()} className={inline ? "bg-white border border-gray-200 rounded-2xl p-4 sm:p-6" : `bg-white w-full shadow-xl max-h-[92dvh] overflow-y-auto ${mobile ? "rounded-t-2xl p-5" : "max-w-3xl rounded-xl p-6"}`}>
+      {inline && <button type="button" disabled={importing} onClick={onClose} className="mb-2 min-h-11 text-sm text-gray-600 underline">Retour</button>}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-display font-bold text-xl">Importer depuis WhatsApp</h3>
-          <p className="text-sm text-gray-500 mt-1">{mobile ? "Connectez WhatsApp puis choisissez vos intervenants." : "Sélectionnez les contacts à ajouter à vos intervenants."}</p>
+          <p className="text-xs font-semibold text-blue-700">{status?.connected ? "Choix des contacts" : "Connexion WhatsApp"}</p>
+          <h3 className="mt-2 font-display font-bold text-xl">{status?.connected ? "Qui souhaitez-vous ajouter ?" : "Connectez votre WhatsApp"}</h3>
+          <p className="text-sm text-gray-600 mt-2">{status?.connected ? "Cochez les contacts à ajouter à votre équipe. L’import ne leur envoie aucun message." : "Utilisez le compte WhatsApp depuis lequel vous souhaitez contacter vos intervenants."}</p>
         </div>
-        <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
+        {!inline && <button aria-label="Fermer" disabled={importing} onClick={onClose} className="p-2 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>}
       </div>
-
-      <FirstMissionHelp />
-      {!status?.connected && <div className="mt-6"><ContextGuide id="whatsapp" step={3} title="Reliez le WhatsApp qui enverra vos demandes">Suivez les instructions ci-dessous pour associer votre compte. Une fois connecté, vous pourrez choisir les contacts à ajouter à ShiftFlow.</ContextGuide>
+      {connectionError && <div role="alert" className="mt-4 text-sm text-red-700">{connectionError}<button type="button" onClick={fetchStatusAndContacts} className="block min-h-11 underline">Réessayer</button></div>}
+      {loading && !status && <p className="mt-4 text-sm text-gray-500" role="status">Vérification de la connexion…</p>}
+      {!loading && !connectionError && !status?.connected && <div className="mt-5">
         {mobile ? <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="flex items-center gap-3">
@@ -249,8 +259,9 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
             </div>
 
             {!pairCode ? <>
-              <label className="block text-sm font-medium text-gray-800 mt-5">Votre numéro WhatsApp</label>
+              <label htmlFor="whatsapp-pair-phone" className="block text-sm font-medium text-gray-800 mt-5">Votre numéro WhatsApp</label>
               <input
+                id="whatsapp-pair-phone"
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
@@ -281,20 +292,21 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
           </div>
 
           <div>
-            <img
+            {pairCode && <p className="mb-3 text-sm font-medium text-gray-900">Ouvrez maintenant WhatsApp sur ce téléphone, saisissez ce code, puis revenez ici. Vos contacts apparaîtront après la connexion.</p>}
+            <details><summary className="min-h-11 py-3 cursor-pointer text-sm text-blue-700">Voir le guide en images</summary><img
               src="/phone-link-guide.png"
               alt="Étapes pour connecter WhatsApp avec un numéro de téléphone"
               className="block w-full h-auto rounded-xl border border-gray-200 shadow-sm"
-            />
+            /></details>
             <p className="mt-2 px-1 text-xs leading-relaxed text-gray-500">
               Dans WhatsApp : <strong>Appareils connectés</strong> → <strong>Connecter un appareil</strong> → <strong>Connecter plutôt avec un numéro de téléphone</strong>, puis saisissez le code affiché dans ShiftFlow.
             </p>
           </div>
 
-          <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+          {(pairCode || startingSession) && <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
             <RefreshCw className="w-4 h-4 animate-spin" />
             {pairCode ? "En attente de la connexion WhatsApp…" : "Préparation de WhatsApp…"}
-          </div>
+          </div>}
         </div> : <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
           {status?.hasQR && status?.qr ? <WhatsAppQrGuide qr={status.qr} /> : <>
             <RefreshCw className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" />
@@ -307,7 +319,7 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
 
       {status?.connected && <div className="mt-6">
         {connectionOnly && <div className="mb-5 rounded-xl bg-green-50 border border-green-200 p-4"><h3 className="font-semibold text-green-900">WhatsApp est connecté</h3><p className="mt-2 text-sm text-green-900">Vos intervenants sont déjà ajoutés. Revenez à votre mission pour choisir les destinataires et vérifier le message.</p><button type="button" onClick={() => { onClose(); onDone(); }} className="mt-3 w-full rounded-xl bg-blue-600 text-white font-semibold px-4 py-3">Continuer vers ma mission</button></div>}
-        {contactsReady && contacts.length === 0 ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+        {contactsError ? <div role="alert" className="text-sm text-red-700">{contactsError}<button type="button" onClick={fetchStatusAndContacts} className="block py-3 underline">Réessayer le chargement</button></div> : contactsReady && contacts.length === 0 ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><AlertTriangle className="w-5 h-5" /></div>
             <div className="min-w-0">
@@ -371,13 +383,14 @@ function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false 
         <div className={`mt-5 flex ${mobile ? "flex-col gap-3" : "items-center justify-between"}`}>
           <div className="text-sm text-gray-500">{selected.size} sélectionné{selected.size > 1 ? "s" : ""}</div>
           <div className={`flex gap-2 ${mobile ? "w-full" : ""}`}>
-            <button type="button" onClick={onClose} className={`${mobile ? "flex-1" : ""} px-4 py-2.5 rounded-md border border-gray-300`}>Annuler</button>
-            <button type="button" onClick={importContacts} disabled={importing || selected.size === 0} className={`${mobile ? "flex-[1.4]" : ""} px-4 py-2.5 rounded-md bg-blue-600 text-white disabled:opacity-60`}>{importing ? "Import..." : `Importer ${selected.size} contact(s)`}</button>
+            {!inline && <button type="button" disabled={importing} onClick={onClose} className={`${mobile ? "flex-1" : ""} px-4 py-2.5 rounded-md border border-gray-300`}>Retour</button>}
+            <button type="button" onClick={importContacts} disabled={importing || selected.size === 0} className={`${mobile ? "flex-[1.4]" : ""} px-4 py-2.5 rounded-md bg-blue-600 text-white disabled:opacity-60`}>{importing ? "Import..." : `Ajouter ${selected.size} contact(s)`}</button>
           </div>
         </div>
         </>}
         </>}
       </div>}
+      <details className="mt-5 border-t pt-2"><summary className="cursor-pointer min-h-11 py-3 text-sm text-gray-600">Quels contacts seront accessibles ?</summary><FirstMissionHelp /></details>
     </div>
   </div>;
 }
