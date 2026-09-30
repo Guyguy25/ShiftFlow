@@ -11,7 +11,7 @@ export default function Tutorial() {
   const replay = () => {
     try { Object.keys(localStorage).filter(key => key.startsWith(`shiftflow_guide_${user.id}_`)).forEach(key => localStorage.removeItem(key)); } catch {}
     window.dispatchEvent(new Event("shiftflow:replay-guide"));
-    navigate("/app/dashboard");
+    navigate("/app/dashboard?guide=1");
   };
   return <div data-testid="help-page" className="max-w-4xl">
     <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Aide</p>
@@ -30,3 +30,4 @@ export default function Tutorial() {
     <Link to="/app/dashboard" className="mt-6 inline-flex min-h-11 items-center text-sm font-medium text-blue-700">Retour à mon espace →</Link>
   </div>;
 }
+

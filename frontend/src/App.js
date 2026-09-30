@@ -25,7 +25,6 @@ import Onboarding from "./pages/Onboarding";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
 import { LegalNotice, Terms, Privacy, Cookies, DPA } from "./pages/LegalPages";
-import HelpChatbot from "./components/HelpChatbot";
 import MetaPixel from "./components/MetaPixel";
 import { Toaster } from "sonner";
 
@@ -67,12 +66,6 @@ function AppRoutes() {
 // need Outlet
 import { Outlet, useLocation } from "react-router-dom";
 
-function ChatbotGate() {
-  const location = useLocation();
-  if (location.pathname.startsWith("/m/")) return null;
-  return <HelpChatbot />;
-}
-
 function PublicLegalGate() {
   const location = useLocation();
   if (!["/", "/pricing", "/login", "/register"].includes(location.pathname)) return null;
@@ -86,7 +79,6 @@ function App() {
         <AuthProvider>
           <AppRoutes />
           <PublicLegalGate />
-          <ChatbotGate />
           <MetaPixel />
           <Toaster position="top-right" richColors />
         </AuthProvider>
@@ -96,3 +88,4 @@ function App() {
 }
 
 export default App;
+
