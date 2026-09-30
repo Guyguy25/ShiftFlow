@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from onboarding_emails import _message, _stage, run_onboarding_emails
+from onboarding_emails import _eligible_stages, _message, _stage, run_onboarding_emails
 
 
 class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
@@ -17,7 +17,7 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await run_onboarding_emails(db, "https://www.shiftflow.io", "secret"), 0)
         db.users.find.assert_not_called()
 
-    async def test_stage_progresses_and_stops_after_real_invite(self):
+    async def test_stage_progresses_to_a_useful_post_invite_message(self):
         now = datetime(2026, 9, 28, 16, tzinfo=timezone.utc)
         user = {"id": "agency-1", "created_at": (now - timedelta(hours=5)).isoformat()}
         mission = {"id": "mission-1", "name": "Montage", "created_at": (now - timedelta(hours=3)).isoformat()}
@@ -26,14 +26,43 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
             workers=SimpleNamespace(count_documents=AsyncMock(return_value=0),
                                     find_one=AsyncMock(return_value={"created_at": (now - timedelta(hours=5)).isoformat()})),
             notifications=SimpleNamespace(find_one=AsyncMock(return_value=None)),
+            shifts=SimpleNamespace(find=lambda *args, **kwargs: SimpleNamespace(
+                to_list=AsyncMock(return_value=[{"people_needed": 2, "confirmed_count": 2}]))),
         )
         self.assertEqual(await _stage(db, user, now), ("no_mission", None))
         db.missions.find_one.return_value = mission
         self.assertEqual(await _stage(db, user, now), ("no_workers", mission))
         db.workers.count_documents.return_value = 1
         self.assertEqual(await _stage(db, user, now), ("no_invite", mission))
-        db.notifications.find_one.return_value = {"_id": "sent-whatsapp-invite"}
-        self.assertEqual(await _stage(db, user, now), (None, None))
+        db.notifications.find_one.return_value = {
+            "sent_at": (now - timedelta(hours=5)).isoformat()
+        }
+        self.assertEqual(await _stage(db, user, now), ("team_ready", mission))
+
+    async def test_sent_activation_stage_yields_to_trial_reminder(self):
+        now = datetime(2026, 9, 28, 16, tzinfo=timezone.utc)
+        user = {
+            "id": "agency-1",
+            "created_at": (now - timedelta(days=25)).isoformat(),
+            "trial_ends_at": (now + timedelta(days=6)).isoformat(),
+        }
+        mission = {"id": "mission-1", "name": "Montage", "created_at": (now - timedelta(days=25)).isoformat()}
+        db = SimpleNamespace(
+            missions=SimpleNamespace(find_one=AsyncMock(return_value=mission)),
+            workers=SimpleNamespace(count_documents=AsyncMock(return_value=1),
+                                    find_one=AsyncMock(return_value={"created_at": (now - timedelta(days=25)).isoformat()})),
+            notifications=SimpleNamespace(find_one=AsyncMock(return_value={
+                "sent_at": (now - timedelta(days=20)).isoformat()
+            })),
+            shifts=SimpleNamespace(find=lambda *args, **kwargs: SimpleNamespace(
+                to_list=AsyncMock(return_value=[{"people_needed": 2, "confirmed_count": 2}]))),
+        )
+        stages = [stage for stage, _ in await _eligible_stages(db, user, now)]
+        self.assertEqual(stages, ["team_ready", "trial_ending_7d"])
+        self.assertEqual(
+            await _stage(db, user, now, {"team_ready"}),
+            ("trial_ending_7d", mission),
+        )
 
     def test_mission_name_is_escaped_in_html(self):
         msg = _message({"name": "Tanguy"}, "no_workers", {"name": "<script>alert(1)</script>"},
@@ -45,3 +74,4 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

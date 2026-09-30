@@ -26,18 +26,52 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
     greeting = f"Bonjour {first_name}," if first_name else "Bonjour,"
     mission_name = html.escape((mission or {}).get("name", "")[:100])
     base = frontend_url.rstrip("/")
+    mission_path = (f"/app/missions/{quote(mission['id'])}"
+                    if mission and mission.get("id") else "/app/dashboard")
     if stage == "no_mission":
         subject = "Créez votre première mission sur ShiftFlow"
         message = "Créez votre première mission pour préparer les horaires, le lieu et votre équipe. Votre essai de 30 jours commence à cette étape."
         label, path = "Créer ma mission", "/app/missions/new"
+    elif stage == "no_mission_followup":
+        subject = "Votre essai ShiftFlow vous attend toujours"
+        message = "Votre essai ne démarre qu'à la création de votre première mission. Quelques minutes suffisent pour renseigner le lieu, les horaires et le nombre de personnes recherchées."
+        label, path = "Préparer ma première mission", "/app/missions/new"
     elif stage == "no_workers":
         subject = "Votre mission est prête — ajoutez vos intervenants"
         message = f"Votre mission « {mission_name} » est prête. Ajoutez un intervenant pour commencer à gérer les disponibilités. Vous pouvez l'ajouter manuellement ou l'importer depuis WhatsApp."
         label, path = "Ajouter mes intervenants", "/app/workers"
-    else:
+    elif stage == "no_workers_followup":
+        subject = "Qui souhaitez-vous contacter pour votre mission ?"
+        message = f"« {mission_name} » attend encore votre équipe. Ajoutez vos intervenants maintenant pour pouvoir leur demander leurs disponibilités en une seule fois."
+        label, path = "Compléter mon équipe", "/app/workers"
+    elif stage == "no_invite":
         subject = "Votre équipe est prête — envoyez votre première demande"
         message = f"Vous avez ajouté des intervenants. Ouvrez « {mission_name} » pour sélectionner votre équipe et envoyer une première demande. Si besoin, connectez WhatsApp depuis cet écran."
-        label, path = "Ouvrir ma mission", f"/app/missions/{quote(mission['id'])}"
+        label, path = "Ouvrir ma mission", mission_path
+    elif stage == "no_invite_followup":
+        subject = "Votre mission est presque lancée"
+        message = f"Il ne reste qu'une étape pour « {mission_name} » : sélectionnez les intervenants et envoyez la demande de disponibilité."
+        label, path = "Envoyer ma demande", mission_path
+    elif stage == "pending_responses":
+        subject = "Votre équipe pour cette mission est-elle complète ?"
+        message = f"Des places restent à confirmer pour « {mission_name} ». Consultez les réponses et relancez les personnes nécessaires depuis votre tableau de mission."
+        label, path = "Voir les réponses", mission_path
+    elif stage == "team_ready":
+        subject = "Votre équipe est prête pour la mission"
+        message = f"L'équipe de « {mission_name} » est complète. Vous pouvez retrouver les personnes confirmées et les horaires à tout moment dans ShiftFlow."
+        label, path = "Voir mon équipe", mission_path
+    elif stage == "trial_ending_7d":
+        subject = "Il reste 7 jours à votre essai ShiftFlow"
+        message = "Votre essai arrive dans sa dernière semaine. Vous pouvez continuer à préparer vos missions et centraliser les réponses de votre équipe avant son échéance."
+        label, path = "Voir mon espace", "/app/dashboard"
+    elif stage == "trial_ending_2d":
+        subject = "Plus que 2 jours d'essai ShiftFlow"
+        message = "Votre essai se termine bientôt. Passez au plan Pro si vous souhaitez continuer à créer des missions et contacter vos intervenants sans interruption."
+        label, path = "Découvrir le plan Pro", "/pricing"
+    else:
+        subject = "Votre essai ShiftFlow est terminé"
+        message = "Votre espace et vos données restent disponibles. Passez au plan Pro pour reprendre la création de missions et les demandes de disponibilité."
+        label, path = "Continuer avec ShiftFlow", "/pricing"
     url = f"{base}{path}?utm_source=lifecycle_email&utm_medium=email&utm_campaign={stage}"
     safe_url = html.escape(url, quote=True)
     safe_unsubscribe = html.escape(unsubscribe_url, quote=True)
@@ -50,34 +84,78 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
         '<p style="font-size:13px;color:#566276">Une question ? Répondez simplement à cet email.</p>'
         f'<p style="font-size:12px;color:#667085;border-top:1px solid #e4e7ec;padding-top:14px"><a href="{safe_unsubscribe}">Ne plus recevoir ces conseils de démarrage</a></p></div>'
     )
-    return {"subject": subject, "text": body, "html": markup, "url": url}
+    return {"subject": subject, "text": body, "html": markup, "url": url,
+            "unsubscribe_url": unsubscribe_url}
 
 
-async def _stage(db, user, now):
+async def _eligible_stages(db, user, now):
+    """Return relevant messages in priority order; the caller removes stages already sent."""
     agency_id = user["id"]
     mission = await db.missions.find_one(
         {"agency_id": agency_id, "status": {"$ne": "cancelled"}, "archived": {"$ne": True}},
         {"_id": 0, "id": 1, "name": 1, "created_at": 1},
         sort=[("created_at", 1)],
     )
+    stages = []
     if not mission:
-        return ("no_mission", None) if now - _date(user["created_at"]) >= timedelta(hours=3) else (None, None)
+        account_age = now - (_date(user.get("created_at")) or now)
+        if account_age >= timedelta(hours=3):
+            stages.append(("no_mission", None))
+        if account_age >= timedelta(hours=48):
+            stages.append(("no_mission_followup", None))
+    else:
+        mission_age = now - (_date(mission.get("created_at")) or now)
+        worker_count = await db.workers.count_documents(
+            {"agency_id": agency_id, "active": {"$ne": False}}, limit=1)
+        if not worker_count:
+            if mission_age >= timedelta(hours=2):
+                stages.append(("no_workers", mission))
+            if mission_age >= timedelta(hours=48):
+                stages.append(("no_workers_followup", mission))
+        else:
+            first_worker = await db.workers.find_one(
+                {"agency_id": agency_id, "active": {"$ne": False}},
+                {"created_at": 1}, sort=[("created_at", 1)])
+            worker_age = now - (_date((first_worker or {}).get("created_at")) or now)
+            invite = await db.notifications.find_one({
+                "mission_id": mission["id"], "kind": "invite", "channel": "whatsapp", "status": "sent",
+            }, {"_id": 0, "sent_at": 1}, sort=[("sent_at", 1)])
+            if not invite:
+                if worker_age >= timedelta(hours=4):
+                    stages.append(("no_invite", mission))
+                if worker_age >= timedelta(hours=48):
+                    stages.append(("no_invite_followup", mission))
+            else:
+                invite_age = now - (_date(invite.get("sent_at")) or now)
+                shifts = await db.shifts.find(
+                    {"mission_id": mission["id"], "status": {"$ne": "cancelled"}},
+                    {"_id": 0, "people_needed": 1, "confirmed_count": 1},
+                ).to_list(100)
+                fully_staffed = bool(shifts) and all(
+                    int(shift.get("confirmed_count") or 0) >= int(shift.get("people_needed") or 0)
+                    for shift in shifts)
+                if fully_staffed and invite_age >= timedelta(hours=2):
+                    stages.append(("team_ready", mission))
+                elif not fully_staffed and invite_age >= timedelta(hours=24):
+                    stages.append(("pending_responses", mission))
 
-    if now - (_date(mission.get("created_at")) or now) < timedelta(hours=2):
-        return None, None
-    if not await db.workers.count_documents({"agency_id": agency_id, "active": {"$ne": False}}, limit=1):
-        return "no_workers", mission
+    trial_end = _date(user.get("trial_ends_at"))
+    if trial_end:
+        remaining = trial_end - now
+        if timedelta(days=2) < remaining <= timedelta(days=7):
+            stages.append(("trial_ending_7d", mission))
+        if timedelta(0) < remaining <= timedelta(days=2):
+            stages.append(("trial_ending_2d", mission))
+        if timedelta(days=-7) <= remaining <= timedelta(0):
+            stages.append(("trial_expired", mission))
+    return stages
 
-    mission_ids = await db.missions.distinct("id", {"agency_id": agency_id})
-    sent = await db.notifications.find_one({
-        "mission_id": {"$in": mission_ids}, "kind": "invite", "channel": "whatsapp", "status": "sent",
-    }, {"_id": 1})
-    if sent:
-        return None, None
-    first_worker = await db.workers.find_one({"agency_id": agency_id, "active": {"$ne": False}},
-                                             {"created_at": 1}, sort=[("created_at", 1)])
-    if now - (_date((first_worker or {}).get("created_at")) or now) >= timedelta(hours=4):
-        return "no_invite", mission
+
+async def _stage(db, user, now, sent_stages=None):
+    sent_stages = sent_stages or set()
+    for stage, mission in await _eligible_stages(db, user, now):
+        if stage not in sent_stages:
+            return stage, mission
     return None, None
 
 
@@ -95,10 +173,12 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
     })
     if already_sent_today >= 90:
         return 0
-    cutoff = (now - timedelta(days=14)).isoformat()
+    # Cover the complete 30-day trial plus a short post-trial recovery window.
+    cutoff = (now - timedelta(days=40)).isoformat()
     cursor = db.users.find({"created_at": {"$gte": cutoff}, "onboarding_email_opt_out": {"$ne": True}},
                            {"_id": 0, "id": 1, "name": 1, "email": 1, "created_at": 1,
-                            "plan": 1, "onboarding_email_last_sent_at": 1})
+                            "plan": 1, "trial_started_at": 1, "trial_ends_at": 1,
+                            "onboarding_email_last_sent_at": 1})
     sent_count = 0
     async with httpx.AsyncClient(timeout=8) as client:
         async for user in cursor:
@@ -117,7 +197,14 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
             }, {"_id": 1})
             if recent:
                 continue
-            stage, mission = await _stage(db, user, now)
+            sent_records = await db.onboarding_emails.find({
+                "_id": {"$regex": f"^{user['id']}:"}, "status": "sent",
+            }, {"_id": 1}).to_list(50)
+            sent_stages = {
+                record["_id"].split(":", 1)[1] for record in sent_records
+                if ":" in record.get("_id", "")
+            }
+            stage, mission = await _stage(db, user, now, sent_stages)
             if not stage:
                 continue
 
@@ -154,7 +241,7 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
                     continue
                 # Recheck progression just before delivery, in case the user acted since the scan.
                 current_user = await db.users.find_one({"id": user["id"]}, {"onboarding_email_opt_out": 1})
-                current_stage, _ = await _stage(db, user, now)
+                current_stage, _ = await _stage(db, user, now, sent_stages)
                 if not current_user or current_user.get("onboarding_email_opt_out") or current_stage != stage:
                     await db.onboarding_emails.update_one({"_id": record_id}, {"$set": {"status": "skipped"}})
                     continue
@@ -162,7 +249,8 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
                 response = await client.post("https://api.resend.com/emails", headers={
                     "Authorization": f"Bearer {key}", "Idempotency-Key": f"shiftflow-onboarding-{record_id}",
                 }, json={"from": sender, "to": [record["to"]], "reply_to": "hello@shiftflow.io",
-                         "subject": data["subject"], "html": data["html"], "text": data["text"]})
+                         "subject": data["subject"], "html": data["html"], "text": data["text"],
+                         "headers": {"List-Unsubscribe": f"<{data['unsubscribe_url']}>"}})
                 response.raise_for_status()
                 delivered_at = datetime.now(timezone.utc).isoformat()
                 await db.onboarding_emails.update_one({"_id": record_id}, {"$set": {
@@ -177,3 +265,4 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
             finally:
                 await db.users.update_one({"id": user["id"]}, {"$unset": {"onboarding_email_locked_until": ""}})
     return sent_count
+

@@ -21,11 +21,14 @@ Le backend FastAPI vérifie les comptes à chaque passage du planificateur Railw
 
 ## Règles
 
-- Comptes créés depuis au plus 14 jours seulement, hors plan Pro et hors personnes désinscrites.
-- Après 3 h sans mission : lien vers la création de mission.
-- Après 2 h avec mission active mais aucun intervenant actif : lien direct vers les intervenants.
-- Après 4 h avec intervenants mais aucune invitation WhatsApp envoyée : lien vers la mission. Le message invite à connecter WhatsApp si nécessaire, sans supposer que la session est encore active.
-- Après la première invitation WhatsApp envoyée, arrêt des relances. Un seul email par étape et au plus un email de démarrage par 24 h et par compte ; limite additionnelle à 5 par passage et 90 par jour pour préserver le quota gratuit.
-- Un lien de désinscription signé accompagne chaque email ; l'adresse `hello@shiftflow.io` reçoit les réponses. Les essais d'envoi sont enregistrés dans la collection `onboarding_emails` avec l'identifiant de Resend et une clé d'idempotence.
+- Comptes créés depuis au plus 40 jours seulement, hors plan Pro et hors personnes désinscrites.
+- Sans mission : premier conseil après 3 h, puis rappel final après 48 h.
+- Avec une mission mais aucun intervenant actif : premier conseil après 2 h, puis rappel final après 48 h.
+- Avec des intervenants mais aucune invitation WhatsApp : premier conseil après 4 h, puis rappel final après 48 h.
+- Après une invitation : félicitation lorsque l'équipe est complète, ou conseil après 24 h lorsque des réponses manquent encore.
+- Essai gratuit : rappel quand il reste au plus 7 jours, puis au plus 2 jours, puis un dernier message pendant les 7 jours suivant la fin de l'essai.
+- Une seule étape est envoyée à la fois. Chaque étape ne part qu'une fois, avec au plus un email par 24 h et par compte ; limite additionnelle à 5 par passage et 90 par jour pour préserver le quota gratuit.
+- Un lien de désinscription signé accompagne chaque email et l'en-tête standard `List-Unsubscribe` est ajouté ; l'adresse `hello@shiftflow.io` reçoit les réponses. Les essais d'envoi sont enregistrés dans la collection `onboarding_emails` avec l'identifiant de Resend et une clé d'idempotence.
 
 Ces relances sont des conseils de prise en main. Ne pas utiliser ce système pour des campagnes promotionnelles ou envoyer des emails aux intervenants.
+
