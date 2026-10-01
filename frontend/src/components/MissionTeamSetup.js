@@ -23,7 +23,7 @@ export default function MissionTeamSetup({ mission, workers, loading, error, onR
         <MessageCircle className="text-green-600" size={28} aria-hidden="true" />
         <h2 className="mt-3 text-xl font-semibold">Retrouvez vos intervenants sur WhatsApp</h2>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">Connectez votre compte, puis cochez uniquement les contacts à ajouter à votre équipe.</p>
-        <button type="button" onClick={() => setConnecting(true)} className="mt-5 w-full min-h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 font-semibold flex justify-center items-center gap-2">Ajouter via WhatsApp <ArrowRight size={18} aria-hidden="true" /></button>
+        <button type="button" data-onboarding="team" onClick={() => setConnecting(true)} className="mt-5 w-full min-h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 font-semibold flex justify-center items-center gap-2">Ajouter via WhatsApp <ArrowRight size={18} aria-hidden="true" /></button>
         <p className="mt-3 text-xs text-center leading-relaxed text-gray-500">L’ajout des contacts n’envoie aucune demande.</p>
       </section>
       <p className="mt-4 text-sm leading-relaxed text-gray-600">Ensuite, vous choisirez qui contacter pour ce créneau et vérifierez le message avant l’envoi.</p>

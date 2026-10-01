@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { activationNext, activationSteps } from "../lib/activation";
 import { useAuth } from "../context/AuthContext";
 import "./GettingStarted.css";
+import OnboardingCoach from "./OnboardingCoach";
 import { ActivationContext } from "../context/ActivationContext";
 
 export default function GettingStarted({ children }) {
@@ -58,6 +59,7 @@ export default function GettingStarted({ children }) {
   const finished = tasks.length > 0 && completed === tasks.length;
   return <ActivationContext.Provider value={context}>
     {children}
+    <OnboardingCoach />
     <Popover.Root open={expanded} onOpenChange={value => { setExpanded(value); if (!value) setSelected(null); }}>
       <Popover.Trigger asChild><button className="onboarding-launcher" aria-label={`Premiers pas : ${tasks.length ? `${completed} étapes sur ${tasks.length}` : "chargement"}`} data-testid="getting-started">
         <span className="flex items-center justify-between gap-6 text-sm font-semibold"><span>{finished ? "Bien démarré !" : "Premiers pas"}</span><span className="flex items-center gap-2 text-gray-500">{tasks.length ? `${completed}/${tasks.length}` : "…"}<ChevronUp size={15} /></span></span>
@@ -69,6 +71,10 @@ export default function GettingStarted({ children }) {
           <ol className="mt-4 space-y-1">{tasks.map((t, i) => <li key={t.id}><button onClick={() => setSelected(t.id)} aria-expanded={selected === t.id} className={`flex min-h-12 w-full items-center gap-3 rounded-xl p-2 text-left text-sm hover:bg-blue-50 ${selected === t.id ? "bg-blue-50" : ""}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${t.done ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{t.done ? <Check size={17} /> : i + 1}</span><span className={t.done ? "text-gray-500" : "font-medium text-gray-900"}>{t.done && <span className="sr-only">Terminé : </span>}{t.label}</span></button></li>)}</ol>
           <div className="mt-4 rounded-xl bg-blue-50 p-4"><p className="text-sm leading-relaxed text-blue-950">{task ? descriptions[task.id] : finished ? "Vous pouvez retrouver vos missions et leurs réponses depuis l’accueil." : next?.description || "Choisissez une étape pour voir comment faire."}</p><Link onClick={() => setExpanded(false)} to={task?.href || next?.href || "/app/dashboard"} className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{task ? task.shortLabel : next?.label || "Voir mes missions"}<ArrowRight size={16} /></Link></div>
         </>}
+        <div className="mt-3 flex flex-wrap gap-x-4 border-t border-gray-100 pt-2">
+          <button onClick={() => { setExpanded(false); window.dispatchEvent(new CustomEvent("shiftflow:replay-guide", { detail: { mode: "action" } })); }} className="min-h-11 text-sm font-semibold text-blue-700">Me guider sur cette page</button>
+          <button onClick={() => { setExpanded(false); window.dispatchEvent(new CustomEvent("shiftflow:replay-guide", { detail: { mode: "sections" } })); }} className="min-h-11 text-sm text-gray-600 underline">Découvrir les sections</button>
+        </div>
       </Popover.Content></Popover.Portal>
     </Popover.Root>
   </ActivationContext.Provider>;

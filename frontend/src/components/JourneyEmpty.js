@@ -1,7 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { CalendarClock, Users, Check, ArrowRight, MessageCircle } from "lucide-react";
-import ContextGuide from "./ContextGuide";
 import { useActivation } from "../context/ActivationContext";
 
 export default function JourneyEmpty({ kind = "mission", onAction }) {
@@ -23,8 +22,7 @@ export default function JourneyEmpty({ kind = "mission", onAction }) {
     <span className="text-[11px] font-bold uppercase tracking-widest text-blue-700">Un premier pas, moins de relances</span>
     <h2 className="mt-3 font-display text-xl sm:text-2xl font-bold text-gray-950">{title}</h2>
     <p className="mx-auto mt-3 max-w-lg text-sm sm:text-base leading-relaxed text-gray-600">{description}</p>
-    {team && <div className="text-left"><ContextGuide id="team" step={2} title="Ajoutez les personnes à contacter">Utilisez le bouton ci-dessous pour choisir un import depuis WhatsApp, votre répertoire ou un ajout manuel.</ContextGuide></div>}
-    {onAction ? <button type="button" onClick={onAction} className="journey-action">{label}<ArrowRight size={17} /></button> : <Link to={href} className="journey-action">{label}<ArrowRight size={17} /></Link>}
+    {onAction ? <button type="button" onClick={onAction} data-onboarding={team ? "workers" : "start"} className="journey-action">{label}<ArrowRight size={17} /></button> : <Link to={href} data-onboarding={team ? "workers" : "start"} className="journey-action">{label}<ArrowRight size={17} /></Link>}
     <p className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500"><MessageCircle size={14} />Vous choisissez quand envoyer vos demandes.</p>
     <Link to="/app/help" className="mt-4 inline-flex min-h-11 items-center text-sm font-medium text-blue-700 underline underline-offset-4">Besoin d’un coup de main ?</Link>
   </section>;

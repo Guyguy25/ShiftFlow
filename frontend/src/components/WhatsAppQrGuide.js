@@ -44,7 +44,7 @@ export default function WhatsAppQrGuide({ qr }) {
           <p className="mt-1 text-xs text-gray-500">Ouvrez d'abord le scanner intégré à WhatsApp.</p>
           <button
             type="button"
-            onClick={() => setScannerReady(true)}
+            data-onboarding="qr-open" onClick={() => setScannerReady(true)}
             className="mt-4 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm font-semibold"
             data-testid="reveal-whatsapp-qr"
           >
@@ -58,7 +58,7 @@ export default function WhatsAppQrGuide({ qr }) {
             <CheckCircle2 className="w-4 h-4" /> Scanner WhatsApp prêt
           </div>
           <div className="mt-4 flex justify-center">
-            <img src={qr} alt="QR code de connexion WhatsApp" className="w-64 h-64 border rounded-lg bg-white" />
+            <img data-onboarding="qr" src={qr} alt="QR code de connexion WhatsApp" className="w-64 h-64 border rounded-lg bg-white" />
           </div>
           <p className="mt-3 text-xs font-medium text-gray-600">
             Scannez maintenant avec le scanner affiché dans WhatsApp — pas avec l'appareil photo du téléphone.

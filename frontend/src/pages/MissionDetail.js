@@ -2,7 +2,6 @@ import MissionFollowUp, { invitationStatusLabel } from "../components/MissionFol
 import MissionTeamSetup from "../components/MissionTeamSetup";
 import InvitationReview from "../components/InvitationReview";
 import FirstMissionHelp from "../components/FirstMissionHelp";
-import ContextGuide from "../components/ContextGuide";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, MapPin, Users, Copy, XCircle, ArrowUp, ArrowDown, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
@@ -74,7 +73,7 @@ function WhatsAppConnectModal({ onClose, onConnected }) {
   }, [status?.connected, refreshStatus]);
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+    <div data-onboarding-modal className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -203,7 +202,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
         <button
           type="button"
           onClick={openAddWorkers}
-          data-testid={`shift-add-first-workers-${shift.id}`}
+          data-testid={`shift-add-first-workers-${shift.id}`} data-onboarding="workers"
           className="mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 text-sm font-semibold transition-colors shadow-sm"
         >
           <Plus className="w-4 h-4" /> Ajouter mes premiers intervenants
@@ -252,7 +251,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
                 const on = selected.includes(w.id);
                 return (
                   <button type="button" disabled={saving} key={w.id} onClick={()=>toggle(w.id)}
-                    data-testid={`select-worker-${shift.id}-${w.id}`}
+                    data-testid={`select-worker-${shift.id}-${w.id}`} data-onboarding={!reviewOpen && selected.length === 0 ? "select" : undefined}
                     className={`w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 last:border-0 text-left transition-colors ${on ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-gray-50"}`}>
                     <div className="min-w-0">
                       <div className={`text-sm font-medium truncate ${on ? "text-blue-900" : "text-gray-900"}`}>{w.first_name} {w.last_name}</div>
@@ -310,7 +309,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
           </div>
 
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <button type="button" onClick={() => { setError(""); setReviewOpen(true); }} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`}
+          <button type="button" onClick={() => { setError(""); setReviewOpen(true); }} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`} data-onboarding={!reviewOpen && selected.length > 0 ? "review" : undefined}
             className="mt-3 w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-sm transition-colors shadow-sm disabled:shadow-none">
             {saving
               ? "Envoi…"
@@ -390,7 +389,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
       {noSlots ? (
         <div className="px-4 sm:px-6 py-5 sm:py-6">
           {!expandSelect ? (
-            <button onClick={()=>setExpandSelect(true)} data-testid={`open-select-${shift.id}`}
+            <button onClick={()=>setExpandSelect(true)} data-testid={`open-select-${shift.id}`} data-onboarding="select"
               className="inline-flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
               <Plus className="w-4 h-4"/> Sélectionner les intervenants
             </button>
@@ -535,7 +534,6 @@ export default function MissionDetail() {
         {m.first_date && <p className="flex items-center gap-2"><CalendarClock size={16}/>{m.first_date.split("-").reverse().join("/")}{m.last_date && m.last_date !== m.first_date ? ` – ${m.last_date.split("-").reverse().join("/")}` : ""}</p>}
       </div>
       <MissionFollowUp mission={m} />
-      {!m.shifts.some(sh => sh.slots?.length) && firstSelectableShiftId && workers.length > 0 && <ContextGuide id="select-workers" step={4} title="Choisissez qui contacter pour ce créneau">Sélectionnez vos intervenants puis vérifiez le message avant de confirmer l’envoi.</ContextGuide>}
       <h2 className="mt-6 font-display font-bold text-lg">Suivi par créneau</h2>
       <div className="mt-3 space-y-4">{m.shifts.map(sh => <ShiftCard key={sh.id} mission={m} shift={sh} workers={workers} onReload={load} autoExpand={sh.id === autoExpandShiftId} />)}</div>
       <details className="mt-5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">

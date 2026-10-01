@@ -2,9 +2,9 @@
 
 ## User experience
 
-The authenticated layout shows five real milestones (including account creation), then retires the checklist after a successful first invitation. The next action uses the existing activation rules. On narrow screens the checklist collapses, and its redundant action is hidden on the current destination page.
+The authenticated layout keeps a compact bottom-right checklist with four real milestones: mission, team, WhatsApp, first invitation. It remains available after completion for help and replay; the automatic action guide stops when activation is complete. The next action uses the existing activation rules.
 
-Contextual hints appear next to mission creation, adding workers, WhatsApp connection, invitation preparation and incomplete profile fields. Dismissal is local and scoped to the user. Help can restore the hints without changing user data. Animations are finite and respect reduced-motion settings.
+Contextual hints highlight the actual mission fields, worker-add actions, WhatsApp connection and invitation preparation. The checklist can restart the action guide or an optional four-stop section tour without changing user data. Dismissal is local and scoped to the user. Animations are finite and respect reduced-motion settings. See onboarding-audit-2026-10-01.md for the current journey review.
 
 Signup now has three steps: identity, contact details, security. Existing password rules, advertising consent and attribution are retained. No survey is reintroduced.
 

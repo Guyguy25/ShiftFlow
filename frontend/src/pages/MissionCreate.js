@@ -122,12 +122,12 @@ export default function MissionCreate() {
           <h2 className="font-display font-bold text-lg">Les informations essentielles</h2>
           <div>
             <label htmlFor="mc-name" className="text-sm font-medium text-gray-700">Nom de la mission *</label>
-                  <input required id="mc-name" data-testid="mc-name" className={inputCls} value={mission.name} onChange={(e)=>setM("name", e.target.value)} placeholder="Montage Salon Nike"/>
+                  <input required id="mc-name" data-testid="mc-name" data-onboarding={!mission.name.trim() ? "name" : undefined} className={inputCls} value={mission.name} onChange={(e)=>setM("name", e.target.value)} placeholder="Montage Salon Nike"/>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="mc-location" className="text-sm font-medium text-gray-700">Lieu *</label>
-                  <input required id="mc-location" data-testid="mc-location" className={inputCls} value={mission.location} onChange={(e)=>setM("location", e.target.value)} placeholder="Lille Grand Palais"/>
+                  <input required id="mc-location" data-testid="mc-location" data-onboarding={mission.name.trim() && !mission.location.trim() ? "location" : undefined} className={inputCls} value={mission.location} onChange={(e)=>setM("location", e.target.value)} placeholder="Lille Grand Palais"/>
             </div>
           </div>
           <details><summary className="cursor-pointer text-sm text-blue-700 py-2">Ajouter une adresse ou des précisions (facultatif)</summary>
@@ -159,21 +159,21 @@ export default function MissionCreate() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label htmlFor={`mc-shift-${i}-date`} className="text-sm font-medium text-gray-700">Date *</label>
-                  <input type="date" required min={todayStr} id={`mc-shift-${i}-date`} data-testid={`mc-shift-${i}-date`} className={inputCls} value={s.date} onChange={(e)=>setS(i, "date", e.target.value)}/>
+                  <input type="date" required min={todayStr} id={`mc-shift-${i}-date`} data-testid={`mc-shift-${i}-date`} data-onboarding={!s.date || s.date < todayStr ? "date" : undefined} className={inputCls} value={s.date} onChange={(e)=>setS(i, "date", e.target.value)}/>
                 </div>
                 <div>
                   <label htmlFor={`mc-shift-${i}-start`} className="text-sm font-medium text-gray-700">Début *</label>
-                  <input type="time" required id={`mc-shift-${i}-start`} data-testid={`mc-shift-${i}-start`} className={inputCls} value={s.start_time} onChange={(e)=>setS(i, "start_time", e.target.value)}/>
+                  <input type="time" required id={`mc-shift-${i}-start`} data-testid={`mc-shift-${i}-start`} data-onboarding={s.date && !s.start_time ? "hours" : undefined} className={inputCls} value={s.start_time} onChange={(e)=>setS(i, "start_time", e.target.value)}/>
                 </div>
                 <div>
                   <label htmlFor={`mc-shift-${i}-end`} className="text-sm font-medium text-gray-700">Fin *</label>
-                  <input type="time" required id={`mc-shift-${i}-end`} data-testid={`mc-shift-${i}-end`} className={inputCls} value={s.end_time} onChange={(e)=>setS(i, "end_time", e.target.value)}/>
+                  <input type="time" required id={`mc-shift-${i}-end`} data-testid={`mc-shift-${i}-end`} data-onboarding={s.date && s.start_time && !s.end_time ? "hours" : undefined} className={inputCls} value={s.end_time} onChange={(e)=>setS(i, "end_time", e.target.value)}/>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label htmlFor={`mc-shift-${i}-people`} className="text-sm font-medium text-gray-700">Personnes *</label>
-                  <input type="number" min="1" required id={`mc-shift-${i}-people`} data-testid={`mc-shift-${i}-people`} className={inputCls} value={s.people_needed} onChange={(e)=>setS(i, "people_needed", e.target.value)}/>
+                  <input type="number" min="1" required id={`mc-shift-${i}-people`} data-testid={`mc-shift-${i}-people`} data-onboarding={s.date && s.start_time && s.end_time ? "needs" : undefined} className={inputCls} value={s.people_needed} onChange={(e)=>setS(i, "people_needed", e.target.value)}/>
                 </div>
                 <div>
                   <label htmlFor={`mc-shift-${i}-rate`} className="text-sm font-medium text-gray-700">Tarif horaire (€/h) *</label>
@@ -186,7 +186,7 @@ export default function MissionCreate() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <details><summary className="cursor-pointer py-2 text-sm text-blue-700">Compétence et consignes (facultatif)</summary><div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor={`mc-shift-${i}-skill`} className="text-sm font-medium text-gray-700">Compétence requise</label>
                   <input id={`mc-shift-${i}-skill`} data-testid={`mc-shift-${i}-skill`} className={inputCls} value={s.skill_required} onChange={(e)=>setS(i, "skill_required", e.target.value)} placeholder="ex: technique"/>
@@ -196,6 +196,7 @@ export default function MissionCreate() {
                   <input id={`mc-shift-${i}-desc`} data-testid={`mc-shift-${i}-desc`} className={inputCls} value={s.description} onChange={(e)=>setS(i, "description", e.target.value)} placeholder="Point de RDV, tenue, etc."/>
                 </div>
               </div>
+              </details>
               <div className="text-xs text-gray-500 border-t border-gray-100 pt-3" data-testid={`mc-shift-${i}-estimate`}>
                 Estimation coût brut : <span className="font-semibold text-gray-900">{estimate(s)} €</span>
                 <span className="text-gray-400"> ({s.people_needed} pers. × {s.rate_hourly}€/h)</span>
@@ -221,7 +222,7 @@ export default function MissionCreate() {
         {error && <div role="alert" className="text-sm text-red-600" data-testid="mc-error">{error}</div>}
         <div className="flex justify-end gap-3">
           <button type="button" disabled={loading} onClick={()=>{ setError(""); step > 0 ? setStep(step - 1) : nav("/app/dashboard"); }} className="px-4 py-2.5 rounded-xl sm:rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">{step > 0 ? "Retour" : "Annuler"}</button>
-          <button type="submit" disabled={loading} data-testid="mc-submit" className="px-5 py-2.5 rounded-xl sm:rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60">
+          <button type="submit" disabled={loading} data-testid="mc-submit" data-onboarding={step === 2 ? "create" : step === 0 && mission.name.trim() && mission.location.trim() ? "continue" : undefined} className="px-5 py-2.5 rounded-xl sm:rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60">
             {loading ? "Création…" : step === 2 ? "Créer ma mission" : "Continuer"}
           </button>
         </div>

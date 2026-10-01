@@ -1,5 +1,5 @@
 import { counted } from "../lib/french";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -12,6 +12,11 @@ export function renderInvitationPreview(template, worker, shift, mission, agency
 
 export default function InvitationReview({ workers, mission, shift, saving, onConfirm, onCancel }) {
   const { user } = useAuth();
+  const reviewSection = useRef(null);
+  useEffect(() => {
+    reviewSection.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
+    reviewSection.current?.focus({ preventScroll: true });
+  }, []);
   const [template, setTemplate] = useState(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -26,7 +31,7 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
     return () => { cancelled = true; };
   }, [attempt]);
   const worker = workers[index] || workers[0];
-  return <section className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label="Vérification avant envoi">
+  return <section ref={reviewSection} tabIndex={-1} className="scroll-mt-20 outline-none mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label="Vérification avant envoi">
     <h3 className="font-semibold">Vérifiez avant de lancer les demandes</h3>
     <p className="mt-2 text-sm leading-relaxed text-gray-700">{counted(workers.length, "intervenant")} dans votre sélection, dans l’ordre ci-dessous. L’envoi réel commence après votre confirmation, selon les places restantes et les personnes déjà dans la cascade.</p>
     <ol className="mt-3 list-inside list-decimal text-sm">{workers.map(w => <li key={w.id}>{w.first_name} {w.last_name} · {w.phone}</li>)}</ol>
@@ -35,7 +40,8 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
       <label className="mt-4 block text-sm font-medium">Message pour<select value={index} onChange={e => setIndex(Number(e.target.value))} className="mt-2 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3">{workers.map((w, i) => <option key={w.id} value={i}>{w.first_name} {w.last_name}</option>)}</select></label>
       <p className="mt-3 whitespace-pre-wrap break-words rounded-lg bg-white p-4 text-sm leading-relaxed">{worker && renderInvitationPreview(template, worker, shift, mission, user || {})}</p>
     </>}
-    <button type="button" disabled={saving || !template || !worker} onClick={onConfirm} className="mt-4 min-h-12 w-full rounded-lg bg-blue-600 px-3 py-3 font-semibold text-white disabled:opacity-50">{saving ? "Vérification / envoi…" : "Confirmer et envoyer les demandes WhatsApp"}</button>
+    <button type="button" disabled={saving || !template || !worker} data-onboarding="send" onClick={onConfirm} className="mt-4 min-h-12 w-full rounded-lg bg-blue-600 px-3 py-3 font-semibold text-white disabled:opacity-50">{saving ? "Vérification / envoi…" : "Confirmer et envoyer les demandes WhatsApp"}</button>
+    <div data-onboarding-inline="send" />
     <button type="button" disabled={saving} onClick={onCancel} className="mt-2 min-h-11 text-sm font-semibold text-blue-700">Revenir à la sélection</button>
   </section>;
 }
