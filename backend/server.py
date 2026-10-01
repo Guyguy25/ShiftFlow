@@ -1897,8 +1897,8 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             return {"checkout_url": previous.url, "session_id": previous.id}
     if payload.lookup_key == mission_billing.MISSION_LOOKUP:
         line_items = [{"price_data": {"currency": "eur", "unit_amount": expected_amount,
-            "product_data": {"name": f"ShiftFlow — {purchase['mission_credits']} mission(s)",
-                             "description": f"{quantity} achetée(s) + {purchase['bonus_missions']} offerte(s). Crédits sans expiration. Paiement unique, sans abonnement."}}, "quantity": 1}]
+            "product_data": {"name": f"ShiftFlow — {purchase['mission_credits']} mission{'s' if purchase['mission_credits'] > 1 else ''}",
+                             "description": f"{quantity} achetée{'s' if quantity > 1 else ''} + {purchase['bonus_missions']} offerte{'s' if purchase['bonus_missions'] > 1 else ''}. Crédits valables à vie. Paiement unique, sans abonnement."}}, "quantity": 1}]
     else:
         prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
         if not prices:

@@ -34,7 +34,7 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
         label, path = "Créer ma mission", "/app/missions/new"
     elif stage == "no_mission_followup":
         subject = "Vos 3 missions offertes vous attendent"
-        message = "Vos 3 missions offertes restent disponibles sans expiration. Quelques minutes suffisent pour renseigner le lieu, les horaires et le nombre de personnes recherchées."
+        message = "Vos 3 missions offertes restent disponibles à vie. Quelques minutes suffisent pour renseigner le lieu, les horaires et le nombre de personnes recherchées."
         label, path = "Préparer ma première mission", "/app/missions/new"
     elif stage == "no_workers":
         subject = "Votre mission est prête — ajoutez vos intervenants"
