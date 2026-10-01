@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 FREE_MISSIONS = 3
-MISSION_AMOUNT = 490
+MISSION_AMOUNT = 0
 MISSION_LOOKUP = "shiftflow_mission"
 
 
