@@ -17,6 +17,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from fastapi.responses import HTMLResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from profile_data import validate_avatar
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from meta_capi import send_meta_event
@@ -222,6 +223,7 @@ def public_user(u: dict) -> dict:
     return {"id": u["id"], "email": u["email"], "name": u.get("name", ""),
             "agency_name": u.get("agency_name", ""), "phone": u.get("phone", ""),
             "plan": u.get("plan", "free"),
+            "avatar": u.get("avatar", ""),
             "onboarding_completed": bool(u.get("onboarding_completed")),
             "subscription_status": u.get("subscription_status"),
             "created_at": u.get("created_at"),
@@ -766,11 +768,17 @@ class UpdateProfileIn(BaseModel):
     name: str
     agency_name: str
     phone: str = ""
+    avatar: str = ""
+
+    @field_validator("avatar")
+    @classmethod
+    def check_avatar(cls, value):
+        return validate_avatar(value)
 
 
 @api.put("/auth/me")
 async def update_me(payload: UpdateProfileIn, user=Depends(get_current_user)):
-    await db.users.update_one({"id": user["id"]}, {"$set": payload.model_dump()})
+    await db.users.update_one({"id": user["id"]}, {"$set": payload.model_dump(exclude_unset=True)})
     updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     return public_user(updated)
 

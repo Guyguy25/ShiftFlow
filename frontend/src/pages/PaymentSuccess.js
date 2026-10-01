@@ -1,3 +1,4 @@
+import { counted } from "../lib/french";
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
@@ -62,8 +63,8 @@ export default function PaymentSuccess() {
         {status === "paid" && (
           <>
             <CheckCircle2 className="w-16 h-16 text-green-600 mx-auto" data-testid="payment-success-icon"/>
-            <h1 className="mt-6 text-3xl font-display font-bold">{isMission ? `${credits} mission(s) disponible(s) !` : "Bienvenue en Pro !"}</h1>
-            <p className="mt-2 text-gray-600">{isMission ? `${credits} crédit(s), bonus compris, ont été ajoutés à votre compte sans expiration. Retrouvez votre préparation et créez votre mission.` : "Créez autant de missions que nécessaire pendant votre abonnement."}</p>
+            <h1 className="mt-6 text-3xl font-display font-bold">{isMission ? `${counted(credits, "mission disponible", "missions disponibles")} !` : "Bienvenue en Pro !"}</h1>
+            <p className="mt-2 text-gray-600">{isMission ? `${counted(credits, "mission ajoutée", "missions ajoutées")} à votre compte, bonus compris. Vos crédits sont valables à vie. Retrouvez votre préparation et créez votre mission.` : "Créez autant de missions que nécessaire pendant votre abonnement."}</p>
             <Link to="/app/missions/new" data-testid="payment-goto-dashboard" className="mt-6 inline-flex items-center justify-center h-11 px-5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium">
               Créer ma mission
             </Link>

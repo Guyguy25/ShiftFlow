@@ -116,13 +116,7 @@ export default function Dashboard() {
         {!connected && <Link to="/app/workers?add=1" className="text-xs font-semibold text-amber-900 bg-white/80 border border-amber-200 rounded-lg px-2.5 py-1.5 shrink-0">Connecter</Link>}
       </div>}
 
-      {!next && quota && quota.plan === "free" && <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="plan-quota-banner">
-        <p className="flex-1 text-sm text-blue-950">{quota.free_missions_remaining} mission(s) offerte(s) restante(s) · {quota.mission_credits} crédit(s) acheté(s). Sans expiration.</p>
-        <Link to="/pricing" className="text-sm font-semibold text-blue-700">À l’unité ou en illimité →</Link>
-      </div>}
-      {quota && quota.plan === "pro" && (
-        <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900 flex items-center gap-2" data-testid="plan-pro-banner"><CheckCircle2 className="w-4 h-4"/> Plan <strong>Pro</strong> actif — missions et intervenants illimités.</div>
-      )}
+
 
       {!next && <><div className="mt-5 sm:mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="kpi-missions-total"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Missions totales</div><div className="mt-2 text-3xl font-display font-bold">{data.missions_total}</div></div>

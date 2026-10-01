@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Check, ArrowRight, ChevronDown, Sparkles } from "lucide-react";
+import * as Popover from "@radix-ui/react-popover";
+import { Check, ArrowRight, ChevronUp, X } from "lucide-react";
 import { api } from "../lib/api";
 import { activationNext, activationSteps } from "../lib/activation";
 import { useAuth } from "../context/AuthContext";
@@ -14,6 +15,8 @@ export default function GettingStarted({ children }) {
   const [error, setError] = useState(null);
   const [retryIndex, setRetryIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [selected, setSelected] = useState(null);
+  useEffect(() => { setExpanded(false); setSelected(null); }, [location.pathname, location.search]);
   const refresh = useCallback(async (signal) => {
     setError(null);
     const results = await Promise.allSettled([
@@ -44,34 +47,29 @@ export default function GettingStarted({ children }) {
   const next = state?.owner === user.id && activationNext(state.summary, state.whatsapp, state.quota);
   const tasks = state?.owner === user.id ? activationSteps(state.summary, state.whatsapp, state.quota) : [];
   const context = { ...(state?.owner === user.id ? state : {}), next, steps: tasks, error, retry: () => setRetryIndex(index => index + 1) };
-  // Settings has its own prominent activation card; do not duplicate it in a side rail.
-  if (!next || /^\/app\/missions\/[^/]+$/.test(location.pathname) || ["/app/settings", "/app/dashboard", "/app/missions/new", "/app/workers"].includes(location.pathname)) return <ActivationContext.Provider value={context}>{children}</ActivationContext.Provider>;
-  const nextHref = next.href || "/app/workers?connect=1";
   const completed = tasks.filter(t => t.done).length;
-  return <ActivationContext.Provider value={context}><div className="getting-started-layout">
-    <aside className={`getting-started ${location.pathname === nextHref.split("?")[0] ? "on-current-step" : ""}`} aria-label="Vos premiers pas" data-testid="getting-started">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-blue-700 text-xs font-bold uppercase tracking-wider"><Sparkles size={16} aria-hidden="true" /> Vos premiers pas</div>
-        <span className="text-sm font-semibold text-gray-600" aria-live="polite">{completed}/{tasks.length}</span>
-      </div>
-      <h2 className="getting-started-title mt-3 font-display font-bold text-xl text-gray-900">Vers votre première équipe confirmée.</h2>
-      <div className="mt-4 h-1.5 rounded-full bg-blue-100 overflow-hidden" role="progressbar" aria-label="Actions de démarrage réalisées" aria-valuemin={0} aria-valuemax={4} aria-valuenow={completed}>
-        <div className="h-full bg-blue-600 motion-safe:transition-all" style={{ width: `${completed / 4 * 100}%` }} />
-      </div>
-      <button type="button" className="getting-started-toggle" aria-expanded={expanded} aria-controls="getting-started-tasks" onClick={() => setExpanded(!expanded)}>
-        {expanded ? "Masquer les étapes" : "Voir les étapes"}<ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
-      </button>
-      <ol id="getting-started-tasks" className={`getting-started-tasks ${expanded ? "is-expanded" : ""}`}>
-        {tasks.map((task, i) => <li key={task.label} className="flex items-center gap-3 py-2.5">
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${task.done ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`} aria-hidden="true">{task.done ? <Check size={17} /> : i + 1}</span>
-          {task.done ? <span className="text-sm text-gray-500 line-through"><span className="sr-only">Terminé : </span>{task.label}</span> : <Link className="text-sm font-medium text-gray-800 hover:text-blue-700 focus-visible:outline-blue-600" to={task.href}>{task.label}</Link>}
-        </li>)}
-      </ol>
-      <div className="getting-started-next mt-4 border-t border-gray-100 pt-4">
-        <p className="text-sm leading-relaxed text-gray-600">{next.description}</p>
-        <Link to={nextHref} className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700">{next.label}<ArrowRight size={16} className="shrink-0" /></Link>
-      </div>
-    </aside>
-    <div className="min-w-0">{children}</div>
-  </div></ActivationContext.Provider>;
+  const descriptions = {
+    mission: "Indiquez le lieu, la date et le nombre de personnes nécessaires. Préparer une mission n’envoie aucun message.",
+    workers: "Ajoutez les personnes de votre réseau que vous souhaitez solliciter pour vos missions.",
+    whatsapp: "Reliez le compte WhatsApp qui enverra vos demandes. Vos intervenants n’ont pas de compte à créer.",
+    invite: "Choisissez les intervenants et leur ordre de priorité. Vérifiez le message, puis confirmez le lancement.",
+  };
+  const task = tasks.find(t => t.id === selected);
+  const finished = tasks.length > 0 && completed === tasks.length;
+  return <ActivationContext.Provider value={context}>
+    {children}
+    <Popover.Root open={expanded} onOpenChange={value => { setExpanded(value); if (!value) setSelected(null); }}>
+      <Popover.Trigger asChild><button className="onboarding-launcher" aria-label={`Premiers pas : ${tasks.length ? `${completed} étapes sur ${tasks.length}` : "chargement"}`} data-testid="getting-started">
+        <span className="flex items-center justify-between gap-6 text-sm font-semibold"><span>{finished ? "Bien démarré !" : "Premiers pas"}</span><span className="flex items-center gap-2 text-gray-500">{tasks.length ? `${completed}/${tasks.length}` : "…"}<ChevronUp size={15} /></span></span>
+        <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-label="Progression de démarrage" aria-valuemin={0} aria-valuemax={tasks.length || 4} aria-valuenow={tasks.length ? completed : undefined}><span className="block h-full rounded-full bg-emerald-500 motion-safe:transition-all motion-safe:duration-500" style={{ width: `${tasks.length ? completed / tasks.length * 100 : 0}%` }} /></span>
+      </button></Popover.Trigger>
+      <Popover.Portal><Popover.Content side="top" align="end" sideOffset={12} collisionPadding={12} className="onboarding-popover" aria-label="Guide de démarrage">
+        <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-bold">{finished ? "Votre espace est prêt" : "Votre première équipe, pas à pas"}</h2><p className="mt-1 text-sm text-gray-500">{finished ? "Retrouvez vos repères quand vous en avez besoin." : "Une action à la fois. Votre progression se met à jour toute seule."}</p></div><Popover.Close aria-label="Réduire le guide" className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"><X size={18} /></Popover.Close></div>
+        {!tasks.length ? <p className="mt-4 text-sm text-gray-600">{error ? <>Impossible de charger les étapes. <button onClick={context.retry} className="text-blue-700 underline">Réessayer</button></> : "Chargement de vos étapes…"}</p> : <>
+          <ol className="mt-4 space-y-1">{tasks.map((t, i) => <li key={t.id}><button onClick={() => setSelected(t.id)} aria-expanded={selected === t.id} className={`flex min-h-12 w-full items-center gap-3 rounded-xl p-2 text-left text-sm hover:bg-blue-50 ${selected === t.id ? "bg-blue-50" : ""}`}><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${t.done ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{t.done ? <Check size={17} /> : i + 1}</span><span className={t.done ? "text-gray-500" : "font-medium text-gray-900"}>{t.done && <span className="sr-only">Terminé : </span>}{t.label}</span></button></li>)}</ol>
+          <div className="mt-4 rounded-xl bg-blue-50 p-4"><p className="text-sm leading-relaxed text-blue-950">{task ? descriptions[task.id] : finished ? "Vous pouvez retrouver vos missions et leurs réponses depuis l’accueil." : next?.description || "Choisissez une étape pour voir comment faire."}</p><Link onClick={() => setExpanded(false)} to={task?.href || next?.href || "/app/dashboard"} className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">{task ? task.shortLabel : next?.label || "Voir mes missions"}<ArrowRight size={16} /></Link></div>
+        </>}
+      </Popover.Content></Popover.Portal>
+    </Popover.Root>
+  </ActivationContext.Provider>;
 }

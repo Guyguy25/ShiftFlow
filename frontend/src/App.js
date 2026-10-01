@@ -17,6 +17,7 @@ import MissionCreate from "./pages/MissionCreate";
 import MissionDetail from "./pages/MissionDetail";
 import Workers from "./pages/Workers";
 import History from "./pages/History";
+import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import Calendar from "./pages/Calendar";
 import Tutorial from "./pages/Tutorial";
@@ -56,6 +57,7 @@ function AppRoutes() {
         <Route path="history" element={<History />} />
         <Route path="help" element={<Tutorial />} />
         <Route path="tutorial" element={<Navigate to="/app/help" replace />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

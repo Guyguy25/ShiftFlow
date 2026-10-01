@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Crown, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import ProfileMenu from "./ProfileMenu";
+import WelcomeDialog from "./WelcomeDialog";
 import GettingStarted from "./GettingStarted";
 import { api } from "../lib/api";
 
 const nav = [
-  { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard, id: "nav-dashboard" },
+  { to: "/app/dashboard", label: "Accueil", icon: LayoutDashboard, id: "nav-dashboard" },
   { to: "/app/missions", label: "Missions", icon: CalendarClock, id: "nav-missions" },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
-  { to: "/app/help", label: "Aide", icon: LifeBuoy, id: "nav-help" },
-  { to: "/app/settings", label: "Paramètres", icon: Settings, id: "nav-settings" },
 ];
 
 const mobileNav = [
@@ -50,8 +50,6 @@ export default function Layout({ children }) {
     return () => { cancelled = true; };
   }, [location.pathname, location.search, user]);
 
-  const focusedMission = /^\/app\/missions\/[^/]+$/.test(location.pathname);
-  const remaining = (quota?.free_missions_remaining || 0) + (quota?.mission_credits || 0);
 
   const handleLogout = async () => {
     await logout();
@@ -95,48 +93,21 @@ export default function Layout({ children }) {
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-gray-200 p-4 shrink-0 bg-white">
-          {user?.plan !== "pro" && quota && (
-            <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 p-3" data-testid="mission-balance-card">
-              <p className="text-sm font-semibold text-blue-950">{remaining} mission(s) disponible(s)</p>
-              <p className="mt-1 text-xs text-blue-800">{quota.free_missions_remaining} offerte(s) · {quota.mission_credits} achetée(s)</p>
-              <p className="mt-2 text-xs text-gray-600">Sans expiration. Vos missions existantes restent utilisables.</p>
-            </div>
-          )}
-          {user?.plan !== "pro" && (
-            <NavLink to="/pricing" data-testid="nav-upgrade-cta"
-              className="mb-3 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-700 text-white text-sm font-semibold transition-all shadow-sm">
-              <Crown className="w-4 h-4" /> Voir les offres
-            </NavLink>
-          )}
-          <div className="text-xs text-gray-500">Connecté en tant que</div>
-          <div className="text-sm font-medium text-gray-900 truncate" data-testid="current-user-name">{user?.name}</div>
-          <div className="text-xs text-gray-500 truncate mb-3" data-testid="current-user-agency">{user?.agency_name}</div>
-          <button
-            onClick={handleLogout}
-            data-testid="logout-btn"
-            className="w-full flex items-center gap-2 text-sm text-gray-600 hover:text-red-600 transition-colors"
-          >
-            <LogOut className="w-4 h-4" aria-hidden="true" />
-            Déconnexion
-          </button>
-          <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-gray-400">
-            <Link to="/conditions" className="hover:text-gray-700">Conditions</Link>
-            <Link to="/confidentialite" className="hover:text-gray-700">Confidentialité</Link>
-            <Link to="/mentions-legales" className="hover:text-gray-700">Mentions légales</Link>
-          </div>
+        <div className="border-t border-gray-100 p-3 shrink-0 bg-white">
+          <ProfileMenu user={user} quota={quota} onLogout={handleLogout} />
         </div>
       </aside>
 
       {/* Mobile top bar: identity only; navigation stays within thumb reach below. */}
       <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 h-14">
-        <div className="h-full max-w-xl mx-auto px-4 flex items-center">
+        <div className="h-full max-w-xl mx-auto px-4 flex items-center justify-between">
           <Link to="/app/dashboard" className="flex items-center gap-2.5 min-w-0" onClick={() => setOpen(false)}>
             <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
               <Zap className="w-4 h-4 text-white" aria-hidden="true" />
             </div>
             <span className="font-display font-bold text-[17px] tracking-tight">ShiftFlow</span>
           </Link>
+          <ProfileMenu user={user} quota={quota} onLogout={handleLogout} compact />
         </div>
       </div>
 
@@ -188,16 +159,11 @@ export default function Layout({ children }) {
       </nav>
 
       <main className="flex-1 min-w-0 pt-14 pb-20 lg:pb-0 lg:pt-0 lg:ml-64">
-        {user?.plan !== "pro" && quota && !focusedMission && (
-          <div className="border-b border-blue-100 bg-blue-50 px-4 py-3 sm:px-6 lg:px-10 flex items-center justify-between gap-3">
-            <p className="text-sm text-blue-950">{remaining > 0 ? <><strong>{remaining} mission(s) disponible(s)</strong> · sans expiration</> : <>Vos missions restent accessibles. <strong>La prochaine à 4,90 € ou Pro à 49 €/mois.</strong></>}</p>
-            <Link to="/pricing" className="shrink-0 text-sm font-semibold text-blue-700 underline">Les offres</Link>
-          </div>
-        )}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-5 sm:py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 pt-5 pb-24 sm:pt-8 sm:pb-28">
           <GettingStarted>{children}</GettingStarted>
         </div>
       </main>
+      <WelcomeDialog key={user.id} user={user} />
     </div>
   );
 }

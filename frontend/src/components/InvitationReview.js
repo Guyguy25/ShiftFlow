@@ -1,3 +1,4 @@
+import { counted } from "../lib/french";
 import React, { useEffect, useState } from "react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -27,7 +28,7 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
   const worker = workers[index] || workers[0];
   return <section className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label="Vérification avant envoi">
     <h3 className="font-semibold">Vérifiez avant de lancer les demandes</h3>
-    <p className="mt-2 text-sm leading-relaxed text-gray-700">{workers.length} intervenant(s) dans votre sélection, dans l’ordre ci-dessous. L’envoi réel commence après votre confirmation, selon les places restantes et les personnes déjà dans la cascade.</p>
+    <p className="mt-2 text-sm leading-relaxed text-gray-700">{counted(workers.length, "intervenant")} dans votre sélection, dans l’ordre ci-dessous. L’envoi réel commence après votre confirmation, selon les places restantes et les personnes déjà dans la cascade.</p>
     <ol className="mt-3 list-inside list-decimal text-sm">{workers.map(w => <li key={w.id}>{w.first_name} {w.last_name} · {w.phone}</li>)}</ol>
     <p className="mt-3 text-sm text-gray-700">Après lancement, les demandes suivantes et rappels sont automatiques. Le lien de réponse sera généré lors du lancement ; vos intervenants n’ont pas besoin de compte.</p>
     {error ? <div role="alert" className="mt-3 text-sm text-red-700"><p>{error}</p><button type="button" onClick={() => setAttempt(n => n + 1)} className="min-h-11 underline">Réessayer</button></div> : !template ? <p role="status" className="mt-3 text-sm">Chargement de l’aperçu…</p> : <>

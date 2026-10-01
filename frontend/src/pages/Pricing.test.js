@@ -21,7 +21,7 @@ test("displays the complete offer without a trial deadline or annual default", a
   await act(async () => root.render(<Pricing/>));
   expect(host.textContent).toContain("4,90 €");
   expect(host.textContent).toContain("49 €");
-  expect(host.textContent).toContain("sans date limite");
+  expect(host.textContent).toContain("Valables à vie");
   expect(host.textContent).not.toContain("30 jours");
   expect(host.querySelectorAll("[data-testid^='pricing-card-']")).toHaveLength(3);
   expect(host.textContent).toContain("24,50");

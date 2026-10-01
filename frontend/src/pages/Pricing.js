@@ -1,3 +1,4 @@
+import { counted } from "../lib/french";
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, Zap, ArrowLeft, Loader2 } from "lucide-react";
@@ -67,23 +68,23 @@ export default function Pricing() {
       <div className="mx-auto max-w-3xl text-center">
         <p className="text-sm font-semibold text-blue-700">Moins de relances. Une équipe prête pour chaque mission.</p>
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
-        <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans carte bancaire, sans date limite. Ensuite, payez une mission quand vous en avez besoin ou choisissez l’illimité.</p>
+        <p className="mt-5 text-lg leading-relaxed text-gray-600">Valables à vie, sans carte bancaire. Ensuite, payez une mission quand vous en avez besoin ou choisissez l’illimité.</p>
       </div>
       {error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
       {pro && <p className="mt-6 text-center font-semibold text-emerald-700">Votre abonnement Pro est actif. Vos missions sont illimitées.</p>}
       <div className="mt-10 grid gap-5 lg:grid-cols-3">
         <section className="flex flex-col rounded-2xl border border-gray-200 bg-white p-6" data-testid="pricing-card-free">
           <p className="text-sm font-semibold text-emerald-700">Pour découvrir</p><h2 className="mt-2 text-xl font-bold">3 missions offertes</h2>
-          <p className="mt-5 text-4xl font-bold">0 €</p><p className="mt-2 text-sm text-gray-500">Une seule fois par compte · sans expiration</p>
+          <p className="mt-5 text-4xl font-bold">0 €</p><p className="mt-2 text-sm text-gray-500">Une seule fois par compte · valables à vie</p>
           <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Testez ShiftFlow sur vos vrais événements. Aucun passage automatique au payant.</p>
           <Link to={user ? (available || pro ? "/app/missions/new" : "/app/dashboard") : "/register"} className={button + " border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"} data-testid="pricing-free-cta">
-            {user ? quota ? (quota.free_missions_remaining ?? 0) + " mission(s) offerte(s) restante(s)" : "Ouvrir mon espace" : "Commencer gratuitement"}
+            {user ? quota ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Ouvrir mon espace" : "Commencer gratuitement"}
           </Link>
         </section>
         <section className="flex flex-col rounded-2xl border-2 border-blue-200 bg-white p-6" data-testid="pricing-card-mission">
           <p className="text-sm font-semibold text-blue-700">Pour les besoins ponctuels</p><h2 className="mt-2 text-xl font-bold">À la mission</h2>
           <p className="mt-5 text-4xl font-bold">4,90 €<span className="text-base font-normal text-gray-500"> / mission</span></p><p className="mt-2 text-sm text-gray-500">Paiement unique · aucun abonnement</p>
-          <p className="mt-5 text-sm leading-relaxed text-gray-600">Achetez en une fois, utilisez à votre rythme. Vos crédits n’expirent pas et le suivi reste accessible.</p>
+          <p className="mt-5 text-sm leading-relaxed text-gray-600">Achetez en une fois, utilisez à votre rythme. Vos crédits sont valables à vie et le suivi reste accessible.</p>
           <div className="mt-4 rounded-xl bg-blue-50 p-4">
             <p className="font-semibold text-blue-900">5 achetées = 1 offerte</p>
             <p className="mt-1 text-xs text-blue-800">Une mission offerte par tranche de 5 achetées dans le même paiement.</p>
@@ -93,7 +94,7 @@ export default function Pricing() {
             </select>
             <div aria-live="polite" className="mt-3 text-sm"><strong>{credits} mission{credits > 1 ? "s" : ""} pour {money(quantity * 4.9)}</strong><p className="mt-1 text-gray-600">{bonus > 0 ? `${bonus} offerte${bonus > 1 ? "s" : ""} incluse${bonus > 1 ? "s" : ""} · ${money(quantity * 4.9 / credits)} par mission` : "Aucun abonnement"}</p></div>
           </div>
-          {available && !pro && <Link to="/app/missions/new" className="mt-4 text-sm font-medium text-blue-700 underline">Utiliser ma mission disponible ({(quota?.free_missions_remaining || 0) + (quota?.mission_credits || 0)} restantes)</Link>}
+          {available && !pro && <Link to="/app/missions/new" className="mt-4 text-sm font-medium text-blue-700 underline">Utiliser ma mission disponible ({counted((quota?.free_missions_remaining || 0) + (quota?.mission_credits || 0), "restante")})</Link>}
           <button onClick={() => checkout("shiftflow_mission")} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-blue-600 text-white hover:bg-blue-700"} data-testid="pricing-mission-cta">
             {loading === "shiftflow_mission" && <Loader2 size={18} className="animate-spin"/>}{pro ? "Inclus dans votre Pro" : user ? `Acheter ${credits} mission${credits > 1 ? "s" : ""} — ${money(quantity * 4.9)}` : "Commencer avec 3 missions offertes"}
           </button>

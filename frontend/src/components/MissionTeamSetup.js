@@ -1,3 +1,4 @@
+import { counted } from "../lib/french";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, MessageCircle, ArrowRight } from "lucide-react";
@@ -30,7 +31,7 @@ export default function MissionTeamSetup({ mission, workers, loading, error, onR
     </> : <section className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-6">
       <p className="mb-4 text-sm text-emerald-700">Votre équipe est disponible. Sélectionnez les personnes à contacter.</p>
       {(mission.shifts || []).filter(s => !s.slots?.length && s.status !== "cancelled").length > 1 && <label className="block mb-4 text-sm font-medium">Créneau à préparer<select value={shift.id} onChange={e => onShiftChange(e.target.value)} className="mt-2 w-full h-11 border rounded-lg px-3">{mission.shifts.filter(s => !s.slots?.length && s.status !== "cancelled").map(s => <option key={s.id} value={s.id}>{s.date} · {s.start_time} – {s.end_time}</option>)}</select></label>}
-      <p className="mb-4 text-sm text-gray-600">{shift.date.split("-").reverse().join("/")} · {shift.start_time} – {shift.end_time} · {shift.people_needed} personne(s)</p>
+      <p className="mb-4 text-sm text-gray-600">{shift.date.split("-").reverse().join("/")} · {shift.start_time} – {shift.end_time} · {counted(shift.people_needed, "personne")}</p>
       {children}
     </section>}
     {!connecting && <Link to={`/app/missions/${mission.id}`} className="inline-flex min-h-11 mt-3 items-center text-sm text-gray-500 underline">Voir les détails de la mission</Link>}

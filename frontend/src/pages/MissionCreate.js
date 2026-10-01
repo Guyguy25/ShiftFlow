@@ -1,3 +1,4 @@
+import { counted } from "../lib/french";
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
@@ -206,7 +207,7 @@ export default function MissionCreate() {
         </>}
         {step === 2 && <section className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4" aria-label="Récapitulatif">
           <h2 className="text-xl font-semibold break-words">{mission.name}</h2><p className="text-gray-600 break-words">{mission.location}{mission.address && ` · ${mission.address}`}</p>
-          {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>Créneau {i + 1} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {s.people_needed} personne(s) · {s.rate_hourly} €/h</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
+          {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>Créneau {i + 1} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {counted(s.people_needed, "personne")} · {s.rate_hourly} €/h</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
           <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl sm:rounded-md px-4 py-3">
             <input type="checkbox" data-testid="mc-cascade" checked={mission.cascade_enabled} onChange={(e)=>setM("cascade_enabled", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
             <div>

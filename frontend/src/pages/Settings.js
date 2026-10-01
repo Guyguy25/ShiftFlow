@@ -1,5 +1,4 @@
-import ContextGuide from "../components/ContextGuide";
-import AccountActivation from "../components/AccountActivation";
+import { counted } from "../lib/french";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Crown, ExternalLink, Save, LockKeyhole, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -12,12 +11,9 @@ const PLACEHOLDER_RE = /\{[^{}]+\}/g;
 const DEFAULT_REQUIRED_TOKENS = ["{prenom}", "{mission}", "{date}", "{lien}"];
 
 export default function Settings() {
-  const { user, refresh } = useAuth();
-  const profileComplete = [user?.name, user?.agency_name, user?.phone].filter(value => value?.trim()).length;
+  const { user } = useAuth();
   const [notifs, setNotifs] = useState([]);
   const [quota, setQuota] = useState(null);
-  const [form, setForm] = useState({ name: "", agency_name: "", phone: "" });
-  const [saving, setSaving] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [messageConfig, setMessageConfig] = useState(null);
   const [messageTemplate, setMessageTemplate] = useState("");
@@ -33,24 +29,7 @@ export default function Settings() {
     reloadNotifs();
   }, []);
 
-  useEffect(() => {
-    if (user) setForm({ name: user.name || "", agency_name: user.agency_name || "", phone: user.phone || "" });
-  }, [user]);
-
   const reloadNotifs = () => api.get("/notifications/recent").then((r) => setNotifs(r.data.filter((n) => (n.channel || "whatsapp") === "whatsapp"))).catch(() => {});
-  const set = (k, v) => setForm({ ...form, [k]: v });
-
-  const saveProfile = async (e) => {
-    e.preventDefault(); setSaving(true);
-    try {
-      await api.put("/auth/me", form);
-      await refresh();
-      toast.success("Profil mis à jour");
-    } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail) || "Erreur");
-    } finally { setSaving(false); }
-  };
-
   const openPortal = async () => {
     setPortalLoading(true);
     try {
@@ -132,15 +111,13 @@ export default function Settings() {
     } finally { setMessageSaving(false); }
   };
 
-  const inputCls = "mt-1 w-full h-10 px-3 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
-
   return (
     <div data-testid="settings-page">
       <Toaster position="top-right" richColors/>
       <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Paramètres</div>
-      <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Compte & Agence</h1>
+      <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Paramètres</h1>
 
-      <div className="max-w-3xl"><AccountActivation /></div>
+      <p className="mt-2 text-sm text-gray-500">Votre abonnement et vos préférences d’envoi. <Link to="/app/profile" className="text-blue-700 underline">Modifier mon profil</Link></p>
       <div className="mt-8 grid gap-6 max-w-3xl">
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
           <div className="flex items-center gap-2 font-semibold">
@@ -154,7 +131,7 @@ export default function Settings() {
               {isPro ? (
                 <>Missions et intervenants <strong>illimités</strong>. Merci pour votre soutien !</>
               ) : (
-                <>{quota.free_missions_remaining} mission(s) offerte(s) restante(s) · {quota.mission_credits} crédit(s) acheté(s) · <strong>sans expiration</strong>. Vos missions existantes restent utilisables.</>
+                <>{counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes")} · {counted(quota.mission_credits, "mission achetée", "missions achetées")} · <strong>valables à vie</strong>. Vos missions existantes restent utilisables.</>
               )}
             </div>
           )}
@@ -173,27 +150,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <form onSubmit={saveProfile} className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-profile-form">
-          <h2 className="font-display font-bold text-lg">Profil</h2>
-          <p className="text-xs text-gray-500 mt-1">Vos coordonnées servent à identifier l'agence et à gérer votre compte.</p>
-          {profileComplete < 3 && <ContextGuide id="profile" always title="Présentez votre agence à votre équipe">Renseignez le nom de votre agence, votre nom et votre téléphone, puis enregistrez. Ces coordonnées permettent de vous identifier.</ContextGuide>}
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="text-sm font-medium">Agence</label>
-              <input required data-testid="settings-input-agency" className={inputCls} value={form.agency_name} onChange={(e)=>set("agency_name", e.target.value)}/></div>
-            <div><label className="text-sm font-medium">Responsable</label>
-              <input required data-testid="settings-input-name" className={inputCls} value={form.name} onChange={(e)=>set("name", e.target.value)}/></div>
-            <div><label className="text-sm font-medium">Email</label>
-              <input disabled data-testid="settings-input-email" className={`${inputCls} bg-gray-50 text-gray-500`} value={user?.email || ""}/></div>
-            <div><label className="text-sm font-medium">Téléphone</label>
-              <input data-testid="settings-input-phone" className={inputCls} value={form.phone} onChange={(e)=>set("phone", e.target.value)} placeholder="+33612345678"/></div>
-          </div>
-          <div className="mt-4 flex justify-end">
-            <button type="submit" disabled={saving} data-testid="settings-save-btn" className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-60">
-              <Save className="w-4 h-4"/>{saving ? "Enregistrement…" : "Enregistrer"}
-            </button>
-          </div>
-        </form>
-
+        <details className="group"><summary className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 font-semibold">Personnaliser mes messages WhatsApp</summary>
         <div className={`relative bg-white border rounded-xl p-6 overflow-hidden ${isPro ? "border-gray-200" : "border-blue-200"}`} data-testid="settings-whatsapp-template-block">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -278,6 +235,8 @@ export default function Settings() {
           )}
         </div>
 
+        </details>
+        <details><summary className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 font-semibold">Consulter le journal des envois</summary>
         <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-notif-log">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -305,6 +264,7 @@ export default function Settings() {
           )}
         </div>
 
+        </details>
         <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-reminder-block">
           <h2 className="font-display font-bold text-lg">Rappels automatiques 24h</h2>
           <p className="mt-2 text-sm text-gray-600">Les rappels sont envoyés automatiquement par WhatsApp aux intervenants confirmés ~24h avant leur shift. Si WhatsApp est déconnecté au moment de l'envoi, l'échec est enregistré dans le journal.</p>
