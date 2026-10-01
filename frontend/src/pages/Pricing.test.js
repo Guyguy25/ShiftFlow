@@ -26,10 +26,10 @@ test("displays the complete offer without a trial deadline or annual default", a
   expect(host.querySelectorAll("[data-testid^='pricing-card-']")).toHaveLength(3);
   expect(host.textContent).toContain("24,50");
 });
-test("a remaining free or paid credit is used before another purchase", async () => {
+test("a remaining credit is visible while a pack can be purchased", async () => {
   api.get.mockResolvedValue({ data: { plan: "free", free_missions_remaining: 0, mission_credits: 1, can_create_mission: true } });
   await act(async () => root.render(<Pricing/>));
-  expect(host.querySelector('[data-testid="pricing-mission-cta"]')).toBeNull();
+  expect(host.querySelector('[data-testid="pricing-mission-cta"]')).not.toBeNull();
   expect(host.textContent).toContain("Utiliser ma mission disponible");
 });
 test("checkout requires explicit consent and uses the one-time offer", async () => {
@@ -41,7 +41,31 @@ test("checkout requires explicit consent and uses the one-time offer", async () 
   expect(host.textContent).toContain("Acceptez les conditions");
   await act(async () => host.querySelector('input[type="checkbox"]').click());
   await act(async () => button.click());
-  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_mission", legal_acceptance: expect.objectContaining({ version: "2026-09-30", scope: "mission_purchase" }) }));
+  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_mission", quantity: 5, legal_acceptance: expect.objectContaining({ version: "2026-10-01", scope: "mission_purchase" }) }));
   expect(host.textContent).toContain("Erreur de test");
 });
 
+test("annual choice displays the full annual payment and sends the annual lookup", async () => {
+  api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
+  await act(async () => root.render(<Pricing/>));
+  const annual = [...host.querySelectorAll('button')].find(b => b.textContent === "Annuel · −15 %");
+  await act(async () => annual.click());
+  expect(host.textContent).toContain("499,80 € payés en une fois pour 12 mois");
+  expect(host.textContent).toContain("41,65 €");
+  await act(async () => host.querySelector('input[type="checkbox"]').click());
+  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
+  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_yearly", quantity: 1 }));
+});
+
+test("ten purchased missions add two bonus credits in one checkout", async () => {
+  api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
+  await act(async () => root.render(<Pricing/>));
+  await act(async () => {
+    const select = host.querySelector('#mission-quantity');
+    select.value = '10'; select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  expect(host.textContent).toContain("12 missions pour");
+  await act(async () => host.querySelector('input[type="checkbox"]').click());
+  await act(async () => host.querySelector('[data-testid="pricing-mission-cta"]').click());
+  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_mission", quantity: 10 }));
+});

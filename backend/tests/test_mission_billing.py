@@ -116,8 +116,8 @@ class BillingTests(IsolatedAsyncioTestCase):
             ALLOWED_STRIPE_PRICES={"shiftflow_mission": {"interval": "one_time", "amount": 490}},
             stripe_lib=stripe, FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id",
             request_client_ip=lambda _: None, now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
-        payload = SimpleNamespace(lookup_key="shiftflow_mission", origin_url="https://evil.test",
-            legal_acceptance={"version": "2026-09-30"}, meta_consent=False)
+        payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_mission", origin_url="https://evil.test",
+            legal_acceptance={"version": "2026-10-01"}, meta_consent=False)
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         args = create.call_args.kwargs
         self.assertEqual(args["mode"], "payment")
@@ -127,3 +127,46 @@ class BillingTests(IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException):
             await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
 
+    def test_pack_boundaries_and_invalid_quantities(self):
+        for quantity, credits in [(1, 1), (4, 4), (5, 6), (9, 10), (10, 12), (100, 120)]:
+            self.assertEqual(billing.pack(quantity)["mission_credits"], credits)
+            self.assertEqual(billing.pack(quantity)["amount"], quantity * 490)
+        for invalid in [0, -1, 101, 5.5, "5", True]:
+            with self.assertRaises(HTTPException):
+                billing.pack(invalid)
+
+    async def test_pack_replays_grant_full_bonus_once(self):
+        self.raw.payment_transactions.insert_one({"session_id": "pack", "user_id": "u",
+            "lookup_key": "shiftflow_mission", "mission_credits": 12, "quantity": 10})
+        obj = {"id": "pack", "payment_status": "paid", "mode": "payment",
+            "metadata": {"user_id": "u", "lookup_key": "shiftflow_mission", "mission_credits": "999"}}
+        await asyncio.gather(*(self.fulfillment()(obj) for _ in range(8)))
+        self.assertEqual(self.raw.users.find_one({"id": "u"})["mission_credits"], 12)
+
+    async def test_pack_checkout_and_annual_subscription(self):
+        create = Mock(side_effect=lambda **kw: SimpleNamespace(id="cs-" + str(create.call_count), url="https://checkout.stripe.com/test"))
+        price_list = Mock(return_value=SimpleNamespace(data=[SimpleNamespace(
+            id="price_year", recurring=SimpleNamespace(interval="year"), currency="eur", unit_amount=49980)]))
+        fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing,
+            ALLOWED_STRIPE_PRICES={"shiftflow_mission": {"interval": "one_time", "amount": 490},
+                "shiftflow_pro_yearly": {"interval": "year", "amount": 49980}},
+            stripe_lib=SimpleNamespace(checkout=SimpleNamespace(Session=SimpleNamespace(create=create)), Price=SimpleNamespace(list=price_list)),
+            FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id", request_client_ip=lambda _: None,
+            now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
+        payload = SimpleNamespace(quantity=5, lookup_key="shiftflow_mission", origin_url="https://www.shiftflow.io",
+            legal_acceptance={"version": "2026-10-01"}, meta_consent=False)
+        # Free credits do not prevent an explicitly chosen bulk purchase.
+        await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        args = create.call_args.kwargs
+        self.assertEqual(args["line_items"][0]["price_data"]["unit_amount"], 2450)
+        self.assertEqual(self.raw.payment_transactions.find_one({"session_id": "cs-1"})["mission_credits"], 6)
+        payload.quantity = 10
+        await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        self.assertNotEqual(args["idempotency_key"], create.call_args.kwargs["idempotency_key"])
+        payload.lookup_key = "shiftflow_pro_yearly"
+        with self.assertRaises(HTTPException):
+            await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        payload.quantity = 1
+        await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        self.assertEqual(create.call_args.kwargs["mode"], "subscription")
+        self.assertEqual(create.call_args.kwargs["line_items"], [{"price": "price_year", "quantity": 1}])

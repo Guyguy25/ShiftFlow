@@ -1,4 +1,4 @@
-export const LEGAL_VERSION = "2026-09-30";
+export const LEGAL_VERSION = "2026-10-01";
 
 export const LEGAL = {
   publicName: "ShiftFlow",
@@ -22,4 +22,3 @@ export const LEGAL_LINKS = [
   { to: "/cookies", label: "Cookies" },
   { to: "/dpa", label: "DPA / RGPD" },
 ];
-

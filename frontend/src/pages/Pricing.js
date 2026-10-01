@@ -16,6 +16,15 @@ export default function Pricing() {
   const [consentError, setConsentError] = useState(false);
   const consentRef = useRef(null);
   const [volume, setVolume] = useState(5);
+  const [quantity, setQuantity] = useState(5);
+  const [annual, setAnnual] = useState(false);
+  const bonus = Math.floor(quantity / 5);
+  const credits = quantity + bonus;
+  const proLookup = annual ? "shiftflow_pro_yearly" : "shiftflow_pro_monthly";
+  // Minimum paid credits needed, including one bonus for every five purchased.
+  const paidForVolume = Math.ceil(volume * 5 / 6);
+  const missionCost = paidForVolume * 4.9;
+  const proEquivalent = annual ? 41.65 : 49;
   useEffect(() => {
     let cancelled = false;
     if (!user) { setChecking(false); return; }
@@ -40,6 +49,7 @@ export default function Pricing() {
     try {
       const { data } = await api.post("/payments/checkout", {
         lookup_key: lookup, origin_url: window.location.origin,
+        quantity: lookup === "shiftflow_mission" ? quantity : 1,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: new Date().toISOString(), scope: lookup === "shiftflow_mission" ? "mission_purchase" : "pro_subscription" },
         meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
       });
@@ -55,7 +65,7 @@ export default function Pricing() {
     </div></header>
     <main className="mx-auto max-w-6xl px-5 py-10 sm:py-16">
       <div className="mx-auto max-w-3xl text-center">
-        <p className="text-sm font-semibold text-blue-700">À votre rythme, puis selon votre activité</p>
+        <p className="text-sm font-semibold text-blue-700">Moins de relances. Une équipe prête pour chaque mission.</p>
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
         <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans carte bancaire, sans date limite. Ensuite, payez une mission quand vous en avez besoin ou choisissez l’illimité.</p>
       </div>
@@ -73,16 +83,32 @@ export default function Pricing() {
         <section className="flex flex-col rounded-2xl border-2 border-blue-200 bg-white p-6" data-testid="pricing-card-mission">
           <p className="text-sm font-semibold text-blue-700">Pour les besoins ponctuels</p><h2 className="mt-2 text-xl font-bold">À la mission</h2>
           <p className="mt-5 text-4xl font-bold">4,90 €<span className="text-base font-normal text-gray-500"> / mission</span></p><p className="mt-2 text-sm text-gray-500">Paiement unique · aucun abonnement</p>
-          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Un crédit pour créer votre prochaine mission, utilisable quand vous voulez. Son suivi reste accessible ensuite.</p>
-          {available && !pro ? <Link to="/app/missions/new" className={button + " bg-blue-600 text-white hover:bg-blue-700"}>Utiliser ma mission disponible</Link> : <button onClick={() => checkout("shiftflow_mission")} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-blue-600 text-white hover:bg-blue-700"} data-testid="pricing-mission-cta">
-            {loading === "shiftflow_mission" && <Loader2 size={18} className="animate-spin"/>}{pro ? "Inclus dans votre Pro" : user ? "Acheter 1 mission — 4,90 €" : "Essayer avec 3 missions offertes"}
-          </button>}
+          <p className="mt-5 text-sm leading-relaxed text-gray-600">Achetez en une fois, utilisez à votre rythme. Vos crédits n’expirent pas et le suivi reste accessible.</p>
+          <div className="mt-4 rounded-xl bg-blue-50 p-4">
+            <p className="font-semibold text-blue-900">5 achetées = 1 offerte</p>
+            <p className="mt-1 text-xs text-blue-800">Une mission offerte par tranche de 5 achetées dans le même paiement.</p>
+            <label htmlFor="mission-quantity" className="mt-3 block text-sm font-medium">Missions à acheter</label>
+            <select id="mission-quantity" value={quantity} onChange={e => setQuantity(Number(e.target.value))} className="mt-2 min-h-11 w-full rounded-lg border border-blue-200 bg-white px-3" disabled={!!loading}>
+              {Array.from({ length: 100 }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n} achetée{n > 1 ? "s" : ""}{n >= 5 ? ` + ${Math.floor(n / 5)} offerte${n >= 10 ? "s" : ""}` : ""}</option>)}
+            </select>
+            <div aria-live="polite" className="mt-3 text-sm"><strong>{credits} mission{credits > 1 ? "s" : ""} pour {money(quantity * 4.9)}</strong><p className="mt-1 text-gray-600">{bonus > 0 ? `${bonus} offerte${bonus > 1 ? "s" : ""} incluse${bonus > 1 ? "s" : ""} · ${money(quantity * 4.9 / credits)} par mission` : "Aucun abonnement"}</p></div>
+          </div>
+          {available && !pro && <Link to="/app/missions/new" className="mt-4 text-sm font-medium text-blue-700 underline">Utiliser ma mission disponible ({(quota?.free_missions_remaining || 0) + (quota?.mission_credits || 0)} restantes)</Link>}
+          <button onClick={() => checkout("shiftflow_mission")} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-blue-600 text-white hover:bg-blue-700"} data-testid="pricing-mission-cta">
+            {loading === "shiftflow_mission" && <Loader2 size={18} className="animate-spin"/>}{pro ? "Inclus dans votre Pro" : user ? `Acheter ${credits} mission${credits > 1 ? "s" : ""} — ${money(quantity * 4.9)}` : "Commencer avec 3 missions offertes"}
+          </button>
         </section>
         <section className="flex flex-col rounded-2xl border border-gray-900 bg-gray-900 p-6 text-white" data-testid="pricing-card-pro">
           <p className="text-sm font-semibold text-blue-300">Pour une activité régulière</p><h2 className="mt-2 text-xl font-bold">Pro illimité</h2>
-          <p className="mt-5 text-4xl font-bold">49 €<span className="text-base font-normal text-gray-300"> / mois</span></p><p className="mt-2 text-sm text-gray-300">Renouvelé chaque mois · résiliable à tout moment</p>
-          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Créez autant de missions que nécessaire. Au prix de 10 missions à l’unité ; plus économique dès la 11e mission payante du mois.</p>
-          <button onClick={() => checkout("shiftflow_pro_monthly")} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === "shiftflow_pro_monthly" && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : "Choisir Pro — 49 €/mois"}</button>
+          <div role="group" aria-label="Fréquence de facturation Pro" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-800 p-1">
+            <button aria-pressed={!annual} onClick={() => setAnnual(false)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (!annual ? "bg-white text-gray-900" : "text-gray-200")}>Mensuel</button>
+            <button aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-gray-200")}>Annuel · −15 %</button>
+          </div>
+          <p className="mt-5 text-4xl font-bold">{annual ? "41,65 €" : "49 €"}<span className="text-base font-normal text-gray-300"> / mois</span></p>
+          <p className="mt-2 text-sm text-gray-300">{annual ? "499,80 € payés en une fois pour 12 mois, renouvelés chaque année." : "49 € facturés chaque mois. Sans engagement annuel."}</p>
+          <p className="mt-2 text-sm text-blue-200">{annual ? "88,20 € économisés par an par rapport au mensuel." : "Choisissez l’annuel pour économiser 15 %."}</p>
+          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Toutes vos missions, toute votre équipe, un budget fixe. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
+          <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? "Choisir Pro — 499,80 €/an" : "Choisir Pro — 49 €/mois"}</button>
         </section>
       </div>
       <section className="mt-7 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
@@ -97,9 +123,9 @@ export default function Pricing() {
         <h2 className="text-xl font-bold">Quelle formule pour votre rythme ?</h2>
         <label htmlFor="mission-volume" className="mt-4 block text-sm text-gray-700">Missions payantes prévues par mois : <strong>{volume}</strong></label>
         <input id="mission-volume" type="range" min="1" max="30" value={volume} onChange={e => setVolume(Number(e.target.value))} className="mt-4 w-full accent-blue-600"/>
-        <div aria-live="polite" className="mt-4 grid grid-cols-2 gap-3 text-sm"><p>À la mission<br/><strong className="text-xl">{money(volume * 4.9)}</strong></p><p>Pro illimité<br/><strong className="text-xl">49 €/mois</strong></p></div>
-        <p className="mt-4 text-sm font-medium text-blue-900">{volume < 10 ? "À ce rythme, l’unité vous coûte " + money(49 - volume * 4.9) + " de moins par mois." : volume === 10 ? "Même prix : Pro vous permet de créer davantage de missions sans supplément." : "Pro vous fait économiser " + money(volume * 4.9 - 49) + " par mois à ce rythme."}</p>
-        <p className="mt-2 text-xs text-gray-500">Comparaison après vos 3 missions offertes. Aucun abonnement n’est choisi automatiquement.</p>
+        <div aria-live="polite" className="mt-4 grid grid-cols-2 gap-3 text-sm"><p>Achat groupé, bonus inclus<br/><strong className="text-xl">{money(missionCost)}</strong></p><p>Pro {annual ? "annuel" : "mensuel"}<br/><strong className="text-xl">{money(proEquivalent)}/mois</strong></p></div>
+        <p className="mt-4 text-sm font-medium text-blue-900">{missionCost < proEquivalent ? "Pour ce besoin, l’achat groupé coûte " + money(proEquivalent - missionCost) + " de moins que le coût mensuel de Pro." : missionCost === proEquivalent ? "Même montant : Pro vous laisse créer davantage de missions pendant le mois." : "Pour ce besoin, Pro représente " + money(missionCost - proEquivalent) + " de moins sur ce mois."}</p>
+        <p className="mt-2 text-xs leading-relaxed text-gray-500">{paidForVolume} achetées + {Math.floor(paidForVolume / 5)} offertes dans un même paiement. Après vos 3 missions offertes, hors crédits déjà disponibles. Les crédits inutilisés restent disponibles. {annual ? "Pro annuel : 499,80 € à payer maintenant ; 41,65 € est un équivalent mensuel. Comparez selon votre activité sur 12 mois." : "Pro mensuel : 49 € pour chaque mois souscrit."} Aucun abonnement n’est choisi automatiquement.</p>
       </section>
       <section className="mx-auto mt-12 max-w-3xl space-y-3">
         <h2 className="mb-4 text-2xl font-bold">Tout savoir avant de commencer</h2>
@@ -107,7 +133,7 @@ export default function Pricing() {
           ["Qu’est-ce qu’une mission ?", "Un événement ou une intervention, avec ses créneaux (montage, démontage…), ses intervenants et son suivi. Un nouvel événement correspond à une nouvelle mission ; plusieurs créneaux du même événement restent inclus."],
           ["Quand une mission est-elle décomptée ?", "À sa création, y compris en cas de duplication. Modifier ses créneaux ou suivre les réponses ne consomme pas de nouvelle mission. Archiver ou annuler ne recrédite pas la mission. La simulation gratuite permet de découvrir le fonctionnement sans consommer de mission."],
           ["Les 3 missions offertes expirent-elles ?", "Non. Elles sont offertes une seule fois par compte, sans carte bancaire ni renouvellement mensuel. Les missions déjà créées sont prises en compte pour les comptes existants, sans facturation rétroactive."],
-          ["Que se passe-t-il après les 3 missions ?", "Vos missions existantes, leurs réponses et leurs rappels restent utilisables. Pour en créer une nouvelle, achetez un crédit à 4,90 € ou choisissez Pro à 49 €/mois. Les crédits achetés n’expirent pas."],
+          ["Que se passe-t-il après les 3 missions ?", "Vos missions existantes, leurs réponses et leurs rappels restent utilisables. Achetez de 1 à 100 missions en un seul paiement à 4,90 € chacune : chaque tranche de 5 achetées ajoute 1 offerte (5 + 1 = 24,50 €, 10 + 2 = 49 €). Le bonus se calcule par commande, pas en cumulant plusieurs commandes. Tous ces crédits n’expirent pas. Vous pouvez aussi choisir Pro mensuel ou annuel."],
           ["Et si j’arrête Pro ?", "Pro reste actif jusqu’à la fin de la période payée. Ensuite, vos missions existantes restent utilisables et vous pouvez acheter les nouvelles à l’unité. Aucun paiement à l’unité n’est prélevé automatiquement."],
         ].map(([question, answer]) => <details key={question} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer font-semibold">{question}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{answer}</p></details>)}
       </section>
@@ -115,4 +141,3 @@ export default function Pricing() {
     </main>
   </div>;
 }
-

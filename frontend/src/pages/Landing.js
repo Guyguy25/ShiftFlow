@@ -327,7 +327,7 @@ export default function Landing() {
               <Link to="/register" data-testid="footer-cta" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-blue-700 px-7 py-3.5 font-semibold hover:bg-blue-50 transition-colors">Tester ShiftFlow <ArrowRight className="w-4 h-4" /></Link>
               <Link to="/pricing" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-7 py-3.5 font-semibold hover:bg-white/15 transition-colors">Voir les tarifs <ChevronRight className="w-4 h-4" /></Link>
             </div>
-            <div className="mt-5 text-sm text-blue-100">Puis 4,90 € la mission ou 49 €/mois en illimité · vous choisissez</div>
+            <div className="mt-5 text-sm text-blue-100">Puis 4,90 € la mission · 5 achetées + 1 offerte · Pro mensuel ou annuel</div>
           </div>
         </section>
       </main>
@@ -341,4 +341,3 @@ export default function Landing() {
     </div>
   );
 }
-

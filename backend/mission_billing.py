@@ -7,6 +7,13 @@ MISSION_AMOUNT = 490
 MISSION_LOOKUP = "shiftflow_mission"
 
 
+def pack(quantity):
+    if type(quantity) is not int or not 1 <= quantity <= 100:
+        raise HTTPException(400, "Choisissez entre 1 et 100 missions à acheter.")
+    return {"quantity": quantity, "bonus_missions": quantity // 5,
+            "mission_credits": quantity + quantity // 5, "amount": quantity * MISSION_AMOUNT}
+
+
 async def account(db, user_id):
     user = await db.users.find_one({"id": user_id})
     if not user:
@@ -51,11 +58,10 @@ async def release(db, user_id, source):
         await db.users.update_one({"id": user_id}, {"$inc": {field: -1 if source == "free" else 1}})
 
 
-async def grant_credit(db, user_id, session_id):
+async def grant_credit(db, user_id, session_id, credits=1):
     # Webhook and success-page polling can race/retry: grant exactly once.
     return await db.users.update_one(
         {"id": user_id, "credited_checkout_sessions": {"$ne": session_id}},
-        {"$inc": {"mission_credits": 1},
+        {"$inc": {"mission_credits": credits},
          "$addToSet": {"credited_checkout_sessions": session_id},
          "$set": {"last_mission_purchase_at": datetime.now(timezone.utc).isoformat()}})
-

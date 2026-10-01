@@ -8,6 +8,7 @@ export default function PaymentSuccess() {
   const [sp] = useSearchParams();
   const sessionId = sp.get("session_id");
   const [isMission, setIsMission] = useState(false);
+  const [credits, setCredits] = useState(1);
   const [status, setStatus] = useState("polling");
   const { refresh } = useAuth();
 
@@ -25,6 +26,7 @@ export default function PaymentSuccess() {
 
         if (data.payment_status === "paid" && data.fulfilled) {
           setIsMission(data.lookup_key === "shiftflow_mission");
+          setCredits(data.mission_credits || 1);
           setStatus("paid");
           await refresh();
         } else if (data.payment_status === "expired" || data.status === "expired") {
@@ -60,8 +62,8 @@ export default function PaymentSuccess() {
         {status === "paid" && (
           <>
             <CheckCircle2 className="w-16 h-16 text-green-600 mx-auto" data-testid="payment-success-icon"/>
-            <h1 className="mt-6 text-3xl font-display font-bold">{isMission ? "Votre mission est disponible !" : "Bienvenue en Pro !"}</h1>
-            <p className="mt-2 text-gray-600">{isMission ? "Votre crédit a été ajouté. Retrouvez votre préparation et créez votre mission." : "Créez autant de missions que nécessaire pendant votre abonnement."}</p>
+            <h1 className="mt-6 text-3xl font-display font-bold">{isMission ? `${credits} mission(s) disponible(s) !` : "Bienvenue en Pro !"}</h1>
+            <p className="mt-2 text-gray-600">{isMission ? `${credits} crédit(s), bonus compris, ont été ajoutés à votre compte sans expiration. Retrouvez votre préparation et créez votre mission.` : "Créez autant de missions que nécessaire pendant votre abonnement."}</p>
             <Link to="/app/missions/new" data-testid="payment-goto-dashboard" className="mt-6 inline-flex items-center justify-center h-11 px-5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium">
               Créer ma mission
             </Link>
@@ -81,4 +83,3 @@ export default function PaymentSuccess() {
     </div>
   );
 }
-

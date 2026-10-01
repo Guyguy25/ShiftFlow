@@ -84,8 +84,20 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             _message({}, "trial_expired", None, "https://www.shiftflow.io", "https://www.shiftflow.io/unsubscribe")
 
+    async def test_pro_comparison_requires_consumption_and_no_remaining_credit(self):
+        now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+        db = SimpleNamespace(missions=SimpleNamespace(find_one=AsyncMock(return_value=None),
+            count_documents=AsyncMock(return_value=10)))
+        user = {"id": "u", "created_at": now.isoformat(), "free_missions_used": 3,
+                "credited_checkout_sessions": ["pack"], "mission_credits": 2}
+        self.assertEqual(await _stage(db, user, now, {"free_missions_used"}), (None, None))
+        db.missions.count_documents.assert_not_called()
+        user["mission_credits"] = 0
+        self.assertEqual(await _stage(db, user, now, {"free_missions_used"}), ("pro_relevant", None))
+        db.missions.count_documents.return_value = 9
+        self.assertEqual(await _stage(db, user, now, {"free_missions_used"}), (None, None))
+
 
 if __name__ == "__main__":
     unittest.main()
-
 

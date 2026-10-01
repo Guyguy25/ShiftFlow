@@ -1,5 +1,7 @@
 # Offre ShiftFlow : décision du 30 septembre 2026
 
+> Mise à jour du 1er octobre : le [complément sur les packs et l'annuel](pricing-packs-2026-10-01.md) remplace la décision ci-dessous de masquer l'annuel et les seuils comparant uniquement le prix unitaire. L'offre finale inclut le choix annuel et une mission offerte par tranche de cinq achetées.
+
 ## Décision
 
 3 missions offertes une seule fois par compte, sans expiration ni carte bancaire ; ensuite 4,90 € par nouvelle mission, ou 49 €/mois pour créer des missions illimitées. Intervenants et fonctionnalités de coordination inclus dans les trois offres. Les missions existantes restent utilisables. Le paiement à l'unité achète un crédit, sans abonnement ni expiration. Les abonnements annuels existants restent inchangés ; l'annuel n'est plus mis en avant afin de limiter les décisions au démarrage.
@@ -87,4 +89,3 @@ Ne pas optimiser uniquement le nombre d'abonnements : l'unité peut réduire les
 ## Validation technique
 
 Tests hors réseau : migration, épuisement atomique des trois missions, notifications Stripe dupliquées, un crédit pour une seule création, non-consommation des crédits en Pro, restitution en cas d'échec avant insertion, paiement incomplet, distinction achat ponctuel/abonnement, prix serveur et propriétaire de transaction. Build frontend et tests React. Les tests simulés ne remplacent pas une transaction réelle ; aucun client n'a été débité pour la validation.
-

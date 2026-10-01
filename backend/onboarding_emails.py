@@ -70,7 +70,7 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
         label, path = "Comparer les deux offres", "/pricing"
     elif stage == "pro_relevant":
         subject = "Plusieurs missions ce mois-ci ? Comparez avec Pro"
-        message = "Vous avez acheté plusieurs missions ce mois-ci. Pro coûte 49 €/mois, soit le prix de 10 missions à l’unité, et devient moins cher dès la 11e. Choisissez selon vos besoins à venir : les achats déjà effectués ne sont pas déduits de l’abonnement."
+        message = "Vous utilisez régulièrement vos missions. Comparez votre prochain besoin : 5 missions achetées + 1 offerte pour 24,50 €, ou Pro illimité à 49 €/mois. L’annuel revient à 41,65 €/mois, facturé 499,80 € en une fois. Vos crédits restants n’expirent pas ; les achats déjà effectués ne sont pas déduits de Pro. Le comparateur vous aide à choisir selon votre rythme."
         label, path = "Comparer pour mes prochaines missions", "/pricing"
     else:
         raise ValueError("Unknown lifecycle stage")
@@ -149,12 +149,12 @@ async def _eligible_stages(db, user, now):
         stages.append(("last_free_mission", mission))
     elif free_used is not None and free_used >= 3 and not user.get("mission_credits"):
         stages.append(("free_missions_used", mission))
-    if user.get("credited_checkout_sessions"):
-        purchases = await db.payment_transactions.count_documents({
-            "user_id": user["id"], "lookup_key": "shiftflow_mission", "fulfilled": True,
+    if user.get("credited_checkout_sessions") and not user.get("mission_credits"):
+        used_credits = await db.missions.count_documents({
+            "agency_id": user["id"], "billing_source": "credit",
             "created_at": {"$gte": (now - timedelta(days=30)).isoformat()},
         })
-        if purchases >= 6:
+        if used_credits >= 10:
             stages.append(("pro_relevant", mission))
     return stages
 
@@ -273,5 +273,4 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
             finally:
                 await db.users.update_one({"id": user["id"]}, {"$unset": {"onboarding_email_locked_until": ""}})
     return sent_count
-
 

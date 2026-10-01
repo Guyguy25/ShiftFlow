@@ -26,10 +26,9 @@ Le backend FastAPI vérifie les comptes à chaque passage du planificateur Railw
 - Avec une mission mais aucun intervenant actif : premier conseil après 2 h, puis rappel final après 48 h.
 - Avec des intervenants mais aucune invitation WhatsApp : premier conseil après 4 h, puis rappel final après 48 h.
 - Après une invitation : félicitation lorsque l'équipe est complète, ou conseil après 24 h lorsque des réponses manquent encore.
-- Offre sans expiration : une mission offerte restante, puis trois missions offertes utilisées sans crédit disponible. Proposition de comparaison Pro après six achats sur les 30 derniers jours. Chaque message ne part qu'une seule fois. Aucun rappel calendaire de fin d'essai.
+- Offre sans expiration : une mission offerte restante, puis trois missions offertes utilisées sans crédit disponible. Proposition de comparaison Pro après dix missions créées avec des crédits sur les 30 derniers jours, uniquement sans crédit restant. Présente les packs 5 + 1 et le choix mensuel/annuel. Chaque message ne part qu'une seule fois. Aucun rappel calendaire de fin d'essai.
 - Une seule étape est envoyée à la fois. Chaque étape ne part qu'une fois, avec au plus un email par 24 h et par compte ; limite additionnelle à 5 par passage et 90 par jour pour préserver le quota gratuit.
 - Un lien de désinscription signé accompagne chaque email et l'en-tête standard `List-Unsubscribe` est ajouté ; l'adresse `hello@shiftflow.io` reçoit les réponses. Les essais d'envoi sont enregistrés dans la collection `onboarding_emails` avec l'identifiant de Resend et une clé d'idempotence.
 
 Ces relances sont des conseils de prise en main. Ne pas utiliser ce système pour des campagnes promotionnelles ou envoyer des emails aux intervenants.
-
 

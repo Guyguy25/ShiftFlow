@@ -1816,6 +1816,7 @@ async def get_quota(user=Depends(get_current_user)):
 
 class CheckoutIn(BaseModel):
     lookup_key: str
+    quantity: int = Field(default=1, ge=1, le=100, strict=True)
     origin_url: str
     meta_consent: bool = False
     legal_acceptance: dict = Field(default_factory=dict)
@@ -1861,21 +1862,26 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
-    if payload.legal_acceptance.get("version") != "2026-09-30":
+    if payload.legal_acceptance.get("version") != "2026-10-01":
         raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
     expected_price = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
     if not expected_price:
         raise HTTPException(status_code=400, detail="Offre Stripe non autorisée")
     expected_interval = expected_price["interval"]
     expected_amount = expected_price["amount"]
+    quantity = payload.quantity
+    purchase = mission_billing.pack(quantity) if payload.lookup_key == mission_billing.MISSION_LOOKUP else None
+    if not purchase and quantity != 1:
+        raise HTTPException(400, "Un seul abonnement par compte.")
+    if purchase:
+        expected_amount = purchase["amount"]
 
     current = await mission_billing.account(db, user["id"])
     if current.get("plan") == "pro":
         raise HTTPException(409, "Votre abonnement Pro est déjà actif. Gérez-le depuis votre compte.")
-    if payload.lookup_key == mission_billing.MISSION_LOOKUP and mission_billing.balance(current)["can_create_mission"]:
-        raise HTTPException(409, "Vous avez déjà une mission disponible. Utilisez-la avant d'en acheter une autre.")
     pending = await db.payment_transactions.find_one({
         "user_id": user["id"], "lookup_key": payload.lookup_key, "status": "initiated",
+        "quantity": quantity, "offer_version": "2026-10-01",
     }, sort=[("created_at", -1)])
     if pending:
         previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
@@ -1883,8 +1889,8 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             return {"checkout_url": previous.url, "session_id": previous.id}
     if payload.lookup_key == mission_billing.MISSION_LOOKUP:
         line_items = [{"price_data": {"currency": "eur", "unit_amount": expected_amount,
-            "product_data": {"name": "ShiftFlow — 1 mission",
-                             "description": "Un crédit sans expiration pour créer une mission. Paiement unique, sans abonnement."}}, "quantity": 1}]
+            "product_data": {"name": f"ShiftFlow — {purchase['mission_credits']} mission(s)",
+                             "description": f"{quantity} achetée(s) + {purchase['bonus_missions']} offerte(s). Crédits sans expiration. Paiement unique, sans abonnement."}}, "quantity": 1}]
     else:
         prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
         if not prices:
@@ -1896,12 +1902,13 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         line_items = [{"price": price.id, "quantity": 1}]
 
     origin = FRONTEND_URL or "https://www.shiftflow.io"
+    completed_purchases = await db.payment_transactions.count_documents({"user_id": user["id"], "fulfilled": True})
     # French micro-entrepreneur franchise en base de TVA (art. 293 B du CGI): no VAT applied.
     session = stripe_lib.checkout.Session.create(
         line_items=line_items,
         mode="payment" if expected_interval == "one_time" else "subscription",
         payment_method_types=["card"],
-        idempotency_key=f"checkout-{user['id']}-{payload.lookup_key}-{int(now_utc().timestamp()) // 600}",
+        idempotency_key=f"checkout-v2-{user['id']}-{payload.lookup_key}-{quantity}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
         **({"customer": current["stripe_customer_id"]} if current.get("stripe_customer_id") else {"customer_email": user.get("email")}),
@@ -1910,6 +1917,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             "user_id": user["id"],
             "lookup_key": payload.lookup_key,
             "billing_interval": expected_interval,
+            "mission_credits": str(purchase["mission_credits"] if purchase else 0),
         },
         custom_text={
             "submit": {"message": "TVA non applicable, art. 293 B du CGI"},
@@ -1919,6 +1927,8 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
         "lookup_key": payload.lookup_key, "billing_interval": expected_interval,
         "amount": expected_amount,
+        "quantity": quantity, "bonus_missions": purchase["bonus_missions"] if purchase else 0,
+        "mission_credits": purchase["mission_credits"] if purchase else 0, "offer_version": "2026-10-01",
         "currency": "eur", "status": "initiated", "payment_status": "pending",
         "origin_url": origin,
         "legal_acceptance": payload.legal_acceptance,
@@ -1968,7 +1978,7 @@ async def fulfill_checkout(obj):
     if record["lookup_key"] == mission_billing.MISSION_LOOKUP:
         if obj.get("mode") != "payment":
             raise HTTPException(400, "Mode de paiement incorrect")
-        await mission_billing.grant_credit(db, uid, obj["id"])
+        await mission_billing.grant_credit(db, uid, obj["id"], record.get("mission_credits", 1))
     else:
         if obj.get("mode") != "subscription" or not obj.get("subscription"):
             raise HTTPException(400, "Abonnement absent")
@@ -2006,7 +2016,7 @@ async def payment_status_endpoint(session_id: str, user=Depends(get_current_user
             pass
     return {"session_id": record["session_id"], "status": record["status"],
             "payment_status": record["payment_status"], "lookup_key": record["lookup_key"],
-            "fulfilled": bool(record.get("fulfilled"))}
+            "fulfilled": bool(record.get("fulfilled")), "mission_credits": record.get("mission_credits", 1 if record["lookup_key"] == mission_billing.MISSION_LOOKUP else 0)}
 
 
 @api.post("/stripe/webhook")
@@ -2092,4 +2102,3 @@ else:
         allow_headers=["*"],
         expose_headers=["*"],
     )
-
