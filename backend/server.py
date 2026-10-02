@@ -81,6 +81,18 @@ def request_client_ip(request: Request) -> Optional[str]:
     return request.client.host if request.client else None
 
 
+def device_type_from_user_agent(user_agent: Optional[str]) -> str:
+    """Store a coarse device category only; no raw user-agent is persisted."""
+    ua = (user_agent or "").lower()
+    if not ua:
+        return "unknown"
+    if "ipad" in ua or "tablet" in ua or ("android" in ua and "mobile" not in ua):
+        return "tablet"
+    if any(token in ua for token in ("mobi", "iphone", "ipod", "android")):
+        return "mobile"
+    return "desktop"
+
+
 def meta_consent_for_user(user: dict) -> bool:
     """Backward-compatible advertising consent check for activation events."""
     return bool(
@@ -223,6 +235,7 @@ def public_user(u: dict) -> dict:
     return {"id": u["id"], "email": u["email"], "name": u.get("name", ""),
             "agency_name": u.get("agency_name", ""), "phone": u.get("phone", ""),
             "plan": u.get("plan", "free"),
+            "role": u.get("role", "admin"),
             "avatar": u.get("avatar", ""),
             "onboarding_completed": bool(u.get("onboarding_completed")),
             "subscription_status": u.get("subscription_status"),
@@ -658,9 +671,12 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
     created_at = now_utc()
+    device_type = device_type_from_user_agent(request.headers.get("user-agent"))
     user = {"id": new_id(), "email": email, "password_hash": hash_password(payload.password),
             "name": payload.name, "agency_name": payload.agency_name, "phone": payload.phone,
             "role": "admin", "created_at": iso(created_at),
+            "signup_device_type": device_type, "last_device_type": device_type,
+            "last_seen_at": iso(created_at),
             "trial_model_version": TRIAL_MODEL_VERSION,
             "onboarding_completed": bool(payload.onboarding_answers),
             "onboarding_answers": payload.onboarding_answers or None,
@@ -709,11 +725,19 @@ async def register(payload: RegisterIn, request: Request, response: Response):
 
 
 @api.post("/auth/login")
-async def login(payload: LoginIn, response: Response):
+async def login(payload: LoginIn, request: Request, response: Response):
     email = payload.email.lower().strip()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    device_type = device_type_from_user_agent(request.headers.get("user-agent"))
+    seen_at = iso(now_utc())
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "last_device_type": device_type,
+        "last_seen_at": seen_at,
+    }})
+    user["last_device_type"] = device_type
+    user["last_seen_at"] = seen_at
     user = await ensure_trial_model(user)
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
@@ -760,7 +784,14 @@ async def logout(response: Response):
 
 
 @api.get("/auth/me")
-async def me(user=Depends(get_current_user)):
+async def me(request: Request, user=Depends(get_current_user)):
+    device_type = device_type_from_user_agent(request.headers.get("user-agent"))
+    seen_at = iso(now_utc())
+    updates = {"last_device_type": device_type, "last_seen_at": seen_at}
+    if not user.get("signup_device_type"):
+        updates["signup_device_type"] = device_type
+    await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    user.update(updates)
     return public_user(user)
 
 
@@ -2079,6 +2110,147 @@ async def billing_portal(request: Request, user=Depends(get_current_user)):
     except stripe_lib.error.StripeError as e:
         raise HTTPException(status_code=502, detail=f"Stripe: {e}")
     return {"url": session.url}
+
+
+# ---------------- Platform admin ----------------
+async def require_owner(user=Depends(get_current_user)):
+    if user.get("role") != "owner":
+        raise HTTPException(status_code=403, detail="Accès réservé au propriétaire ShiftFlow")
+    return user
+
+
+def _parse_iso(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+@api.get("/admin/dashboard")
+async def admin_dashboard(owner=Depends(require_owner)):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(5000)
+    user_ids = [u["id"] for u in users]
+    now = now_utc()
+
+    mission_rows = await db.missions.aggregate([
+        {"$group": {"_id": "$agency_id", "count": {"$sum": 1}}}
+    ]).to_list(5000)
+    worker_rows = await db.workers.aggregate([
+        {"$group": {"_id": "$agency_id", "count": {"$sum": 1}}}
+    ]).to_list(5000)
+    mission_counts = {row["_id"]: row["count"] for row in mission_rows if row.get("_id")}
+    worker_counts = {row["_id"]: row["count"] for row in worker_rows if row.get("_id")}
+
+    tracked_events = [
+        "mission_created", "worker_added", "whatsapp_connected",
+        "cascade_started", "first_cascade_sent", "mission_filled",
+        "subscription_started",
+    ]
+    events = await db.activation_events.find(
+        {"event_name": {"$in": tracked_events}},
+        {"_id": 0, "user_id": 1, "agency_id": 1, "event_name": 1, "occurred_at": 1},
+    ).to_list(50000)
+    events_by_user = {}
+    for event in events:
+        uid = event.get("user_id") or event.get("agency_id")
+        if not uid:
+            continue
+        events_by_user.setdefault(uid, {})[event["event_name"]] = event.get("occurred_at")
+
+    signup_series = []
+    for offset in range(29, -1, -1):
+        day = (now - timedelta(days=offset)).date()
+        count = 0
+        for user_doc in users:
+            created = _parse_iso(user_doc.get("created_at"))
+            if created and created.date() == day:
+                count += 1
+        signup_series.append({"date": day.isoformat(), "count": count})
+
+    def event_count(name):
+        return sum(1 for uid in user_ids if name in events_by_user.get(uid, {}))
+
+    signed_up = len(users)
+    funnel = [
+        {"key": "sign_up", "label": "Inscrits", "count": signed_up},
+        {"key": "mission_created", "label": "1re mission créée", "count": event_count("mission_created")},
+        {"key": "worker_added", "label": "Intervenants ajoutés", "count": event_count("worker_added")},
+        {"key": "whatsapp_connected", "label": "WhatsApp connecté", "count": event_count("whatsapp_connected")},
+        {"key": "first_cascade_sent", "label": "1re invitation envoyée", "count": event_count("first_cascade_sent")},
+        {"key": "subscription_started", "label": "Abonnement démarré", "count": event_count("subscription_started")},
+    ]
+
+    devices = {"mobile": 0, "desktop": 0, "tablet": 0, "unknown": 0}
+    for user_doc in users:
+        kind = user_doc.get("signup_device_type") or user_doc.get("last_device_type") or "unknown"
+        if kind not in devices:
+            kind = "unknown"
+        devices[kind] += 1
+
+    plans = {"free": 0, "pro": 0}
+    for user_doc in users:
+        plan = "pro" if user_doc.get("plan") == "pro" else "free"
+        plans[plan] += 1
+
+    def source_for(user_doc):
+        attribution = user_doc.get("meta_attribution") or {}
+        return {
+            "source": attribution.get("utm_source") or ("facebook" if attribution.get("fbclid") else None),
+            "campaign": attribution.get("utm_campaign"),
+            "content": attribution.get("utm_content"),
+        }
+
+    rows = []
+    for user_doc in users:
+        uid = user_doc["id"]
+        event_map = events_by_user.get(uid, {})
+        rows.append({
+            "id": uid,
+            "name": user_doc.get("name", ""),
+            "agency_name": user_doc.get("agency_name", ""),
+            "email": user_doc.get("email", ""),
+            "role": user_doc.get("role", "admin"),
+            "plan": user_doc.get("plan", "free"),
+            "subscription_status": user_doc.get("subscription_status"),
+            "created_at": user_doc.get("created_at"),
+            "last_seen_at": user_doc.get("last_seen_at"),
+            "signup_device_type": user_doc.get("signup_device_type") or "unknown",
+            "last_device_type": user_doc.get("last_device_type") or "unknown",
+            "missions_count": mission_counts.get(uid, 0),
+            "workers_count": worker_counts.get(uid, 0),
+            "source": source_for(user_doc),
+            "activation": {
+                "mission_created": "mission_created" in event_map or mission_counts.get(uid, 0) > 0,
+                "worker_added": "worker_added" in event_map or worker_counts.get(uid, 0) > 0,
+                "whatsapp_connected": "whatsapp_connected" in event_map,
+                "cascade_started": "cascade_started" in event_map,
+                "first_cascade_sent": "first_cascade_sent" in event_map,
+                "subscription_started": "subscription_started" in event_map or user_doc.get("plan") == "pro",
+            },
+        })
+
+    signups_7d = sum(1 for u in users if (lambda d: d and d >= now - timedelta(days=7))(_parse_iso(u.get("created_at"))))
+    signups_30d = sum(1 for u in users if (lambda d: d and d >= now - timedelta(days=30))(_parse_iso(u.get("created_at"))))
+
+    return {
+        "generated_at": iso(now),
+        "metrics": {
+            "users_total": signed_up,
+            "signups_7d": signups_7d,
+            "signups_30d": signups_30d,
+            "missions_total": sum(mission_counts.values()),
+            "workers_total": sum(worker_counts.values()),
+            "paid_users": plans["pro"],
+            "activated_users": event_count("first_cascade_sent"),
+        },
+        "funnel": funnel,
+        "signup_series": signup_series,
+        "devices": devices,
+        "plans": plans,
+        "users": rows,
+    }
 
 
 # WhatsApp routes
