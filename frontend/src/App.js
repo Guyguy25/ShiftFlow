@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PublicOnlyRoute from "./components/PublicOnlyRoute";
+import OwnerRoute from "./components/OwnerRoute";
 import Layout from "./components/Layout";
 import PublicLegalBar from "./components/PublicLegalBar";
 import Demo from "./pages/Demo";
@@ -25,6 +26,7 @@ import PublicConfirm from "./pages/PublicConfirm";
 import Onboarding from "./pages/Onboarding";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
+import Admin from "./pages/Admin";
 import { LegalNotice, Terms, Privacy, Cookies, DPA } from "./pages/LegalPages";
 import MetaPixel from "./components/MetaPixel";
 import { Toaster } from "sonner";
@@ -46,6 +48,7 @@ function AppRoutes() {
       <Route path="/onboarding" element={<ProtectedRoute><Onboarding/></ProtectedRoute>} />
       <Route path="/payment/success" element={<PaymentSuccess />} />
       <Route path="/payment/cancel" element={<PaymentCancel />} />
+      <Route path="/admin" element={<OwnerRoute><Admin /></OwnerRoute>} />
       <Route path="/app" element={<ProtectedRoute><Layout><Outlet/></Layout></ProtectedRoute>}>
         <Route index element={<Navigate to="/app/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
