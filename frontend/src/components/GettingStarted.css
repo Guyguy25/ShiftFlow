@@ -69,11 +69,11 @@
 .onboarding-launcher { position: fixed; right: 24px; bottom: 24px; z-index: 35; width: 248px; max-width: calc(100vw - 24px); padding: 15px 20px; border: 1px solid #e5e7eb; border-radius: 22px; background: #fff; box-shadow: 0 5px 24px #0f172a14; text-align: left; }
 .onboarding-launcher:hover { border-color: #93c5fd; }
 .onboarding-launcher:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
-.onboarding-popover { z-index: 55; width: 352px; max-width: calc(100vw - 24px); max-height: min(600px, var(--radix-popover-content-available-height)); overflow-y: auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 20px; background: #fff; box-shadow: 0 12px 40px #0f172a24; animation: guide-arrive .18s ease-out; }
+.onboarding-popover { z-index: 55; width: 352px; max-width: calc(100vw - 24px); max-height: min(600px, var(--radix-popover-content-available-height)); overflow-y: auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 20px; background: #fff; box-shadow: 0 12px 40px #0f172a24; animation: guide-arrive .32s cubic-bezier(.22,1,.36,1); }
 @media (max-width: 1023px) { .onboarding-launcher { right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); width: 216px; padding: 12px 16px; } }
 @media (prefers-reduced-motion: reduce) { .onboarding-popover { animation: none; } }
 
-.onboarding-target { outline: 3px solid #3b82f6 !important; outline-offset: 5px; scroll-margin-block: 180px; animation: onboarding-focus 1.8s ease-out 2; }
+.onboarding-target { outline: 3px solid #3b82f6 !important; outline-offset: 5px; scroll-margin-block: 180px; animation: onboarding-focus 2.6s ease-in-out 2; }
 .onboarding-coach { position: fixed; padding: 18px; border: 1px solid #bfdbfe; border-radius: 16px; background: #fff; box-shadow: 0 10px 35px #0f172a22; max-height: calc(100dvh - 170px); }
 .onboarding-arrow { position: absolute; width: 12px; height: 12px; background: white; transform: translate(-50%, -50%) rotate(45deg); }
 .arrow-left { left: 0; border-left: 1px solid #bfdbfe; border-bottom: 1px solid #bfdbfe; }
@@ -82,3 +82,15 @@
 .arrow-bottom { top: 100%; border-right: 1px solid #bfdbfe; border-bottom: 1px solid #bfdbfe; }
 @keyframes onboarding-focus { 50% { box-shadow: 0 0 0 10px #3b82f620; } }
 @media (prefers-reduced-motion: reduce) { .onboarding-target { animation: none; } }
+
+/* Gentle entrances without moving a help card across the user's controls. */
+.onboarding-coach { animation: onboarding-soft-enter .32s ease-out; }
+.onboarding-hint-copy { animation: onboarding-soft-enter .28s ease-out; }
+.onboarding-launcher { transition: border-color .25s ease, box-shadow .25s ease; }
+.onboarding-popover[data-state="closed"] { animation: onboarding-soft-exit .16s ease-in; }
+@keyframes onboarding-soft-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes onboarding-soft-exit { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-coach, .onboarding-hint-copy, .onboarding-popover[data-state="closed"] { animation: none; }
+  .onboarding-launcher { transition: none; }
+}
