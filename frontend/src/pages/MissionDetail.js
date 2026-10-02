@@ -9,6 +9,7 @@ import { api, formatApiError } from "../lib/api";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
 import WhatsAppQrGuide from "../components/WhatsAppQrGuide";
+import ShiftFlowLoader from "../components/ShiftFlowLoader";
 
 const TYPE_LABEL = {
   montage: "Montage", demontage: "Démontage", montage_demontage: "Montage + Démontage",
@@ -486,7 +487,7 @@ export default function MissionDetail() {
     return () => clearInterval(t);
   }, [load]);
 
-  if (!data) return <div className="text-gray-500">Chargement…</div>;
+  if (!data) return <ShiftFlowLoader label="Chargement de la mission…" />;
   const m = data;
   const totalCost = (m.shifts || []).reduce((sum, sh) => sum + (sh.estimated_cost || 0), 0);
   const shouldOpenSelection = searchParams.get("step") === "select";
