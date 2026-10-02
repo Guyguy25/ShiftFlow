@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -93,6 +93,14 @@ export default function Layout({ children }) {
               {n.highlight && <span className="ml-auto text-[10px] uppercase tracking-wider font-bold bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded">Guide</span>}
             </NavLink>
           ))}
+          {user?.role === "owner" && <NavLink
+            to="/admin"
+            className="mt-3 flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-700 hover:bg-indigo-100"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            Administration
+            <span className="ml-auto rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Owner</span>
+          </NavLink>}
         </nav>
         <div className="border-t border-gray-100 p-3 shrink-0 bg-white">
           <ProfileMenu user={user} quota={quota} onLogout={handleLogout} />
@@ -130,6 +138,15 @@ export default function Layout({ children }) {
                 {n.label}
               </NavLink>
             ))}
+            {user?.role === "owner" && <NavLink
+              to="/admin"
+              onClick={() => setOpen(false)}
+              className="flex min-h-12 items-center gap-3 rounded-xl bg-indigo-50 px-3 py-2.5 text-sm font-bold text-indigo-700"
+            >
+              <ShieldCheck className="h-5 w-5" />
+              Administration
+              <span className="ml-auto rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-bold uppercase">Owner</span>
+            </NavLink>}
             <button
               onClick={handleLogout}
               data-testid="mobile-logout-btn"
