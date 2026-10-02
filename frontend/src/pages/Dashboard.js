@@ -8,6 +8,7 @@ import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 import ActivationHome from "../components/ActivationHome";
 import JourneyEmpty from "../components/JourneyEmpty";
 import { activationNext } from "../lib/activation";
+import ShiftFlowLoader from "../components/ShiftFlowLoader";
 
 function MissionCard({ m }) {
   const filled = m.total_confirmed >= m.total_needed && m.total_needed > 0;
@@ -57,7 +58,7 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
   if (error) return <div role="alert">{error}<button onClick={load} className="ml-3 underline text-blue-700">Réessayer</button></div>;
-  if (!data) return <div className="text-gray-500" data-testid="dashboard-loading">Chargement…</div>;
+  if (!data) return <ShiftFlowLoader label="Chargement de votre espace…" />;
   const connected = !!whatsappStatus?.connected;
   const next = activationNext(data, whatsappStatus, quota);
   const replayGuide = searchParams.get("guide") === "1";
