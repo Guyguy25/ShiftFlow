@@ -6,6 +6,7 @@ import { MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
 import JourneyEmpty from "../components/JourneyEmpty";
 import UpgradeModal from "../components/UpgradeModal";
+import ShiftFlowLoader from "../components/ShiftFlowLoader";
 
 export default function Missions() {
   const [missions, setMissions] = useState([]);
@@ -87,7 +88,7 @@ export default function Missions() {
       </div>
 
       <div className="mt-5 sm:mt-8">
-        {loading ? <div className="text-gray-500">Chargement…</div> :
+        {loading ? <ShiftFlowLoader label="Chargement de vos missions…" /> :
          missions.length === 0 ? (
           <div className={showArchived ? "bg-white border border-dashed border-gray-300 rounded-xl p-10 text-center text-gray-500" : ""}>
             {showArchived ? "Aucune mission archivée." : <JourneyEmpty />}
