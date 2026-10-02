@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { MISSION_STATUS_LABEL } from "../lib/statusMap";
+import ShiftFlowLoader from "../components/ShiftFlowLoader";
 
 export default function History() {
   const [missions, setMissions] = useState([]);
@@ -21,7 +22,7 @@ export default function History() {
       <h1 className="mt-1.5 text-[28px] leading-tight sm:text-3xl font-display font-bold tracking-tight">Missions passées</h1>
 
       <div className="mt-5 sm:mt-8">
-        {loading ? <div className="text-gray-500">Chargement…</div> :
+        {loading ? <ShiftFlowLoader label="Chargement de l’historique…" /> :
          missions.length === 0 ? (
           <div className="bg-white border border-dashed border-gray-300 rounded-2xl p-10 text-center text-gray-500">Aucune mission dans l'historique.</div>
         ) : (
