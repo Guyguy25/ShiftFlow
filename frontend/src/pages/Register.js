@@ -170,11 +170,21 @@ export default function Register() {
         <p className="mt-3 text-sm leading-relaxed text-gray-500">{step === 0 ? "Deux informations pour personnaliser votre espace." : step === 1 ? "Ces coordonnées seront celles de votre compte." : step === 2 ? "Choisissez un mot de passe pour protéger votre compte." : "Adaptons ShiftFlow à vos besoins. Vous pouvez passer ces questions."}</p>
         {initial && Object.values(initial.form || {}).some(value => typeof value === "string" && value.trim()) && step === initial.step && <p className="mt-3 text-sm text-blue-700">Bon retour ! Votre saisie a été restaurée, sauf le mot de passe.</p>}
         <p className="mt-3 text-sm text-gray-600">Sans carte bancaire. Aucun message envoyé à vos intervenants pendant l’inscription.</p>
-        <form onSubmit={step === 2 ? submit : advance} className="mt-6" data-testid="register-form">
+        <form onSubmit={step === 2 ? submit : advance} className="mt-6" data-testid="register-form" autoComplete="on">
           <div className="space-y-5">
             {step === 0 && <>{input("name", "Votre nom", { autoComplete: "name", placeholder: "Camille Martin" })}{input("agency_name", "Nom de votre entreprise ou de votre structure", { autoComplete: "organization", placeholder: "Ma structure" })}</>}
-            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "email", placeholder: "vous@entreprise.fr" })}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
+            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "username", placeholder: "vous@entreprise.fr" })}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
             {step === 2 && <>
+              <input
+                type="email"
+                name="username"
+                autoComplete="username"
+                value={form.email}
+                readOnly
+                tabIndex={-1}
+                aria-hidden="true"
+                className="pointer-events-none absolute h-px w-px overflow-hidden opacity-0"
+              />
               {input("password", "Mot de passe", { type: showPassword ? "text" : "password", autoComplete: "new-password", minLength: 8, "aria-describedby": "password-help" })}
               <button type="button" onClick={() => setShowPassword(v => !v)} className="flex min-h-11 items-center gap-2 text-sm text-blue-700" aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}{showPassword ? "Masquer" : "Afficher le mot de passe"}</button>
               <div className="flex flex-wrap gap-3 text-xs">{[["length", "8 caractères"], ["letter", "1 lettre"], ["digit", "1 chiffre"]].map(([key, label]) => <span key={key} className={passwordChecks(form.password)[key] ? "text-emerald-700" : "text-gray-500"}>{passwordChecks(form.password)[key] ? "✓" : "○"} {label}</span>)}</div>
