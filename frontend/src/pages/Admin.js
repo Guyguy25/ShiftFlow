@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft, BarChart3, CalendarDays, CheckCircle2, ChevronRight, Crown,
-  Laptop, MessageCircle, Search, Send, Smartphone, Tablet, UserPlus,
+  ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Crown,
+  Laptop, Search, Send, Smartphone, Tablet, UserPlus,
   Users, Zap
 } from "lucide-react";
 import { api } from "../lib/api";
