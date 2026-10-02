@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -23,6 +23,7 @@ const mobileNav = [
 ];
 
 const mobileMoreNav = [
+  { to: "/app/profile", label: "Profil", icon: UserRound },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon },
   { to: "/app/history", label: "Historique", icon: History },
   { to: "/app/help", label: "Aide", icon: LifeBuoy },
