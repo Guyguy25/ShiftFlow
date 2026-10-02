@@ -788,8 +788,6 @@ async def me(request: Request, user=Depends(get_current_user)):
     device_type = device_type_from_user_agent(request.headers.get("user-agent"))
     seen_at = iso(now_utc())
     updates = {"last_device_type": device_type, "last_seen_at": seen_at}
-    if not user.get("signup_device_type"):
-        updates["signup_device_type"] = device_type
     await db.users.update_one({"id": user["id"]}, {"$set": updates})
     user.update(updates)
     return public_user(user)
@@ -2131,7 +2129,8 @@ def _parse_iso(value):
 @api.get("/admin/dashboard")
 async def admin_dashboard(owner=Depends(require_owner)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(5000)
-    user_ids = [u["id"] for u in users]
+    customer_users = [u for u in users if u.get("role") != "owner"]
+    user_ids = [u["id"] for u in customer_users]
     now = now_utc()
 
     mission_rows = await db.missions.aggregate([
@@ -2163,7 +2162,7 @@ async def admin_dashboard(owner=Depends(require_owner)):
     for offset in range(29, -1, -1):
         day = (now - timedelta(days=offset)).date()
         count = 0
-        for user_doc in users:
+        for user_doc in customer_users:
             created = _parse_iso(user_doc.get("created_at"))
             if created and created.date() == day:
                 count += 1
@@ -2172,7 +2171,7 @@ async def admin_dashboard(owner=Depends(require_owner)):
     def event_count(name):
         return sum(1 for uid in user_ids if name in events_by_user.get(uid, {}))
 
-    signed_up = len(users)
+    signed_up = len(customer_users)
     funnel = [
         {"key": "sign_up", "label": "Inscrits", "count": signed_up},
         {"key": "mission_created", "label": "1re mission créée", "count": event_count("mission_created")},
@@ -2183,14 +2182,14 @@ async def admin_dashboard(owner=Depends(require_owner)):
     ]
 
     devices = {"mobile": 0, "desktop": 0, "tablet": 0, "unknown": 0}
-    for user_doc in users:
+    for user_doc in customer_users:
         kind = user_doc.get("signup_device_type") or user_doc.get("last_device_type") or "unknown"
         if kind not in devices:
             kind = "unknown"
         devices[kind] += 1
 
     plans = {"free": 0, "pro": 0}
-    for user_doc in users:
+    for user_doc in customer_users:
         plan = "pro" if user_doc.get("plan") == "pro" else "free"
         plans[plan] += 1
 
@@ -2231,8 +2230,8 @@ async def admin_dashboard(owner=Depends(require_owner)):
             },
         })
 
-    signups_7d = sum(1 for u in users if (lambda d: d and d >= now - timedelta(days=7))(_parse_iso(u.get("created_at"))))
-    signups_30d = sum(1 for u in users if (lambda d: d and d >= now - timedelta(days=30))(_parse_iso(u.get("created_at"))))
+    signups_7d = sum(1 for u in customer_users if (lambda d: d and d >= now - timedelta(days=7))(_parse_iso(u.get("created_at"))))
+    signups_30d = sum(1 for u in customer_users if (lambda d: d and d >= now - timedelta(days=30))(_parse_iso(u.get("created_at"))))
 
     return {
         "generated_at": iso(now),
