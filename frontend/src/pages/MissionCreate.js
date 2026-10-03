@@ -1,7 +1,7 @@
 import { counted } from "../lib/french";
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import UpgradeModal from "../components/UpgradeModal";
@@ -207,7 +207,22 @@ export default function MissionCreate() {
 
         </>}
         {step === 2 && <section className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4" aria-label="Récapitulatif">
-          <h2 className="text-xl font-semibold break-words">{mission.name}</h2><p className="text-gray-600 break-words">{mission.location}{mission.address && ` · ${mission.address}`}</p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold break-words">{mission.name}</h2>
+              <p className="mt-1 text-gray-600 break-words">{mission.location}{mission.address && ` · ${mission.address}`}</p>
+            </div>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => { setError(""); setStep(1); }}
+              className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
+              aria-label="Modifier les informations de la mission"
+            >
+              <Pencil className="h-4 w-4" />
+              Modifier
+            </button>
+          </div>
           {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>Créneau {i + 1} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {counted(s.people_needed, "personne")} · {s.rate_hourly} €/h</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
           <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl sm:rounded-md px-4 py-3">
             <input type="checkbox" data-testid="mc-cascade" checked={mission.cascade_enabled} onChange={(e)=>setM("cascade_enabled", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
