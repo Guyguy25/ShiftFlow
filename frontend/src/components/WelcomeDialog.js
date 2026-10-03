@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2,
   MapPin, MessageCircle, Users, X, Zap
@@ -97,9 +96,7 @@ export default function WelcomeDialog({ user }) {
   const key = `shiftflow-welcome-${user.id}`;
   const [open, setOpen] = useState(() => { try { return localStorage.getItem(key) === "pending"; } catch { return false; } });
   const [step, setStep] = useState(0);
-  const navigate = useNavigate();
   const close = () => { try { localStorage.removeItem(key); } catch {} setOpen(false); };
-  const createMission = () => { close(); navigate("/app/missions/new"); };
   const startTour = () => {
     close();
     window.setTimeout(() => window.dispatchEvent(new CustomEvent("shiftflow:replay-guide", { detail: { mode: "sections" } })), 80);
@@ -140,10 +137,10 @@ export default function WelcomeDialog({ user }) {
         {step > 0 && <button type="button" onClick={() => setStep(value => value - 1)} className="flex min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50" aria-label="Étape précédente"><ArrowLeft size={18} /></button>}
         {step < slides.length - 1
           ? <button type="button" onClick={() => setStep(value => value + 1)} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700">Suivant <ArrowRight size={18} /></button>
-          : <button type="button" onClick={createMission} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700">Créer ma première mission <ArrowRight size={18} /></button>}
+          : <button type="button" onClick={startTour} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 font-semibold text-white shadow-sm shadow-blue-200 hover:bg-blue-700">Découvrir ShiftFlow <ArrowRight size={18} /></button>}
       </div>
 
-      {step === slides.length - 1 ? <button type="button" onClick={startTour} className="mt-2 min-h-10 w-full text-sm font-medium text-gray-500 hover:text-blue-700">Découvrir l’interface d’abord</button> : <button type="button" onClick={createMission} className="mt-2 min-h-10 w-full text-sm font-medium text-gray-500 hover:text-blue-700">Passer et créer ma mission</button>}
+      {step < slides.length - 1 && <button type="button" onClick={startTour} className="mt-2 min-h-10 w-full text-sm font-medium text-gray-500 hover:text-blue-700">Passer la présentation et découvrir l’interface</button>}
 
       <p className="mt-3 text-center text-[11px] font-medium text-gray-400">3 missions offertes · sans carte bancaire · aucun message sans votre confirmation</p>
     </Dialog.Content>
