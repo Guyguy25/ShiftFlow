@@ -252,7 +252,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
                 const on = selected.includes(w.id);
                 return (
                   <button type="button" disabled={saving} key={w.id} onClick={()=>toggle(w.id)}
-                    data-testid={`select-worker-${shift.id}-${w.id}`} data-onboarding={!reviewOpen && selected.length === 0 ? "select" : undefined}
+                    data-testid={`select-worker-${shift.id}-${w.id}`}
                     className={`w-full flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 last:border-0 text-left transition-colors ${on ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-gray-50"}`}>
                     <div className="min-w-0">
                       <div className={`text-sm font-medium truncate ${on ? "text-blue-900" : "text-gray-900"}`}>{w.first_name} {w.last_name}</div>
@@ -390,7 +390,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
       {noSlots ? (
         <div className="px-4 sm:px-6 py-5 sm:py-6">
           {!expandSelect ? (
-            <button onClick={()=>setExpandSelect(true)} data-testid={`open-select-${shift.id}`} data-onboarding="select"
+            <button onClick={()=>setExpandSelect(true)} data-testid={`open-select-${shift.id}`}
               className="inline-flex items-center gap-2 text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
               <Plus className="w-4 h-4"/> Sélectionner les intervenants
             </button>
