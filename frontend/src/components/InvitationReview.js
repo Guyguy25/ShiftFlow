@@ -73,7 +73,7 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
         </div>
       </div>
     </>}
-    <button type="button" disabled={saving || !template || !worker} data-onboarding="send" onClick={onConfirm} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#128C7E] px-3 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-[#0f7d70] disabled:opacity-50"><MessageCircle className="h-5 w-5" />{saving ? "Vérification / envoi…" : "Confirmer et envoyer les demandes WhatsApp"}</button>
+    <button type="button" disabled={saving || !template || !worker} data-onboarding="send" onClick={onConfirm} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"><MessageCircle className="h-5 w-5" />{saving ? "Vérification / envoi…" : "Confirmer et envoyer les demandes WhatsApp"}</button>
     <div data-onboarding-inline="send" />
     <button type="button" disabled={saving} onClick={onCancel} className="mt-2 min-h-11 text-sm font-semibold text-blue-700">Revenir à la sélection</button>
   </section>;
