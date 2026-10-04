@@ -16,6 +16,12 @@ const TYPE_LABEL = {
   technique: "Technique", autre: "Autre",
 };
 
+function WhatsAppMark({ className = "w-3.5 h-3.5" }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.296-.767.966-.94 1.164-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.009-.371-.011-.57-.011-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.463 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.077 4.487.709.306 1.262.489 1.693.626.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.981.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.45 4.436-9.884 9.892-9.884a9.82 9.82 0 0 1 7.021 2.91 9.825 9.825 0 0 1 2.897 7.027c-.003 5.45-4.437 9.884-9.886 9.884m8.413-18.297A11.815 11.815 0 0 0 12.055 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.689 1.448h.005c6.558 0 11.893-5.335 11.896-11.893a11.821 11.821 0 0 0-3.488-8.413Z" />
+  </svg>;
+}
+
 function WhatsAppConnectModal({ onClose, onConnected }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -412,7 +418,8 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-xs px-2 py-1 rounded-md border font-medium ${slotClass(s.status)}`} data-testid={`slot-status-${s.id}`}>
+                <span className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border font-medium ${slotClass(s.status)}`} data-testid={`slot-status-${s.id}`}>
+                  {s.status === "contacted" && <WhatsAppMark className="w-3.5 h-3.5 text-[#25D366]" />}
                   {invitationStatusLabel(s.status)}
                 </span>
                 {s.status === "contacted" && <span className="text-xs text-gray-500">En attente de réponse</span>}
@@ -453,7 +460,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
       )}
       <details className="border-t border-gray-100 px-4 sm:px-6 py-2 text-sm text-gray-500">
         <summary className="cursor-pointer min-h-11 py-3">Détails du créneau</summary>
-        <p data-testid={`shift-estimate-${shift.id}`}>{shift.rate_hourly} €/h · Coût brut estimé : {shift.estimated_cost} €</p>
+        <p data-testid={`shift-rate-${shift.id}`}>Tarif intervenant : {shift.rate_hourly} €/h</p>
         <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} className="min-h-11 mt-2 inline-flex items-center gap-2 text-gray-600"><CopyPlus size={16}/> Dupliquer ce créneau</button>
       </details>
     </div>
@@ -489,7 +496,6 @@ export default function MissionDetail() {
 
   if (!data) return <ShiftFlowLoader label="Chargement de la mission…" />;
   const m = data;
-  const totalCost = (m.shifts || []).reduce((sum, sh) => sum + (sh.estimated_cost || 0), 0);
   const shouldOpenSelection = searchParams.get("step") === "select";
   const requestedShiftId = searchParams.get("shift");
   const firstSelectableShiftId = (m.shifts || []).find((sh) => sh.status !== "cancelled" && (!sh.slots || sh.slots.length === 0))?.id;
@@ -540,7 +546,6 @@ export default function MissionDetail() {
       <details className="mt-5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
         <summary className="min-h-11 py-3 cursor-pointer text-gray-600">Détails et gestion de la mission</summary>
         {m.description && <p className="mb-3 text-gray-600">{m.description}</p>}
-        <p className="mb-4 text-gray-500" data-testid="mission-total-cost">Coût brut estimé : {totalCost.toFixed(2)} €</p>
         <p className="mb-2 text-gray-500">{MISSION_STATUS_LABEL[m.status] || m.status}</p>
         <div className="flex flex-wrap gap-2 pb-2">
           <button onClick={duplicateMission} data-testid="mission-duplicate-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Dupliquer</button>
