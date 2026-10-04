@@ -10,7 +10,9 @@ import OnboardingCoach from "./OnboardingCoach";
 import { ActivationContext } from "../context/ActivationContext";
 
 export default function GettingStarted({ children }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id;
+  const authenticated = !!userId && !authLoading;
   const location = useLocation();
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
@@ -19,6 +21,7 @@ export default function GettingStarted({ children }) {
   const [selected, setSelected] = useState(null);
   useEffect(() => { setExpanded(false); setSelected(null); }, [location.pathname, location.search]);
   const refresh = useCallback(async (signal) => {
+    if (!authenticated || signal.aborted) return;
     setError(null);
     const results = await Promise.allSettled([
       api.get("/dashboard/summary", { signal }),
@@ -26,12 +29,16 @@ export default function GettingStarted({ children }) {
       api.get("/plan/quota", { signal }),
     ]);
     if (signal.aborted) return;
-    if (results[0].status !== "fulfilled") { setState(null); setError("unavailable"); return; }
-    setState({ owner: user.id, summary: results[0].value.data,
+    const summary = results[0].status === "fulfilled" ? results[0].value?.data : null;
+    if (!summary || !Array.isArray(summary.ongoing) || !Array.isArray(summary.upcoming)) {
+      setState(null); setError("unavailable"); return;
+    }
+    setState({ owner: userId, summary,
       whatsapp: results[1].status === "fulfilled" ? results[1].value.data : null,
       quota: results[2].status === "fulfilled" ? results[2].value.data : null });
-  }, [user.id]);
+  }, [authenticated, userId]);
   useEffect(() => {
+    if (!authenticated) { setState(null); setError(null); return; }
     const controller = new AbortController();
     let busy = false;
     const update = async () => {
@@ -44,10 +51,12 @@ export default function GettingStarted({ children }) {
     window.addEventListener("focus", update);
     document.addEventListener("visibilitychange", update);
     return () => { controller.abort(); clearInterval(timer); window.removeEventListener("focus", update); document.removeEventListener("visibilitychange", update); };
-  }, [refresh, location.pathname, location.search, retryIndex]);
-  const next = state?.owner === user.id && activationNext(state.summary, state.whatsapp, state.quota);
-  const tasks = state?.owner === user.id ? activationSteps(state.summary, state.whatsapp, state.quota) : [];
-  const context = { ...(state?.owner === user.id ? state : {}), next, steps: tasks, error, retry: () => setRetryIndex(index => index + 1) };
+  }, [authenticated, refresh, location.pathname, location.search, retryIndex]);
+  // Identity equality is meaningful only with a real user and a loaded summary.
+  const currentState = authenticated && state && state.owner === userId && state.summary ? state : null;
+  const next = currentState ? activationNext(currentState.summary, currentState.whatsapp, currentState.quota) : null;
+  const tasks = currentState ? activationSteps(currentState.summary, currentState.whatsapp, currentState.quota) : [];
+  const context = { ...(currentState || {}), next, steps: tasks, error: authenticated ? error : null, retry: () => setRetryIndex(index => index + 1) };
   const completed = tasks.filter(t => t.done).length;
   const descriptions = {
     mission: "Indiquez le lieu, la date et le nombre de personnes nécessaires. Préparer une mission n’envoie aucun message.",
@@ -66,8 +75,8 @@ export default function GettingStarted({ children }) {
   const nextTask = tasks.find(t => !t.done);
   return <ActivationContext.Provider value={context}>
     {children}
-    <OnboardingCoach />
-    <Popover.Root open={expanded} onOpenChange={value => {
+    {authenticated && <OnboardingCoach key={userId} />}
+    {authenticated && !currentState?.summary?.activation?.first_invite_sent && <Popover.Root open={expanded} onOpenChange={value => {
       setExpanded(value);
       if (value) setSelected(onPageTask?.id || nextTask?.id || null);
       else setSelected(null);
@@ -110,6 +119,6 @@ export default function GettingStarted({ children }) {
           <button onClick={() => { setExpanded(false); window.dispatchEvent(new CustomEvent("shiftflow:replay-guide", { detail: { mode: "sections" } })); }} className="min-h-11 text-sm text-gray-600 underline">Découvrir les sections</button>
         </div>
       </Popover.Content></Popover.Portal>
-    </Popover.Root>
+    </Popover.Root>}
   </ActivationContext.Provider>;
 }

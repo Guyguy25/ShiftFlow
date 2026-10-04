@@ -27,7 +27,8 @@ test("next action and coach move to workers after mission creation", () => {
   expect(html).toContain("1/4 réalisés");
   expect(html).toContain("Ajouter mes intervenants");
   expect(html).toContain("Étape 2 sur 4");
-  expect(html).toContain("/app/missions/m1?step=select");
+  expect(html).toContain("/app/workers?add=1");
+  expect(html).toContain(encodeURIComponent("/app/missions/m1?step=select"));
 });
 test("completed activation does not display a first-mission empty state", () => {
   expect(render(state({ ...fresh, activation: { active_workers: 1, first_invite_sent: true } }))).toBe("");

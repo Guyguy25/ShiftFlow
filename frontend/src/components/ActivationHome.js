@@ -20,7 +20,7 @@ export default function ActivationHome({ summary, whatsapp, quota, next }) {
       <Link data-onboarding={fresh ? "start" : "resume"} to={href} className="mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-3.5 font-semibold text-white">{fresh && !quota?.trial_expired ? "Créer ma première mission" : next.label}<ArrowRight size={18} aria-hidden="true" /></Link>
       <p className="mt-3 text-xs text-center leading-relaxed text-gray-500">Aucune demande envoyée à cette étape.</p>
     </section>
-    <details className="mt-7"><summary className="cursor-pointer min-h-11 py-3 text-sm font-semibold text-gray-700">Les 4 étapes pour lancer vos premières demandes</summary><section aria-label="Le parcours vers votre premier envoi">
+    <details open className="mt-7"><summary className="cursor-pointer min-h-11 py-3 text-sm font-semibold text-gray-700">Votre première mission avec ShiftFlow</summary><section aria-label="Le parcours vers votre premier envoi">
       <ol className="mt-3 space-y-3">{steps.map((step, i) => <li key={step.id} className="flex items-center gap-3 text-sm">
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs ${step.done ? "bg-emerald-100 text-emerald-700" : "bg-blue-50 text-blue-700"}`} aria-hidden="true">{step.done ? <Check size={16} /> : i + 1}</span>
         <span className={step.done ? "text-gray-500" : "text-gray-700"}>{step.done && <span className="sr-only">Terminé : </span>}{step.shortLabel}</span>

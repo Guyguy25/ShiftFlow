@@ -7,7 +7,7 @@ test("guides a new account to mission creation", () => {
 });
 test("adding workers preserves the mission destination", () => {
   const next = activationNext({ ...base, missions_total: 1, upcoming: [mission] }, null);
-  expect(next.href).toBe("/app/missions/m1?step=select");
+  expect(new URLSearchParams(next.href.split("?")[1]).get("returnTo")).toBe("/app/missions/m1?step=select");
   expect(next.stage).toBe("workers");
 });
 test("unknown WhatsApp status is not reported as disconnected", () => {
@@ -22,7 +22,7 @@ test("successful first invitation removes onboarding even after disconnection", 
 });
 test("empty mission balance directs to the offer and filled/cancelled shifts are excluded", () => {
   expect(activationNext(base, null, { can_create_mission: false }).href).toBe("/pricing");
-  expect(activationNext({ ...base, upcoming: [mission] }, null, { can_create_mission: false }).href).toBe("/app/missions/m1?step=select");
+  expect(activationNext({ ...base, upcoming: [mission] }, null, { can_create_mission: false }).stage).toBe("workers");
   for (const shifts of [[{ people_needed: 2, confirmed_count: 2 }], [{ people_needed: 2, status: "cancelled" }]]) {
     expect(activationNext({ ...base, upcoming: [{ ...mission, shifts }] }, null).href).toBe("/app/missions/new");
   }

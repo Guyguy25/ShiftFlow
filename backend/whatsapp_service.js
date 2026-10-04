@@ -105,7 +105,7 @@ function startReminderScheduler() {
 }
 function safeSessionId(value) { const raw = String(value || DEFAULT_SESSION_ID).trim(); return raw.replace(/[^a-zA-Z0-9_-]/g, "_") || "default"; }
 function sessionPath(sessionId) { return path.join(SESSION_ROOT, safeSessionId(sessionId)); }
-function createSessionState(sessionId) { return { id: safeSessionId(sessionId), sock: null, connected: false, qr: null, qrText: null, contacts: new Map(), pendingLidContacts: new Map(), lidToPhone: new Map(), contactsLoading: false, initialSyncDone: false, initialAutoRefreshAttempted: false, starting: false, reconnectTimer: null, refreshPromise: null, resetPromise: null, lastRefreshAt: 0, generation: 0, lastConnectionError: null, sendQueue: Promise.resolve(), sendQueueLength: 0, lastSendAt: 0 }; }
+function createSessionState(sessionId) { return { id: safeSessionId(sessionId), sock: null, connected: false, qr: null, qrText: null, contacts: new Map(), pendingLidContacts: new Map(), lidToPhone: new Map(), contactsLoading: false, initialSyncDone: false, initialAutoRefreshAttempted: false, starting: false, reconnectTimer: null, refreshPromise: null, resetPromise: null, lastRefreshAt: 0, generation: 0, lastConnectionError: null, pairingTimer: null, pairingExpired: false, pairingDeadline: null, established: false, credsSave: Promise.resolve(), sendQueue: Promise.resolve(), sendQueueLength: 0, lastSendAt: 0 }; }
 function getSession(sessionId) { const id = safeSessionId(sessionId); let state = sessions.get(id); if (!state) { state = createSessionState(id); sessions.set(id, state); } return state; }
 function hasAuthFiles(state) { try { return fs.existsSync(path.join(sessionPath(state.id), "creds.json")); } catch (_) { return false; } }
 function normalizeNumber(value) { return String(value || "").replace(/@s\.whatsapp\.net/g, "").replace(/@c\.us/g, "").replace(/@lid/g, "").replace(/\D/g, ""); }
@@ -208,8 +208,32 @@ function clearSessionMemory(state) {
     state.sendQueueLength = 0;
     state.lastSendAt = 0;
 }
+function stopPairingTimer(state) {
+    if (state.pairingTimer) clearTimeout(state.pairingTimer);
+    state.pairingTimer = null;
+    state.pairingDeadline = null;
+}
+function beginPairing(state) {
+    if (state.connected || state.established || state.pairingTimer || state.pairingExpired) return;
+    state.pairingDeadline = Date.now() + 60000;
+    state.pairingTimer = setTimeout(async () => {
+        if (state.connected || state.established) { stopPairingTimer(state); return; }
+        state.pairingExpired = true;
+        stopPairingTimer(state);
+        if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = null;
+        state.generation += 1;
+        state.lastConnectionError = "pairing_timeout";
+        state.qr = null;
+        state.qrText = null;
+        state.initialSyncDone = false;
+        await destroySocket(state);
+        // Keep credentials until an explicit retry. A status poll never wipes auth.
+    }, 60000);
+}
 async function resetSessionForNewLogin(state, restart = true) {
     if (state.resetPromise) return state.resetPromise;
+    stopPairingTimer(state);
     state.resetPromise = (async () => {
         if (state.reconnectTimer) {
             clearTimeout(state.reconnectTimer);
@@ -219,7 +243,10 @@ async function resetSessionForNewLogin(state, restart = true) {
         // wiping credentials and contact caches.
         state.generation += 1;
         await destroySocket(state);
+        await state.credsSave.catch(() => {});
         await clearAuth(state);
+        state.pairingExpired = false;
+        state.established = false;
         clearSessionMemory(state);
         console.log(`🧹 Session WhatsApp entièrement réinitialisée [${state.id}]`);
         if (restart && !shuttingDown) {
@@ -335,7 +362,7 @@ async function applyChatContact(state, chat) {
     return changed;
 }
 
-async function startSession(state) { if (shuttingDown || state.starting || state.sock) return; state.starting = true; state.generation += 1; const generation = state.generation; try { const dir = sessionPath(state.id); await fs.promises.mkdir(dir, { recursive: true }); const existingAuth = hasAuthFiles(state); console.log(`${existingAuth ? "🔐 SESSION EXISTANTE" : "🆕 AUCUNE SESSION"} [${state.id}] → ${dir}`); console.log(`🔄 Initialisation Baileys [${state.id}]...`); const { state: authState, saveCreds } = await useMultiFileAuthState(dir); const { version } = await fetchLatestWaWebVersion({}); const sock = makeWASocket({ version, auth: authState, printQRInTerminal: false, browser: Browsers.macOS("Safari"), markOnlineOnConnect: true, syncFullHistory: false, connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 30000 }); state.sock = sock; state.lastConnectionError = null; sock.ev.on("creds.update", async () => { if (generation !== state.generation) return; await saveCreds(); }); sock.ev.on("connection.update", async update => { if (generation !== state.generation) return; const { connection, qr, lastDisconnect } = update; if (qr) { state.connected = false; state.initialSyncDone = false; await generateQR(state, qr); } if (connection === "open") { state.connected = true; state.qr = null; state.qrText = null; state.initialSyncDone = true; state.lastConnectionError = null; await resolvePendingLids(state); console.log(`✅ WHATSAPP CONNECTÉ [${state.id}]`); } if (connection === "close") { state.connected = false; const code = statusCodeFrom(lastDisconnect?.error); state.lastConnectionError = code ?? null; console.log(`❌ CONNEXION WHATSAPP FERMÉE [${state.id}] — code ${code ?? "inconnu"}`); if (code === DisconnectReason.loggedOut) { console.log(`🚪 Logout réel détecté → réinitialisation complète [${state.id}]`); await resetSessionForNewLogin(state, true); return; } if (!shuttingDown && generation === state.generation) { if (state.reconnectTimer) clearTimeout(state.reconnectTimer); state.reconnectTimer = setTimeout(async () => { state.reconnectTimer = null; await destroySocket(state); if (!shuttingDown) startSession(state).catch(error => console.error(`❌ Reconnexion [${state.id}] :`, error)); }, 3000); console.log(`🔄 Reconnexion automatique dans 3 secondes... [${state.id}]`); } } }); sock.ev.on("lid-mapping.update", async update => {
+async function startSession(state) { if (shuttingDown || state.starting || state.sock || state.pairingExpired) return; state.starting = true; state.generation += 1; const generation = state.generation; try { const dir = sessionPath(state.id); await fs.promises.mkdir(dir, { recursive: true }); const existingAuth = hasAuthFiles(state); console.log(`${existingAuth ? "🔐 SESSION EXISTANTE" : "🆕 AUCUNE SESSION"} [${state.id}] → ${dir}`); console.log(`🔄 Initialisation Baileys [${state.id}]...`); const { state: authState, saveCreds } = await useMultiFileAuthState(dir); if (!state.pairingTimer) state.established = state.established || !!authState.creds.registered; const { version } = await fetchLatestWaWebVersion({}); if (generation !== state.generation || state.pairingExpired) return; const sock = makeWASocket({ version, auth: authState, printQRInTerminal: false, browser: Browsers.macOS("Safari"), markOnlineOnConnect: true, syncFullHistory: false, connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 30000 }); state.sock = sock; state.lastConnectionError = null; sock.ev.on("creds.update", async () => { if (generation !== state.generation) return; state.credsSave = state.credsSave.then(() => generation === state.generation ? saveCreds() : undefined); await state.credsSave; }); sock.ev.on("connection.update", async update => { if (generation !== state.generation) return; const { connection, qr, lastDisconnect } = update; if (qr) { state.connected = false; state.initialSyncDone = false; beginPairing(state); await generateQR(state, qr); } if (connection === "open") { stopPairingTimer(state); state.established = true; state.pairingExpired = false; state.connected = true; state.qr = null; state.qrText = null; state.initialSyncDone = true; state.lastConnectionError = null; await resolvePendingLids(state); console.log(`✅ WHATSAPP CONNECTÉ [${state.id}]`); } if (connection === "close") { state.connected = false; const code = statusCodeFrom(lastDisconnect?.error); state.lastConnectionError = code ?? null; console.log(`❌ CONNEXION WHATSAPP FERMÉE [${state.id}] — code ${code ?? "inconnu"}`); if (code === DisconnectReason.loggedOut) { console.log(`🚪 Logout réel détecté → réinitialisation complète [${state.id}]`); const wasEstablished = state.established; await resetSessionForNewLogin(state, wasEstablished); if (!wasEstablished) { state.pairingExpired = true; state.lastConnectionError = "pairing_failed"; } return; } if (!shuttingDown && generation === state.generation) { if (state.reconnectTimer) clearTimeout(state.reconnectTimer); state.reconnectTimer = setTimeout(async () => { state.reconnectTimer = null; await destroySocket(state); if (!shuttingDown) startSession(state).catch(error => console.error(`❌ Reconnexion [${state.id}] :`, error)); }, 3000); console.log(`🔄 Reconnexion automatique dans 3 secondes... [${state.id}]`); } } }); sock.ev.on("lid-mapping.update", async update => {
     if (generation !== state.generation) return;
     await applyLidMapping(state, update);
 });
@@ -354,11 +381,11 @@ sock.ev.on("contacts.update", async () => {
     if (generation !== state.generation) return;
 });
 
-console.log(`✅ Socket Baileys créé [${state.id}].`); } catch (error) { state.connected = false; state.sock = null; console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error); if (!shuttingDown) setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000); } finally { state.starting = false; } }
-async function refreshContacts(state) { if (!state.connected || !state.sock) throw new Error("WhatsApp n'est pas connecté."); if (state.refreshPromise) return state.refreshPromise; const now = Date.now(); const elapsed = now - state.lastRefreshAt; if (state.lastRefreshAt && elapsed < REFRESH_COOLDOWN_MS) { const retryAfter = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000); const error = new Error(`Actualisation disponible dans ${retryAfter}s.`); error.statusCode = 429; error.retryAfter = retryAfter; throw error; } state.lastRefreshAt = now; state.contactsLoading = true; state.refreshPromise = (async () => { const before = state.contacts.size; if (typeof state.sock.resyncAppState === "function") { try { await state.sock.resyncAppState(["critical_unblock_low", "regular"], true); } catch (error) { console.log(`⚠️ Resync contacts incomplet [${state.id}] : ${error.message}`); } } await sleep(3000); await resolvePendingLids(state); await saveContactsCache(state); const after = state.contacts.size; return { count: after, added: Math.max(0, after - before), previousCount: before, refreshedAt: new Date().toISOString() }; })(); try { return await state.refreshPromise; } finally { state.refreshPromise = null; state.contactsLoading = false; } }
-function publicStatus(state) { const refreshRemaining = state.lastRefreshAt ? Math.max(0, Math.ceil((REFRESH_COOLDOWN_MS - (Date.now() - state.lastRefreshAt)) / 1000)) : 0; return { connected: state.connected, hasQR: !!state.qr, qr: state.qr, contactCount: state.contacts.size, contactsLoading: state.contactsLoading, contactsLoaded: state.contacts.size > 0, initialSyncDone: state.initialSyncDone, starting: state.starting, sessionId: state.id, lastConnectionError: state.lastConnectionError, sendQueueLength: state.sendQueueLength, refreshCooldown: refreshRemaining }; }
+console.log(`✅ Socket Baileys créé [${state.id}].`); } catch (error) { if (generation !== state.generation) return; state.connected = false; state.sock = null; console.error(`❌ Erreur initialisation Baileys [${state.id}] :`, error); if (!shuttingDown && !state.pairingExpired && generation === state.generation) state.reconnectTimer = setTimeout(() => startSession(state).catch(retryError => console.error(`❌ Nouvelle tentative [${state.id}] :`, retryError)), 3000); } finally { state.starting = false; } }
+async function refreshContacts(state) { if (!state.connected || !state.sock) throw new Error("WhatsApp n'est pas connecté."); if (state.refreshPromise) return state.refreshPromise; const now = Date.now(); const elapsed = now - state.lastRefreshAt; if (state.lastRefreshAt && elapsed < REFRESH_COOLDOWN_MS) { const retryAfter = Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000); const error = new Error(`Actualisation disponible dans ${retryAfter}s.`); error.statusCode = 429; error.retryAfter = retryAfter; throw error; } state.lastRefreshAt = now; state.contactsLoading = true; state.refreshPromise = (async () => { const before = state.contacts.size; if (typeof state.sock.resyncAppState === "function") { try { await state.sock.resyncAppState(["critical_unblock_low", "regular"], true); } catch (error) { throw error; } } await sleep(3000); await resolvePendingLids(state); await saveContactsCache(state); const after = state.contacts.size; return { count: after, added: Math.max(0, after - before), previousCount: before, refreshedAt: new Date().toISOString() }; })(); try { return await state.refreshPromise; } finally { state.refreshPromise = null; state.contactsLoading = false; } }
+function publicStatus(state) { const refreshRemaining = state.lastRefreshAt ? Math.max(0, Math.ceil((REFRESH_COOLDOWN_MS - (Date.now() - state.lastRefreshAt)) / 1000)) : 0; return { connected: state.connected, hasQR: !!state.qr, qr: state.qr, contactCount: state.contacts.size, contactsLoading: state.contactsLoading, contactsLoaded: state.contacts.size > 0, initialSyncDone: state.initialSyncDone, starting: state.starting, sessionId: state.id, pairingExpired: state.pairingExpired, pairingDeadline: state.pairingDeadline, lastConnectionError: state.lastConnectionError, sendQueueLength: state.sendQueueLength, refreshCooldown: refreshRemaining }; }
 function sessionFromRequest(req) { return safeSessionId(req.header("x-whatsapp-session") || req.query.sessionId || req.body?.sessionId || DEFAULT_SESSION_ID); }
-app.get("/status", async (req, res) => { const state = getSession(sessionFromRequest(req)); await loadContactsCache(state); if (!state.sock && !state.starting && !shuttingDown) startSession(state).catch(error => console.error(`❌ Impossible de démarrer [${state.id}] :`, error)); res.json(publicStatus(state)); });
+app.get("/status", async (req, res) => { const state = getSession(sessionFromRequest(req)); await loadContactsCache(state); if (!state.sock && !state.starting && !shuttingDown && !state.pairingExpired && !state.resetPromise) startSession(state).catch(error => console.error(`❌ Impossible de démarrer [${state.id}] :`, error)); res.json(publicStatus(state)); });
 app.get("/contacts", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
     await loadContactsCache(state);
@@ -376,17 +403,19 @@ app.get("/contacts", async (req, res) => {
             console.log(`🔄 Synchronisation contacts automatique [${state.id}]`);
             await refreshContacts(state);
         } catch (error) {
-            console.log(`⚠️ Synchronisation contacts automatique incomplète [${state.id}] : ${error.message}`);
+            state.initialAutoRefreshAttempted = false;
+            return res.status(503).json({ error: "La synchronisation des contacts a échoué. Réessayez.", ...publicStatus(state) });
         }
     }
 
+    if (!state.connected) return res.status(503).json({ error: "WhatsApp a été déconnecté pendant la synchronisation.", ...publicStatus(state) });
     res.json(sortedContacts(state));
 });
 app.get("/whatsapp/qr", (req, res) => { const state = getSession(sessionFromRequest(req)); if (!state.qr) return res.status(404).json({ error: "Aucun QR code disponible." }); res.json({ qr: state.qr }); });
 app.post("/refresh", async (req, res) => { const state = getSession(sessionFromRequest(req)); try { res.json({ success: true, ...(await refreshContacts(state)) }); } catch (error) { res.status(error.statusCode || 400).json({ success: false, error: error.message, retryAfter: error.retryAfter || 0, ...publicStatus(state) }); } });
 app.post("/send", async (req, res) => { const state = getSession(sessionFromRequest(req)); const { to, message } = req.body || {}; if (!message || !String(message).trim()) return res.status(400).json({ error: "Message vide." }); if (!to) return res.status(400).json({ error: "Numéro de téléphone manquant." }); try { res.json({ success: true, ...(await sendText(state, to, message)) }); } catch (error) { console.error(`❌ Envoi WhatsApp échoué [${state.id}] :`, error.message); res.status(400).json({ success: false, error: error.message }); } });
 app.get("/send/status", (req, res) => { const state = getSession(sessionFromRequest(req)); res.json({ connected: state.connected, queueLength: state.sendQueueLength, lastSendAt: state.lastSendAt || null }); });
-app.post("/session/start", async (req, res) => { const state = getSession(sessionFromRequest(req)); startSession(state).catch(error => console.error(`❌ Erreur démarrage [${state.id}] :`, error)); res.json({ success: true, ...publicStatus(state) }); });
+app.post("/session/start", async (req, res) => { const state = getSession(sessionFromRequest(req)); if (state.pairingExpired && !state.connected && !state.established) await resetSessionForNewLogin(state, false); startSession(state).catch(error => console.error(`❌ Erreur démarrage [${state.id}] :`, error)); res.json({ success: true, ...publicStatus(state) }); });
 app.post("/session/pair-code", async (req, res) => {
     const state = getSession(sessionFromRequest(req));
     const phone = normalizeSendNumber(req.body?.phone);
@@ -402,6 +431,9 @@ app.post("/session/pair-code", async (req, res) => {
         startSession(state).catch(error => console.error(`❌ Erreur démarrage pairing [${state.id}] :`, error));
     }
 
+    if (state.pairingExpired && !state.established) await resetSessionForNewLogin(state, false);
+    beginPairing(state);
+    if (!state.sock) startSession(state).catch(error => console.error(error.message));
     const deadline = Date.now() + 12000;
     while (Date.now() < deadline && !state.connected && (!state.sock || !state.qrText)) {
         await sleep(250);
@@ -415,7 +447,15 @@ app.post("/session/pair-code", async (req, res) => {
     }
 
     try {
-        const code = await state.sock.requestPairingCode(phone);
+        const generation = state.generation;
+        let codeTimer;
+        let code;
+        try {
+            code = await Promise.race([state.sock.requestPairingCode(phone), new Promise((_, reject) => {
+                codeTimer = setTimeout(() => reject(new Error("Génération du code expirée.")), 15000);
+            })]);
+        } finally { clearTimeout(codeTimer); }
+        if (generation !== state.generation || state.pairingExpired) throw new Error("Tentative expirée.");
         if (!code) throw new Error("Aucun code reçu.");
         console.log(`🔗 Code de liaison WhatsApp généré [${state.id}]`);
         return res.json({ success: true, connected: false, code: String(code) });
