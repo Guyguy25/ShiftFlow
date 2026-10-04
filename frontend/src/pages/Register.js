@@ -17,6 +17,7 @@ export default function Register() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState("");
   const [phoneError, setPhoneError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -26,7 +27,12 @@ export default function Register() {
   const latest = useRef(null);
   const queue = useRef(Promise.resolve());
   const previousStep = useRef(null);
-  const setF = key => e => setForm(prev => ({ ...prev, [key]: e.target.value }));
+  const setF = key => e => {
+    const value = e.target.value;
+    setForm(prev => ({ ...prev, [key]: value }));
+    if (key === "email") setEmailError("");
+    if (key === "phone") setPhoneError("");
+  };
   const safeFormKey = JSON.stringify({ name: form.name, agency_name: form.agency_name, email: form.email, phone: form.phone });
   const answersKey = JSON.stringify(answers);
   useEffect(() => {
@@ -62,6 +68,11 @@ export default function Register() {
     return () => window.removeEventListener("pagehide", flush);
   }, []);
   useEffect(() => { heading.current?.focus(); setError(""); }, [step]);
+  const validateEmail = raw => {
+    const value = (raw || "").trim();
+    const emailPattern = /^[^\s@]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+    return emailPattern.test(value) ? "" : "Email invalide.";
+  };
   const validatePhone = raw => {
     const value = raw.replace(/[\s.\-()]/g, "");
     return /^(?:0[1-9]\d{8}|\+33[1-9]\d{8}|\+(?!33)\d{10,15})$/.test(value) ? "" : "Indiquez un numéro valide, par exemple 0612345678.";
@@ -84,7 +95,13 @@ export default function Register() {
   const advance = e => {
     e.preventDefault();
     if (step === 0 && (!form.name.trim() || !form.agency_name.trim())) { setError("Renseignez votre nom et celui de votre organisation."); return; }
-    if (step === 1) { const message = validatePhone(form.phone); setPhoneError(message); if (message) return; }
+    if (step === 1) {
+      const eMessage = validateEmail(form.email);
+      const pMessage = validatePhone(form.phone);
+      setEmailError(eMessage);
+      setPhoneError(pMessage);
+      if (eMessage || pMessage) return;
+    }
     setStep(s => Math.min(2, s + 1));
   };
   const readCookie = (name) => {
@@ -111,7 +128,11 @@ export default function Register() {
     e.preventDefault();
     setError("");
     if (!form.name.trim() || !form.agency_name.trim()) { setStep(0); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) || validatePhone(form.phone)) { setStep(1); return; }
+    const eErr = validateEmail(form.email);
+    const contactPhoneError = validatePhone(form.phone);
+    setEmailError(eErr);
+    setPhoneError(contactPhoneError);
+    if (eErr || contactPhoneError) { setStep(1); return; }
     if (!acceptedTerms) {
       setError("Vous devez accepter les Conditions et la Politique de confidentialité pour créer votre compte.");
       return;
@@ -144,7 +165,13 @@ export default function Register() {
       try { localStorage.removeItem(DRAFT_KEY); } catch {}
       nav("/app/dashboard");
     } catch (err) {
-      setError(formatApiError(err.response?.data?.detail) || err.message);
+      const message = formatApiError(err.response?.data?.detail) || err.message || "Impossible de créer le compte.";
+      const normalized = String(message).toLowerCase();
+      if (normalized.includes("email") && (normalized.includes("invalid") || normalized.includes("valide") || normalized.includes("address"))) {
+        setEmailError("Email invalide.");
+        setError("");
+        setStep(1);
+      } else setError(message);
     } finally { setLoading(false); }
   };
 
@@ -170,10 +197,10 @@ export default function Register() {
         <p className="mt-3 text-sm leading-relaxed text-gray-500">{step === 0 ? "Deux informations pour personnaliser votre espace." : step === 1 ? "Ces coordonnées seront celles de votre compte." : step === 2 ? "Choisissez un mot de passe pour protéger votre compte." : "Adaptons ShiftFlow à vos besoins. Vous pouvez passer ces questions."}</p>
         {initial && Object.values(initial.form || {}).some(value => typeof value === "string" && value.trim()) && step === initial.step && <p className="mt-3 text-sm text-blue-700">Bon retour ! Votre saisie a été restaurée, sauf le mot de passe.</p>}
         <p className="mt-3 text-sm text-gray-600">Sans carte bancaire. Aucun message envoyé à vos intervenants pendant l’inscription.</p>
-        <form onSubmit={step === 2 ? submit : advance} className="mt-6" data-testid="register-form" autoComplete="on">
+        <form onSubmit={step === 2 ? submit : advance} noValidate className="mt-6" data-testid="register-form" autoComplete="on">
           <div className="space-y-5">
             {step === 0 && <>{input("name", "Votre nom", { autoComplete: "name", placeholder: "Camille Martin" })}{input("agency_name", "Nom de votre entreprise ou de votre structure", { autoComplete: "organization", placeholder: "Ma structure" })}</>}
-            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "username", placeholder: "vous@entreprise.fr" })}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
+            {step === 1 && <>{input("email", "Adresse e-mail professionnelle", { type: "email", autoComplete: "username", placeholder: "vous@entreprise.fr", "aria-describedby": emailError ? "email-error" : undefined })}{emailError && <p id="email-error" role="alert" className="text-sm text-red-600">{emailError}</p>}{input("phone", "Numéro de téléphone", { type: "tel", autoComplete: "tel", placeholder: "06 12 34 56 78", "aria-describedby": phoneError ? "phone-error" : undefined })}{phoneError && <p id="phone-error" role="alert" className="text-sm text-red-600">{phoneError}</p>}</>}
             {step === 2 && <>
               <input
                 type="email"
