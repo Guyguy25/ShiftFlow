@@ -68,6 +68,11 @@ export default function Register() {
     return () => window.removeEventListener("pagehide", flush);
   }, []);
   useEffect(() => { heading.current?.focus(); setError(""); }, [step]);
+  const validateEmail = raw => {
+    const value = (raw || "").trim();
+    const emailPattern = /^[^\s@]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+    return emailPattern.test(value) ? "" : "Email invalide.";
+  };
   const validatePhone = raw => {
     const value = raw.replace(/[\s.\-()]/g, "");
     return /^(?:0[1-9]\d{8}|\+33[1-9]\d{8}|\+(?!33)\d{10,15})$/.test(value) ? "" : "Indiquez un numéro valide, par exemple 0612345678.";
@@ -123,7 +128,11 @@ export default function Register() {
     e.preventDefault();
     setError("");
     if (!form.name.trim() || !form.agency_name.trim()) { setStep(0); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) || validatePhone(form.phone)) { setStep(1); return; }
+    const eErr = validateEmail(form.email);
+    const contactPhoneError = validatePhone(form.phone);
+    setEmailError(eErr);
+    setPhoneError(contactPhoneError);
+    if (eErr || contactPhoneError) { setStep(1); return; }
     if (!acceptedTerms) {
       setError("Vous devez accepter les Conditions et la Politique de confidentialité pour créer votre compte.");
       return;
