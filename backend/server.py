@@ -1276,6 +1276,11 @@ async def public_accept(token: str):
         return {"ok": False, "status": "cancelled", "reason": "Équipe déjà complète"}
     await db.mission_workers.update_one({"id": slot["id"]},
                                         {"$set": {"status": "confirmed", "responded_at": iso(now_utc())}})
+    agency = await db.users.find_one({"id": slot["agency_id"]}, {"_id": 0}) if slot.get("agency_id") else None
+    if not agency and mission:
+        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+    if agency:
+        await record_activation_event(agency, "first_invite_accepted", metadata={"mission_id": slot["mission_id"], "slot_id": slot["id"]})
     await update_shift_and_mission_status(slot["shift_id"])
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
@@ -2128,35 +2133,48 @@ def _parse_iso(value):
 
 @api.get("/admin/dashboard")
 async def admin_dashboard(owner=Depends(require_owner)):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(5000)
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(None)
     customer_users = [u for u in users if u.get("role") != "owner"]
     user_ids = [u["id"] for u in customer_users]
     now = now_utc()
 
     mission_rows = await db.missions.aggregate([
         {"$group": {"_id": "$agency_id", "count": {"$sum": 1}}}
-    ]).to_list(5000)
+    ]).to_list(None)
     worker_rows = await db.workers.aggregate([
         {"$group": {"_id": "$agency_id", "count": {"$sum": 1}}}
-    ]).to_list(5000)
+    ]).to_list(None)
     mission_counts = {row["_id"]: row["count"] for row in mission_rows if row.get("_id")}
     worker_counts = {row["_id"]: row["count"] for row in worker_rows if row.get("_id")}
 
     tracked_events = [
         "mission_created", "worker_added", "whatsapp_connected",
-        "cascade_started", "first_cascade_sent", "mission_filled",
+        "cascade_started", "first_cascade_sent", "first_invite_accepted", "mission_filled",
         "subscription_started",
     ]
     events = await db.activation_events.find(
         {"event_name": {"$in": tracked_events}},
         {"_id": 0, "user_id": 1, "agency_id": 1, "event_name": 1, "occurred_at": 1},
-    ).to_list(50000)
+    ).to_list(None)
     events_by_user = {}
     for event in events:
         uid = event.get("user_id") or event.get("agency_id")
         if not uid:
             continue
         events_by_user.setdefault(uid, {})[event["event_name"]] = event.get("occurred_at")
+
+    # Recover historical real sends without fabricating or re-emitting events.
+    sent_rows = await db.notifications.aggregate([
+        {"$match": {"channel": "whatsapp", "kind": "invite", "status": "sent"}},
+        {"$lookup": {"from": "missions", "localField": "mission_id", "foreignField": "id", "as": "mission"}},
+        {"$unwind": "$mission"},
+        {"$group": {"_id": "$mission.agency_id"}},
+    ]).to_list(None)
+    for row in sent_rows:
+        if row.get("_id"):
+            history = events_by_user.setdefault(row["_id"], {})
+            history.setdefault("first_cascade_sent", None)
+            history.setdefault("whatsapp_connected", None)
 
     signup_series = []
     for offset in range(29, -1, -1):
@@ -2174,8 +2192,8 @@ async def admin_dashboard(owner=Depends(require_owner)):
     signed_up = len(customer_users)
     funnel = [
         {"key": "sign_up", "label": "Inscrits", "count": signed_up},
-        {"key": "mission_created", "label": "1re mission créée", "count": event_count("mission_created")},
-        {"key": "worker_added", "label": "Intervenants ajoutés", "count": event_count("worker_added")},
+        {"key": "mission_created", "label": "1re mission créée", "count": sum(1 for uid in user_ids if "mission_created" in events_by_user.get(uid, {}) or mission_counts.get(uid, 0) > 0)},
+        {"key": "worker_added", "label": "Intervenants ajoutés", "count": sum(1 for uid in user_ids if "worker_added" in events_by_user.get(uid, {}) or worker_counts.get(uid, 0) > 0)},
         {"key": "whatsapp_connected", "label": "WhatsApp connecté", "count": event_count("whatsapp_connected")},
         {"key": "first_cascade_sent", "label": "1re invitation envoyée", "count": event_count("first_cascade_sent")},
         {"key": "subscription_started", "label": "Abonnement démarré", "count": event_count("subscription_started")},

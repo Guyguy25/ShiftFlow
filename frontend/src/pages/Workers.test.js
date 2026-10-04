@@ -51,3 +51,23 @@ test("ordinary team management stays on the team page when closing", async () =>
   expect(mockNavigate).not.toHaveBeenCalled();
   expect(host.querySelector("h3")).toBeNull();
 });
+
+test("an expired mobile link stops waiting and does not restart from polling", async () => {
+  mockParams = new URLSearchParams({ connect: "1", returnTo: destination });
+  api.get.mockImplementation(url => Promise.resolve({ data: url === "/whatsapp/status" ? { connected: false, pairingExpired: true, hasQR: false, starting: false } : [] }));
+  await mount();
+  expect(host.textContent).toContain("La connexion n’a pas pu être finalisée");
+  expect(host.textContent).toContain("Obtenir mon code");
+  expect(host.textContent).not.toContain("En attente de la connexion WhatsApp");
+  expect(api.post).not.toHaveBeenCalled();
+});
+test("failed contact synchronization never shows a successful empty address book", async () => {
+  mockParams = new URLSearchParams({ connect: "1", returnTo: destination });
+  api.get.mockImplementation(url => url === "/whatsapp/contacts" ? Promise.reject({ response: { status: 503 } }) : Promise.resolve({ data: url === "/whatsapp/status" ? { connected: true } : [] }));
+  const log = jest.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await mount();
+    expect(host.textContent).toContain("Impossible de charger vos contacts");
+    expect(host.textContent).not.toContain("0 contacts disponibles");
+  } finally { log.mockRestore(); }
+});

@@ -67,7 +67,7 @@ export default function GettingStarted({ children }) {
   return <ActivationContext.Provider value={context}>
     {children}
     <OnboardingCoach />
-    <Popover.Root open={expanded} onOpenChange={value => {
+    {!state?.summary?.activation?.first_invite_sent && <Popover.Root open={expanded} onOpenChange={value => {
       setExpanded(value);
       if (value) setSelected(onPageTask?.id || nextTask?.id || null);
       else setSelected(null);
@@ -110,6 +110,6 @@ export default function GettingStarted({ children }) {
           <button onClick={() => { setExpanded(false); window.dispatchEvent(new CustomEvent("shiftflow:replay-guide", { detail: { mode: "sections" } })); }} className="min-h-11 text-sm text-gray-600 underline">Découvrir les sections</button>
         </div>
       </Popover.Content></Popover.Portal>
-    </Popover.Root>
+    </Popover.Root>}
   </ActivationContext.Provider>;
 }

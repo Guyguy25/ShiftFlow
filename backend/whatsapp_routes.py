@@ -475,7 +475,7 @@ async def whatsapp_status(request: Request, user=Depends(get_current_user)):
 async def whatsapp_contacts(user=Depends(get_current_user)):
     data = await whatsapp_request("GET", "/contacts", user)
     if not isinstance(data, list):
-        return []
+        raise HTTPException(status_code=503, detail="La synchronisation WhatsApp n’a pas abouti. Réessayez.")
     return [c for c in data if usable_contact(c)]
 
 
