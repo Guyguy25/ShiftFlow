@@ -377,7 +377,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
             {filteredContacts.length === 0 && <div className="p-8 text-center text-gray-500">Aucun contact trouvé.</div>}
             {filteredContacts.map((contact) => {
               const checked = selected.has(contact.id);
-              return <label data-onboarding={selected.size === 0 ? "contacts" : undefined} key={contact.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}>
+              return <label data-onboarding={!mobile && selected.size === 0 ? "contacts" : undefined} key={contact.id} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}>
                 <input type="checkbox" checked={checked} onChange={() => toggle(contact.id)} className="w-4 h-4 accent-blue-600" />
                 <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{(contact.name || "?").slice(0, 2).toUpperCase()}</div>
                 <div className="flex-1 min-w-0">
