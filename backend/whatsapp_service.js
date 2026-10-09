@@ -458,7 +458,14 @@ app.post("/session/pair-code", async (req, res) => {
         if (generation !== state.generation || state.pairingExpired) throw new Error("Tentative expirée.");
         if (!code) throw new Error("Aucun code reçu.");
         console.log(`🔗 Code de liaison WhatsApp généré [${state.id}]`);
-        return res.json({ success: true, connected: false, code: String(code) });
+        return res.json({
+            success: true,
+            connected: false,
+            code: String(code),
+            // The login deadline may already be running before code generation.
+            pairingDeadline: state.pairingDeadline,
+            serverTime: Date.now(),
+        });
     } catch (error) {
         console.error(`❌ Génération code de liaison impossible [${state.id}] : ${error.message}`);
         return res.status(400).json({ success: false, error: "Impossible de générer le code de liaison WhatsApp. Réessayez dans quelques secondes." });

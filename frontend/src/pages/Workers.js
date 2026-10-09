@@ -48,12 +48,21 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
   const [refreshing, setRefreshing] = useState(false);
   const [refreshCooldown, setRefreshCooldown] = useState(0);
   const [pairPhone, setPairPhone] = useState("");
-  const [pairCode, setPairCode] = useState("");
+  const [pairAttempt, setPairAttempt] = useState(null);
+  const [pairNow, setPairNow] = useState(Date.now);
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState("");
   const [resettingConnection, setResettingConnection] = useState(false);
   const refreshLockRef = useRef(false);
   const sessionStartLockRef = useRef(false);
+  const pairRequestVersionRef = useRef(0);
+  const pairRequestPendingRef = useRef(false);
+  const pairSecondsLeft = pairAttempt?.expiresAt != null ? Math.max(0, Math.ceil((pairAttempt.expiresAt - pairNow) / 1000)) : null;
+  const pairExpired = !status?.connected && (status?.pairingExpired || pairSecondsLeft === 0);
+  const pairCode = pairExpired ? "" : pairAttempt?.code || "";
+  const pairFeedback = pairError || (pairExpired ? status?.lastConnectionError === "pairing_failed"
+    ? "La connexion WhatsApp a échoué. Générez un nouveau code pour réessayer."
+    : "Le délai de connexion est écoulé. Ce code a expiré : générez un nouveau code pour réessayer." : "");
 
   const startWhatsAppSession = useCallback(async () => {
     if (sessionStartLockRef.current) return;
@@ -70,8 +79,12 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
   }, []);
 
   const fetchStatusAndContacts = useCallback(async () => {
+    if (pairRequestPendingRef.current) return;
+    const pairRequestVersion = pairRequestVersionRef.current;
     try {
       const { data } = await api.get("/whatsapp/status");
+      // A status request from the previous attempt must not erase a new code.
+      if (pairRequestVersion !== pairRequestVersionRef.current) return;
       setStatus(data);
       setConnectionError("");
       if (data.refreshCooldown > 0) setRefreshCooldown(data.refreshCooldown);
@@ -81,13 +94,13 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
         setContactsReady(false);
         setLoading(false);
         if (data.pairingExpired) {
-          setPairCode("");
-          setPairError("La connexion n’a pas pu être finalisée. Générez un nouveau code pour réessayer.");
           return;
         }
-        if (!data.hasQR && !data.starting) await startWhatsAppSession();
+        const localAttemptExpired = pairAttempt?.expiresAt != null && Date.now() >= pairAttempt.expiresAt;
+        if (!data.hasQR && !data.starting && !localAttemptExpired) await startWhatsAppSession();
         return;
       }
+      setPairAttempt(null);
       setPairError("");
       setLoading(false);
       try {
@@ -101,35 +114,50 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
         setContactsReady(false);
       }
     } catch (err) {
+      if (pairRequestVersion !== pairRequestVersionRef.current) return;
       console.error("Erreur statut WhatsApp :", err);
       setConnectionError("Impossible de vérifier la connexion. Réessayez dans quelques instants.");
       const statusCode = err.response?.status;
       if (statusCode !== 400 && statusCode !== 503) toast.error(formatApiError(err.response?.data?.detail) || "Impossible de contacter WhatsApp.");
       setLoading(false);
     }
-  }, [startWhatsAppSession]);
+  }, [startWhatsAppSession, pairAttempt]);
 
   const requestPairCode = async () => {
-    if (pairing) return;
+    if (pairRequestPendingRef.current) return;
     const phone = pairPhone.trim();
     if (!phone) {
       setPairError("Renseignez le numéro utilisé sur WhatsApp.");
       return;
     }
     setPairing(true);
+    pairRequestPendingRef.current = true;
+    pairRequestVersionRef.current += 1;
     setPairError("");
-    setPairCode("");
+    setPairAttempt(null);
     try {
       const { data } = await api.post("/whatsapp/session/pair-code", { phone });
       if (data?.connected) {
+        pairRequestPendingRef.current = false;
+        pairRequestVersionRef.current += 1;
         await fetchStatusAndContacts();
         return;
       }
       if (!data?.code) throw new Error("Aucun code reçu.");
-      setPairCode(String(data.code));
+      const receivedAt = Date.now();
+      // Use the server's remaining time, including time spent preparing the code.
+      // Do not assume 60 seconds from receipt or rely on the phone's clock setting.
+      const expiresAt = typeof data.pairingDeadline === "number" && typeof data.serverTime === "number"
+        ? receivedAt + Math.max(0, data.pairingDeadline - data.serverTime) : null;
+      setPairNow(receivedAt);
+      setPairAttempt({ code: String(data.code), expiresAt });
+      setStatus(previous => ({ ...previous, connected: false, pairingExpired: false, lastConnectionError: null }));
+      setConnectionError("");
     } catch (err) {
       setPairError(formatApiError(err.response?.data?.detail || err.response?.data?.error) || "Impossible de générer le code. Réessayez dans quelques secondes.");
     } finally {
+      pairRequestVersionRef.current += 1;
+      pairRequestPendingRef.current = false;
       setPairing(false);
     }
   };
@@ -169,7 +197,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
       setSelected(new Set());
       setContactsReady(false);
       setRefreshCooldown(0);
-      setPairCode("");
+      setPairAttempt(null);
       setPairError("");
       setStatus({ connected: false, hasQR: false, starting: false });
       toast.success("Connexion WhatsApp réinitialisée. Reconnectez votre compte.");
@@ -184,6 +212,21 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
   useEffect(() => {
     fetchStatusAndContacts();
   }, [fetchStatusAndContacts, startWhatsAppSession]);
+
+  useEffect(() => {
+    if (pairAttempt?.expiresAt == null || status?.connected) return undefined;
+    const updateCountdown = () => setPairNow(Date.now());
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    // Mobile browsers suspend timers while the user enters the code in WhatsApp.
+    document.addEventListener("visibilitychange", updateCountdown);
+    window.addEventListener("focus", updateCountdown);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", updateCountdown);
+      window.removeEventListener("focus", updateCountdown);
+    };
+  }, [pairAttempt, status?.connected]);
 
   useEffect(() => {
     if (refreshCooldown <= 0) return undefined;
@@ -255,7 +298,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
       {status?.pairingExpired && !mobile && <div role="alert" className="mt-4 text-sm text-red-700">La connexion n’a pas pu être finalisée.<button type="button" onClick={startWhatsAppSession} className="block min-h-11 underline">Générer un nouveau QR code</button></div>}
       {connectionError && <div role="alert" className="mt-4 text-sm text-red-700">{connectionError}<button type="button" onClick={fetchStatusAndContacts} className="block min-h-11 underline">Réessayer</button></div>}
       {loading && !status && <p className="mt-4 text-sm text-gray-500" role="status">Vérification de la connexion…</p>}
-      {!loading && !connectionError && !status?.connected && <div className="mt-5">
+      {!loading && (!connectionError || mobile) && !status?.connected && <div className="mt-5">
         {mobile ? <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="flex items-center gap-3">
@@ -282,21 +325,27 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
                 type="button"
                 onClick={requestPairCode}
                 disabled={pairing || startingSession}
-                className="mt-3 w-full h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold disabled:opacity-50"
+                className="mt-3 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
               >
-                {pairing ? "Génération du code…" : "Obtenir mon code"}
+                {pairing ? "Génération du code…" : pairExpired || pairError ? "Générer un nouveau code" : "Obtenir mon code"}
               </button>
             </> : <div className="mt-5">
               <div className="text-xs uppercase tracking-widest font-bold text-gray-500 text-center">Votre code de liaison</div>
               <div className="mt-2 rounded-xl border-2 border-green-200 bg-white px-4 py-4 text-center font-mono text-2xl font-bold tracking-[0.18em] text-gray-950 break-all">
                 {pairCode}
               </div>
-              <button type="button" onClick={() => { setPairCode(""); setPairError(""); }} className="mt-2 w-full text-sm font-medium text-blue-700">
+              {pairSecondsLeft != null && <div className="mt-3 text-center">
+                <p role="timer" aria-live="off" className="text-sm font-semibold text-blue-800">
+                  Expire dans {Math.floor(pairSecondsLeft / 60)}:{String(pairSecondsLeft % 60).padStart(2, "0")}
+                </p>
+                <p className="mt-1 text-xs text-gray-600">Saisissez ce code avant la fin du compte à rebours. À expiration, générez un nouveau code.</p>
+              </div>}
+              <button type="button" onClick={() => { setPairAttempt(null); setPairError(""); }} className="mt-2 w-full min-h-11 text-sm font-medium text-blue-700">
                 Utiliser un autre numéro
               </button>
             </div>}
 
-            {pairError && <div role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pairError}</div>}
+            {pairFeedback && !pairing && <div role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pairFeedback}</div>}
           </div>
 
           <div>
