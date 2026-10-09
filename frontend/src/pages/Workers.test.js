@@ -1,6 +1,6 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import Workers from "./Workers";
+import Workers, { WhatsAppImportModal } from "./Workers";
 import { api } from "../lib/api";
 
 const mockNavigate = jest.fn();
@@ -53,13 +53,27 @@ test("ordinary team management stays on the team page when closing", async () =>
   expect(host.querySelector("h3")).toBeNull();
 });
 
-test("an expired mobile link stops waiting and does not restart from polling", async () => {
+test.each(["pairing_timeout", "pairing_failed"])("a previous %s never shows a code error before requesting a mobile code", async lastConnectionError => {
+  jest.useFakeTimers();
   mockParams = new URLSearchParams({ connect: "1", returnTo: destination });
-  api.get.mockImplementation(url => Promise.resolve({ data: url === "/whatsapp/status" ? { connected: false, pairingExpired: true, hasQR: false, starting: false } : [] }));
+  api.get.mockImplementation(url => Promise.resolve({ data: url === "/whatsapp/status" ? { connected: false, pairingExpired: true, hasQR: false, starting: false, lastConnectionError } : [] }));
   await mount();
-  expect(host.textContent).toContain("Le délai de connexion est écoulé");
-  expect(host.textContent).toContain("Générer un nouveau code");
+  await advance(60000);
+  expect(host.querySelector("#whatsapp-pair-phone").value).toBe("");
+  expect(host.textContent).toContain("Obtenir mon code");
+  expect(host.textContent).not.toContain("Générer un nouveau code");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(host.textContent).not.toContain("En attente de la connexion WhatsApp");
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+test("validating an empty phone field does not label the first code as a new code", async () => {
+  mockParams = new URLSearchParams({ connect: "1", returnTo: destination });
+  await mount();
+  await click("Obtenir mon code");
+  expect(host.querySelector('[role="alert"]').textContent).toContain("Renseignez le numéro utilisé sur WhatsApp");
+  expect(host.textContent).toContain("Obtenir mon code");
+  expect(host.textContent).not.toContain("Générer un nouveau code");
   expect(api.post).not.toHaveBeenCalled();
 });
 
@@ -80,6 +94,21 @@ const mountMobilePairing = async (remainingMs = 60000) => {
   await click("Obtenir mon code");
 };
 const advance = async ms => act(async () => jest.advanceTimersByTime(ms));
+
+test("reopening WhatsApp after an expired code shows a fresh phone form without the old error", async () => {
+  await mountMobilePairing(1000);
+  await advance(1000);
+  expect(host.textContent).toContain("Ce code a expiré");
+  await act(async () => root.render(null));
+  api.get.mockResolvedValue({ data: { connected: false, hasQR: false, starting: false, pairingExpired: true, lastConnectionError: "pairing_timeout" } });
+  await act(async () => root.render(<WhatsAppImportModal onClose={() => {}} onDone={() => {}} onQuota={() => {}} inline />));
+  expect(host.querySelector("#whatsapp-pair-phone").value).toBe("");
+  expect(host.textContent).toContain("Obtenir mon code");
+  expect(host.textContent).not.toContain("Générer un nouveau code");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.querySelector('[role="timer"]')).toBeNull();
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
 
 test("the mobile countdown uses the existing server deadline, including preparation time and clock skew", async () => {
   await mountMobilePairing(23000);

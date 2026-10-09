@@ -58,7 +58,8 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
   const pairRequestVersionRef = useRef(0);
   const pairRequestPendingRef = useRef(false);
   const pairSecondsLeft = pairAttempt?.expiresAt != null ? Math.max(0, Math.ceil((pairAttempt.expiresAt - pairNow) / 1000)) : null;
-  const pairExpired = !status?.connected && (status?.pairingExpired || pairSecondsLeft === 0);
+  // A server timeout can belong to an earlier visit or to QR preparation.
+  const pairExpired = !!pairAttempt && !status?.connected && (status?.pairingExpired || pairSecondsLeft === 0);
   const pairCode = pairExpired ? "" : pairAttempt?.code || "";
   const pairFeedback = pairError || (pairExpired ? status?.lastConnectionError === "pairing_failed"
     ? "La connexion WhatsApp a échoué. Générez un nouveau code pour réessayer."
@@ -327,7 +328,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
                 disabled={pairing || startingSession}
                 className="mt-3 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
               >
-                {pairing ? "Génération du code…" : pairExpired || pairError ? "Générer un nouveau code" : "Obtenir mon code"}
+                {pairing ? "Génération du code…" : pairExpired ? "Générer un nouveau code" : "Obtenir mon code"}
               </button>
             </> : <div className="mt-5">
               <div className="text-xs uppercase tracking-widest font-bold text-gray-500 text-center">Votre code de liaison</div>
