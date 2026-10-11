@@ -95,6 +95,25 @@ const mountMobilePairing = async (remainingMs = 60000) => {
 };
 const advance = async ms => act(async () => jest.advanceTimersByTime(ms));
 
+test.each([false, true])("code pairing and visible image guidance work with mobile viewport = %s", async mobile => {
+  window.matchMedia = () => ({ matches: mobile });
+  await mountMobilePairing(1000);
+  expect(api.post).toHaveBeenLastCalledWith("/whatsapp/session/pair-code", { phone: "+33612345678" });
+  const guide = host.querySelector('img[src="/phone-link-guide.png"]');
+  expect(guide).toBeTruthy();
+  expect(guide.closest("details")).toBeNull();
+  expect(host.querySelector('[data-testid="whatsapp-qr-guide"]')).toBeNull();
+  expect(host.textContent).toContain("WhatsApp sur votre téléphone");
+  await advance(1000);
+  expect(host.textContent).not.toContain(pairCode);
+  expect(host.textContent).toContain("Générer un nouveau code");
+  expect(host.textContent).not.toContain("Générer un nouveau QR code");
+  expect(host.querySelector('img[src="/phone-link-guide.png"]')).toBeTruthy();
+  api.post.mockResolvedValueOnce({ data: { code: "WXYZ5678" } });
+  await click("Générer un nouveau code");
+  expect(host.textContent).toContain("WXYZ5678");
+});
+
 test("reopening WhatsApp after an expired code shows a fresh phone form without the old error", async () => {
   await mountMobilePairing(1000);
   await advance(1000);

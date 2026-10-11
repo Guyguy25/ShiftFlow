@@ -18,6 +18,7 @@ const shift = { id: "s1", people_needed: 1, confirmed_count: 0, date: "2026-10-0
 let host, root;
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
+  window.matchMedia = () => ({ matches: false });
   jest.clearAllMocks();
   api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom}, {agence} propose {mission} : {lien}" } : { connected: true } }));
   api.post.mockResolvedValue({ data: {} });
@@ -63,6 +64,19 @@ test("connecting WhatsApp returns to review without automatically sending", asyn
   expect(api.post).not.toHaveBeenCalled();
   await click("Confirmer et envoyer");
   expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+test("mission connection on desktop offers phone pairing and a visible image guide instead of QR", async () => {
+  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom} {lien}" } : { connected: false, hasQR: true, qr: "data:image/png;base64,test" } }));
+  await review();
+  await click("Confirmer et envoyer");
+  expect(host.querySelector("#whatsapp-pair-phone")).toBeTruthy();
+  expect(host.textContent).toContain("Obtenir mon code");
+  const guide = host.querySelector('img[src="/phone-link-guide.png"]');
+  expect(guide).toBeTruthy();
+  expect(guide.closest("details")).toBeNull();
+  expect(host.textContent).not.toContain("QR de test");
+  expect(api.post).not.toHaveBeenCalled();
 });
 
 test("rapid repeated confirmation cannot duplicate a pending request", async () => {

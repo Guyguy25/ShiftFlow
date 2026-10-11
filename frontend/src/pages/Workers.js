@@ -8,7 +8,6 @@ import { Plus, Search, Trash2, Edit2, X, Info, MessageCircle, Smartphone, Check,
 import { api, formatApiError } from "../lib/api";
 import { toast, Toaster } from "sonner";
 import UpgradeModal from "../components/UpgradeModal";
-import WhatsAppQrGuide from "../components/WhatsAppQrGuide";
 
 const SKILLS = ["montage", "demontage", "technique", "electricite", "manutention"];
 const NAME_RE = /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'\-]{1,39}$/;
@@ -31,7 +30,7 @@ function splitFullName(fullName) { const parts = (fullName || "").trim().split(/
 function PhoneContactsUnsupportedModal({ onClose }) { return <div data-onboarding-modal className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl text-center"><div className="w-14 h-14 mx-auto rounded-full bg-amber-50 flex items-center justify-center"><Smartphone className="w-7 h-7 text-amber-700" /></div><h3 className="mt-4 font-display font-bold text-xl">Répertoire non accessible depuis ce navigateur</h3><p className="mt-2 text-sm text-gray-600">Sur iPhone, Safari ne donne actuellement pas aux sites web l'accès au sélecteur natif de contacts. iOS n'affiche donc aucune demande d'autorisation, même si ShiftFlow est ouvert dans Safari.</p><p className="mt-2 text-sm text-gray-600">Pour le moment, utilisez <strong>« Depuis WhatsApp »</strong> sur iPhone. L'import direct du répertoire reste disponible sur les navigateurs mobiles qui exposent cette fonction.</p><button type="button" onClick={onClose} className="mt-5 w-full px-4 py-2.5 rounded-md bg-blue-600 text-white font-medium">Compris</button></div></div>; }
 function PhoneContactsImportModal({ onClose, onDone, onQuota }) { const [rows, setRows] = useState([]); const [selected, setSelected] = useState(new Set()); const [search, setSearch] = useState(""); const [picking, setPicking] = useState(false); const [importing, setImporting] = useState(false); const pickFromDevice = async () => { if (picking) return; setPicking(true); try { const picked = await navigator.contacts.select(["name", "tel", "email"], { multiple: true }); const built = picked.map((c, idx) => { const { first_name, last_name } = splitFullName((c.name && c.name[0]) || ""); const phone = (c.tel && c.tel[0]) || ""; const email = (c.email && c.email[0]) || ""; const errs = validateWorker({ first_name, last_name, phone, email }); return { key: `${idx}-${phone || first_name}`, first_name, last_name, phone, email, valid: Object.keys(errs).length === 0, reason: errs.phone || errs.first_name || errs.last_name || "" }; }); setRows(built); setSelected(new Set(built.filter((r) => r.valid).map((r) => r.key))); } catch (err) { if (err?.name !== "AbortError") toast.error("Impossible d'accéder aux contacts du téléphone."); } finally { setPicking(false); } }; const toggle = (key) => setSelected((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); const filteredRows = rows.filter((r) => `${r.first_name} ${r.last_name} ${r.phone}`.toLowerCase().includes(search.toLowerCase())); const submit = async () => { const workers = rows.filter((r) => r.valid && selected.has(r.key)).map(({ first_name, last_name, phone, email }) => ({ first_name, last_name, phone, email, skills: [], note: "", active: true })); if (workers.length === 0) return toast.error("Sélectionnez au moins un contact."); setImporting(true); try { const { data } = await api.post("/workers/bulk", { workers }); if (data.quota_hit) onQuota(`${counted(data.created, "contact ajouté", "contacts ajoutés")}. La limite du plan gratuit a été atteinte.`); else toast.success(`${data.created} intervenant${data.created > 1 ? "s" : ""} ajouté${data.created > 1 ? "s" : ""}`); onDone(); onClose(); } catch (err) { const statusCode = err.response?.status; const detail = formatApiError(err.response?.data?.detail) || "Erreur pendant l'import des contacts."; if (statusCode === 402) { onQuota(detail); onClose(); } else toast.error(detail); } finally { setImporting(false); } }; const invalidCount = rows.filter((r) => !r.valid).length; return <div data-onboarding-modal className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}><div onClick={(e) => e.stopPropagation()} className="bg-white rounded-xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto flex flex-col"><div className="flex items-center justify-between"><div><h3 className="font-display font-bold text-xl">Importer les contacts</h3><p className="text-sm text-gray-500 mt-1">Choisissez les contacts à ajouter comme intervenants.</p></div><button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button></div>{rows.length === 0 ? <div className="py-12 text-center"><div className="w-14 h-14 mx-auto rounded-full bg-blue-50 flex items-center justify-center"><Smartphone className="w-7 h-7 text-blue-600" /></div><h4 className="mt-4 font-semibold text-gray-900">Ouvrir le répertoire du téléphone</h4><p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">Le navigateur exige que l'ouverture des contacts parte directement d'un clic. Appuyez sur le bouton ci-dessous pour afficher le sélecteur natif.</p><button type="button" onClick={pickFromDevice} disabled={picking} className="mt-5 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-60"><Smartphone className="w-4 h-4" />{picking ? "Ouverture…" : "Choisir dans mes contacts"}</button></div> : <><div className="relative mt-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="w-full h-10 pl-9 pr-3 rounded-md border border-gray-300" /></div>{invalidCount > 0 && <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">{invalidCount} contact{invalidCount > 1 ? "s" : ""} ignoré{invalidCount > 1 ? "s" : ""} (numéro manquant ou invalide).</div>}<div className="mt-3 border border-gray-200 rounded-lg overflow-y-auto flex-1">{filteredRows.map((row) => { const checked = row.valid && selected.has(row.key); return <label key={row.key} className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 ${row.valid ? "cursor-pointer hover:bg-gray-50" : "opacity-50"}`}><input type="checkbox" checked={checked} disabled={!row.valid} onChange={() => toggle(row.key)} className="w-4 h-4 accent-blue-600" /><div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-semibold text-gray-600">{`${row.first_name}${row.last_name}`.slice(0, 2).toUpperCase() || "?"}</div><div className="flex-1 min-w-0"><div className="font-medium truncate">{row.first_name} {row.last_name}</div><div className="text-sm text-gray-500 truncate">{row.phone || row.reason}</div></div></label>; })}</div><div className="mt-5 flex items-center justify-between"><button type="button" onClick={pickFromDevice} disabled={picking} className="text-sm text-blue-700 font-medium disabled:opacity-60">{picking ? "Ouverture…" : "Modifier la sélection"}</button><div className="flex gap-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-md border border-gray-300">Annuler</button><button type="button" onClick={submit} disabled={importing || selected.size === 0} className="px-4 py-2 rounded-md bg-blue-600 text-white disabled:opacity-60">{importing ? "Import…" : `Ajouter ${counted(selected.size, "contact")}`}</button></div></div></>}</div></div>; }
 
-export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly = false, inline = false }) {
+export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, connectionOnly = false, inline = false }) {
   const mobile = isMobileViewport();
   const [status, setStatus] = useState(null);
   const [contacts, setContacts] = useState([]);
@@ -57,6 +56,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
   const sessionStartLockRef = useRef(false);
   const pairRequestVersionRef = useRef(0);
   const pairRequestPendingRef = useRef(false);
+  const connectionCompletedRef = useRef(false);
   const pairSecondsLeft = pairAttempt?.expiresAt != null ? Math.max(0, Math.ceil((pairAttempt.expiresAt - pairNow) / 1000)) : null;
   // A server timeout can belong to an earlier visit or to QR preparation.
   const pairExpired = !!pairAttempt && !status?.connected && (status?.pairingExpired || pairSecondsLeft === 0);
@@ -215,6 +215,12 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
   }, [fetchStatusAndContacts, startWhatsAppSession]);
 
   useEffect(() => {
+    if (!status?.connected || !onConnected || connectionCompletedRef.current) return;
+    connectionCompletedRef.current = true;
+    onConnected();
+  }, [status?.connected, onConnected]);
+
+  useEffect(() => {
     if (pairAttempt?.expiresAt == null || status?.connected) return undefined;
     const updateCountdown = () => setPairNow(Date.now());
     updateCountdown();
@@ -296,17 +302,16 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
         </div>
         {!inline && <button aria-label="Fermer" disabled={importing} onClick={onClose} className="p-2 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>}
       </div>
-      {status?.pairingExpired && !mobile && <div role="alert" className="mt-4 text-sm text-red-700">La connexion n’a pas pu être finalisée.<button type="button" onClick={startWhatsAppSession} className="block min-h-11 underline">Générer un nouveau QR code</button></div>}
       {connectionError && <div role="alert" className="mt-4 text-sm text-red-700">{connectionError}<button type="button" onClick={fetchStatusAndContacts} className="block min-h-11 underline">Réessayer</button></div>}
       {loading && !status && <p className="mt-4 text-sm text-gray-500" role="status">Vérification de la connexion…</p>}
-      {!loading && (!connectionError || mobile) && !status?.connected && <div className="mt-5">
-        {mobile ? <div className="space-y-4">
+      {!loading && !status?.connected && <div className="mt-5">
+        <div className="grid gap-4 md:grid-cols-2 md:items-start">
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center"><MessageCircle className="w-5 h-5" /></div>
               <div>
                 <h4 className="font-semibold text-gray-900">Lier avec un numéro de téléphone</h4>
-                <p className="text-xs text-gray-500 mt-0.5">Pas besoin de scanner un QR code.</p>
+                <p className="text-xs text-gray-500 mt-0.5">Recevez un code à saisir dans WhatsApp.</p>
               </div>
             </div>
 
@@ -350,29 +355,23 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, connectionOnly =
           </div>
 
           <div>
-            {pairCode && <p className="mb-3 text-sm font-medium text-gray-900">Ouvrez maintenant WhatsApp sur ce téléphone, saisissez ce code, puis revenez ici. Vos contacts apparaîtront après la connexion.</p>}
-            <details><summary className="min-h-11 py-3 cursor-pointer text-sm text-blue-700">Voir le guide en images</summary><img
+            {pairCode && <p className="mb-3 text-sm font-medium text-gray-900">Ouvrez maintenant WhatsApp sur votre téléphone, saisissez ce code, puis revenez sur ShiftFlow. {connectionOnly ? "Vous pourrez ensuite reprendre votre mission." : "Vos contacts apparaîtront après la connexion."}</p>}
+            <h4 className="mb-3 text-sm font-semibold text-gray-900">Guide en images</h4>
+            <img
               src="/phone-link-guide.png"
               alt="Étapes pour connecter WhatsApp avec un numéro de téléphone"
               className="block w-full h-auto rounded-xl border border-gray-200 shadow-sm"
-            /></details>
+            />
             <p className="mt-2 px-1 text-xs leading-relaxed text-gray-500">
               Dans WhatsApp : <strong>Appareils connectés</strong> → <strong>Connecter un appareil</strong> → <strong>Connecter plutôt avec un numéro de téléphone</strong>, puis saisissez le code affiché dans ShiftFlow.
             </p>
           </div>
 
-          {(pairCode || startingSession) && <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
+          {(pairCode || startingSession) && <div className="flex items-center justify-center gap-2 text-sm text-gray-500 md:col-span-2">
             <RefreshCw className="w-4 h-4 animate-spin" />
             {pairCode ? "En attente de la connexion WhatsApp…" : "Préparation de WhatsApp…"}
           </div>}
-        </div> : <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 text-center">
-          {status?.hasQR && status?.qr ? <WhatsAppQrGuide qr={status.qr} /> : <>
-            <RefreshCw className="w-8 h-8 mx-auto mb-3 text-gray-400 animate-spin" />
-            <h4 className="font-semibold">Préparation de WhatsApp...</h4>
-            <p className="text-sm text-gray-500 mt-2">Nous préparons votre session WhatsApp.</p>
-            {status?.starting && <p className="text-xs text-gray-400 mt-3">Connexion au service en cours...</p>}
-          </>}
-        </div>}
+        </div>
       </div>}
 
       {status?.connected && <div className="mt-6">
