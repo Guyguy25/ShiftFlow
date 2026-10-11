@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Crown,
   Laptop, Search, Send, Smartphone, Tablet, UserPlus,
-  Users, Zap
+  Users, Zap, RotateCcw
 } from "lucide-react";
 import { api } from "../lib/api";
 import ShiftFlowLoader from "../components/ShiftFlowLoader";
@@ -105,6 +105,16 @@ function Distribution({ devices, plans, total }) {
   </section>;
 }
 
+function ReconnectionDetails({ value }) {
+  if (!value?.tracked) return <span className="text-xs text-gray-400">Pas encore observé</span>;
+  return <div className="text-xs" title={`Jours de visite (UTC) : ${(value.recent_visit_days || []).join(", ")}`}>
+    <p className={`font-semibold ${value.returned ? "text-emerald-700" : "text-gray-500"}`}>
+      {value.returned ? `${value.return_count} retour(s) · ${value.active_days} jours actifs` : "Première visite observée"}
+    </p>
+    {value.returned && <><p className="mt-1 text-gray-500">Dernier retour : {fmtDate(value.last_return_day)}</p>
+      <p className="mt-1 text-gray-500">{value.days_between_last_visits} j entre les 2 dernières visites</p></>}
+  </div>;
+}
 function StageDots({ activation }) {
   const stages = [
     ["mission_created", "Mission"],
@@ -144,7 +154,9 @@ export default function Admin() {
         (filter === "mission" && user.activation?.mission_created) ||
         (filter === "whatsapp" && user.activation?.whatsapp_connected) ||
         (filter === "activated" && user.activation?.first_cascade_sent) ||
-        (filter === "pro" && user.plan === "pro");
+        (filter === "pro" && user.plan === "pro") ||
+        (filter === "returned" && user.role !== "owner" && user.reconnection?.returned) ||
+        (filter === "not_returned" && user.role !== "owner" && user.reconnection?.tracked && !user.reconnection?.returned);
       return matchesQuery && matchesFilter;
     });
   }, [data, query, filter]);
@@ -153,6 +165,7 @@ export default function Admin() {
   if (!data) return <ShiftFlowLoader fullScreen label="Chargement des données ShiftFlow…" />;
 
   const m = data.metrics;
+  const r = data.reconnection || {};
   return <div className="min-h-screen bg-[#F7F9FC] text-gray-950">
     <header className="sticky top-0 z-30 border-b border-gray-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -179,6 +192,18 @@ export default function Admin() {
         <MetricCard label="Clients Pro" value={m.paid_users} icon={Crown} />
         <MetricCard label="Activation" value={`${pct(m.activated_users, m.users_total)}%`} helper="inscription → invitation" icon={CheckCircle2} />
       </div>
+
+      <section className="mt-5 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-bold">Reconnexion · Retours sur le site</h2>
+        <p className="mt-1 text-sm text-gray-500">Un retour = une visite connectée un autre jour (UTC), même sans ressaisir le mot de passe. Une seule visite comptée par jour. Comptes owner exclus des indicateurs.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Utilisateurs revenus" value={r.returning_users || 0} helper="depuis le début du suivi" icon={RotateCcw} />
+          <MetricCard label="Taux de retour" value={`${r.return_rate || 0}%`} helper={`sur ${r.tracked_users || 0} utilisateurs observés`} icon={Users} />
+          <MetricCard label="Revenus sur 7 j" value={r.returning_users_7d || 0} helper="utilisateurs distincts" icon={CalendarDays} />
+          <MetricCard label="Revenus sur 30 j" value={r.returning_users_30d || 0} helper="utilisateurs distincts" icon={CalendarDays} />
+        </div>
+        <p className="mt-3 text-xs text-gray-400">Le suivi commence à la mise en place de cette fonctionnalité. Les visites antérieures ne sont pas reconstituées. Survolez le détail d’un compte pour voir ses dates de visite récentes.</p>
+      </section>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.45fr_1fr]">
         <SignupsChart data={data.signup_series} />
@@ -212,6 +237,8 @@ export default function Admin() {
                 <option value="whatsapp">WhatsApp connecté</option>
                 <option value="activated">Invitation envoyée</option>
                 <option value="pro">Pro</option>
+                <option value="returned">Utilisateurs revenus</option>
+                <option value="not_returned">Pas encore revenus</option>
               </select>
             </div>
           </div>
@@ -220,12 +247,13 @@ export default function Admin() {
         <div className="hidden overflow-x-auto lg:block">
           <table className="w-full min-w-[1100px] text-left text-sm">
             <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500"><tr>
-              <th className="px-5 py-3">Utilisateur</th><th className="px-4 py-3">Inscription</th><th className="px-4 py-3">Appareil</th><th className="px-4 py-3">Usage</th><th className="px-4 py-3">Progression</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Plan</th>
+              <th className="px-5 py-3">Utilisateur</th><th className="px-4 py-3">Inscription</th><th className="px-4 py-3">Reconnexion</th><th className="px-4 py-3">Appareil</th><th className="px-4 py-3">Usage</th><th className="px-4 py-3">Progression</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Plan</th>
             </tr></thead>
             <tbody className="divide-y divide-gray-100">
               {filteredUsers.map(user => <tr key={user.id} className="hover:bg-gray-50/70">
                 <td className="px-5 py-4"><div className="font-semibold text-gray-950">{user.name || "Sans nom"}</div><div className="text-xs text-gray-500">{user.agency_name || "—"} · {user.email}</div>{user.role === "owner" && <span className="mt-1 inline-flex rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">OWNER</span>}</td>
                 <td className="px-4 py-4"><div>{fmtDate(user.created_at)}</div><div className="mt-1 text-xs text-gray-400">Vu {fmtDateTime(user.last_seen_at)}</div></td>
+                <td className="px-4 py-4"><ReconnectionDetails value={user.reconnection} /></td>
                 <td className="px-4 py-4"><div className="font-medium capitalize">{user.signup_device_type === "desktop" ? "Ordinateur" : user.signup_device_type}</div><div className="mt-1 text-xs text-gray-400">Dernier : {user.last_device_type === "desktop" ? "ordinateur" : user.last_device_type}</div></td>
                 <td className="px-4 py-4"><div>{user.missions_count} mission{user.missions_count > 1 ? "s" : ""}</div><div className="mt-1 text-xs text-gray-500">{user.workers_count} intervenant{user.workers_count > 1 ? "s" : ""}</div></td>
                 <td className="px-4 py-4"><StageDots activation={user.activation} /></td>
@@ -240,6 +268,7 @@ export default function Admin() {
           {filteredUsers.map(user => <article key={user.id} className="p-4">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-bold">{user.name || "Sans nom"}</p><p className="truncate text-xs text-gray-500">{user.agency_name || user.email}</p></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${user.plan === "pro" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>{user.plan === "pro" ? "PRO" : "FREE"}</span></div>
             <div className="mt-3"><StageDots activation={user.activation} /></div>
+            <div className="mt-3"><ReconnectionDetails value={user.reconnection} /></div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500"><span>{user.missions_count} mission(s)</span><span>{user.workers_count} intervenant(s)</span><span>{user.signup_device_type === "desktop" ? "Ordinateur" : user.signup_device_type}</span><span>{fmtDate(user.created_at)}</span></div>
           </article>)}
         </div>

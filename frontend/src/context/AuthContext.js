@@ -20,6 +20,25 @@ export function AuthProvider({ children }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Track visible visits even when a persistent session crosses midnight.
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    const recordPresence = () => {
+      if (document.visibilityState === "visible") {
+        api.get("/auth/me").catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", recordPresence);
+    window.addEventListener("focus", recordPresence);
+    const timer = window.setInterval(recordPresence, 5 * 60 * 1000);
+    return () => {
+      document.removeEventListener("visibilitychange", recordPresence);
+      window.removeEventListener("focus", recordPresence);
+      window.clearInterval(timer);
+    };
+  }, [userId]);
+
   const login = async (email, password) => {
     markLoggedOut(false);
     const { data } = await api.post("/auth/login", { email, password });

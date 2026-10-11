@@ -23,6 +23,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
 import mission_billing
+from return_visits import record_visit, visit_summary, retention_summary
 
 # Twilio (optional — fallback to demo if not configured)
 try:
@@ -686,6 +687,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
             "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
+    await record_visit(db.users, user["id"], created_at)
     if payload.registration_token:
         import hashlib
         try:
@@ -736,6 +738,7 @@ async def login(payload: LoginIn, request: Request, response: Response):
         "last_device_type": device_type,
         "last_seen_at": seen_at,
     }})
+    await record_visit(db.users, user["id"], now_utc())
     user["last_device_type"] = device_type
     user["last_seen_at"] = seen_at
     user = await ensure_trial_model(user)
@@ -789,6 +792,7 @@ async def me(request: Request, user=Depends(get_current_user)):
     seen_at = iso(now_utc())
     updates = {"last_device_type": device_type, "last_seen_at": seen_at}
     await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    await record_visit(db.users, user["id"], now_utc())
     user.update(updates)
     return public_user(user)
 
@@ -2233,6 +2237,7 @@ async def admin_dashboard(owner=Depends(require_owner)):
             "subscription_status": user_doc.get("subscription_status"),
             "created_at": user_doc.get("created_at"),
             "last_seen_at": user_doc.get("last_seen_at"),
+            "reconnection": visit_summary(user_doc, now),
             "signup_device_type": user_doc.get("signup_device_type") or "unknown",
             "last_device_type": user_doc.get("last_device_type") or "unknown",
             "missions_count": mission_counts.get(uid, 0),
@@ -2262,6 +2267,7 @@ async def admin_dashboard(owner=Depends(require_owner)):
             "paid_users": plans["pro"],
             "activated_users": event_count("first_cascade_sent"),
         },
+        "reconnection": retention_summary(customer_users, now),
         "funnel": funnel,
         "signup_series": signup_series,
         "devices": devices,
