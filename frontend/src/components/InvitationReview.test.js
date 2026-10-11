@@ -66,15 +66,14 @@ test("connecting WhatsApp returns to review without automatically sending", asyn
   expect(api.post).toHaveBeenCalledTimes(1);
 });
 
-test("mission connection on desktop offers phone pairing and a visible image guide instead of QR", async () => {
+test("mission connection on desktop starts with phone pairing before showing the guide", async () => {
   api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom} {lien}" } : { connected: false, hasQR: true, qr: "data:image/png;base64,test" } }));
   await review();
   await click("Confirmer et envoyer");
   expect(host.querySelector("#whatsapp-pair-phone")).toBeTruthy();
   expect(host.textContent).toContain("Obtenir mon code");
-  const guide = host.querySelector('img[src="/phone-link-guide.png"]');
-  expect(guide).toBeTruthy();
-  expect(guide.closest("details")).toBeNull();
+  expect(host.querySelector('img[src="/phone-link-guide.png"]')).toBeNull();
+  expect(host.querySelector('[aria-current="step"]').textContent).toContain("Votre numéro");
   expect(host.textContent).not.toContain("QR de test");
   expect(api.post).not.toHaveBeenCalled();
 });

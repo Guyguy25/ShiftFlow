@@ -95,6 +95,27 @@ const mountMobilePairing = async (remainingMs = 60000) => {
 };
 const advance = async ms => act(async () => jest.advanceTimersByTime(ms));
 
+test.each([false, true])("two-step pairing keeps the guide for step two with mobile viewport = %s", async mobile => {
+  jest.useFakeTimers();
+  window.matchMedia = () => ({ matches: mobile });
+  mockParams = new URLSearchParams({ connect: "1", returnTo: destination });
+  await mount();
+  expect(host.querySelector('[aria-current="step"]').textContent).toContain("Votre numéro");
+  expect(host.querySelector('img[src="/phone-link-guide.png"]')).toBeNull();
+  expect(host.textContent).not.toContain("Appareils connectés");
+  expect(host.querySelector("#whatsapp-pair-phone")).toBeTruthy();
+  await mountMobilePairing();
+  expect(host.querySelector('[aria-current="step"]').textContent).toContain("Lier WhatsApp");
+  expect(host.querySelector("#whatsapp-pair-phone")).toBeNull();
+  expect(host.querySelector('img[src="/phone-link-guide.png"]')).toBeTruthy();
+  expect(host.textContent).toContain(pairCode);
+  await click("Utiliser un autre numéro");
+  expect(host.querySelector('[aria-current="step"]').textContent).toContain("Votre numéro");
+  expect(host.querySelector("#whatsapp-pair-phone").value).toBe("+33612345678");
+  expect(host.querySelector('img[src="/phone-link-guide.png"]')).toBeNull();
+  expect(host.textContent).not.toContain(pairCode);
+});
+
 test.each([false, true])("code pairing and visible image guidance work with mobile viewport = %s", async mobile => {
   window.matchMedia = () => ({ matches: mobile });
   await mountMobilePairing(1000);
@@ -149,7 +170,8 @@ test("at 60 seconds the code and waiting message disappear and a blue explicit r
   expect(host.querySelector('[role="alert"]').textContent).toContain("Ce code a expiré");
   const retry = Array.from(host.querySelectorAll("button")).find(b => b.textContent === "Générer un nouveau code");
   expect(retry.classList.contains("bg-blue-600")).toBe(true);
-  expect(host.querySelector("#whatsapp-pair-phone").value).toBe("+33612345678");
+  expect(host.textContent).toContain("+33612345678");
+  expect(host.querySelector('[aria-current="step"]').textContent).toContain("Lier WhatsApp");
   expect(api.post).toHaveBeenCalledTimes(1);
 
   api.post.mockResolvedValueOnce({ data: { code: "WXYZ5678", serverTime: Date.now(), pairingDeadline: Date.now() + 60000 } });

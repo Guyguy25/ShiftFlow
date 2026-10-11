@@ -8,6 +8,7 @@ import { Plus, Search, Trash2, Edit2, X, Info, MessageCircle, Smartphone, Check,
 import { api, formatApiError } from "../lib/api";
 import { toast, Toaster } from "sonner";
 import UpgradeModal from "../components/UpgradeModal";
+import WhatsAppPairingSteps from "../components/WhatsAppPairingSteps";
 
 const SKILLS = ["montage", "demontage", "technique", "electricite", "manutention"];
 const NAME_RE = /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'\-]{1,39}$/;
@@ -47,6 +48,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
   const [refreshing, setRefreshing] = useState(false);
   const [refreshCooldown, setRefreshCooldown] = useState(0);
   const [pairPhone, setPairPhone] = useState("");
+  const [pairStep, setPairStep] = useState(1);
   const [pairAttempt, setPairAttempt] = useState(null);
   const [pairNow, setPairNow] = useState(Date.now);
   const [pairing, setPairing] = useState(false);
@@ -152,6 +154,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
         ? receivedAt + Math.max(0, data.pairingDeadline - data.serverTime) : null;
       setPairNow(receivedAt);
       setPairAttempt({ code: String(data.code), expiresAt });
+      setPairStep(2);
       setStatus(previous => ({ ...previous, connected: false, pairingExpired: false, lastConnectionError: null }));
       setConnectionError("");
     } catch (err) {
@@ -201,6 +204,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
       setPairAttempt(null);
       setPairError("");
       setStatus({ connected: false, hasQR: false, starting: false });
+      setPairStep(1);
       toast.success("Connexion WhatsApp réinitialisée. Reconnectez votre compte.");
       await startWhatsAppSession();
     } catch (err) {
@@ -290,9 +294,10 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
   const filteredContacts = contacts.filter((contact) => `${contact.name || ""} ${contact.number || ""}`.toLowerCase().includes(search.toLowerCase()));
   const refreshDisabled = refreshing || refreshCooldown > 0;
   const refreshLabel = refreshing ? "Actualisation..." : refreshCooldown > 0 ? `Actualiser (${refreshCooldown}s)` : "Actualiser";
+  const modalWidth = !status?.connected && pairStep === 1 ? "max-w-lg" : "max-w-3xl";
 
   return <div data-onboarding-modal={inline ? undefined : true} className={inline ? "" : `fixed inset-0 bg-black/40 z-50 flex justify-center ${mobile ? "items-end" : "items-center p-4"}`} onClick={inline || importing ? undefined : onClose}>
-    <div onClick={event => event.stopPropagation()} className={inline ? "bg-white border border-gray-200 rounded-2xl p-4 sm:p-6" : `bg-white w-full shadow-xl max-h-[92dvh] overflow-y-auto ${mobile ? "rounded-t-2xl p-5" : "max-w-3xl rounded-xl p-6"}`}>
+    <div onClick={event => event.stopPropagation()} className={inline ? "bg-white border border-gray-200 rounded-2xl p-4 sm:p-6" : `bg-white w-full shadow-xl max-h-[92dvh] overflow-y-auto ${mobile ? "rounded-t-2xl p-5" : modalWidth + " rounded-xl p-6"}`}>
       {inline && <button type="button" disabled={importing} onClick={onClose} className="mb-2 min-h-11 text-sm text-gray-600 underline">Retour</button>}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -305,73 +310,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
       {connectionError && <div role="alert" className="mt-4 text-sm text-red-700">{connectionError}<button type="button" onClick={fetchStatusAndContacts} className="block min-h-11 underline">Réessayer</button></div>}
       {loading && !status && <p className="mt-4 text-sm text-gray-500" role="status">Vérification de la connexion…</p>}
       {!loading && !status?.connected && <div className="mt-5">
-        <div className="grid gap-4 md:grid-cols-2 md:items-start">
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center"><MessageCircle className="w-5 h-5" /></div>
-              <div>
-                <h4 className="font-semibold text-gray-900">Lier avec un numéro de téléphone</h4>
-                <p className="text-xs text-gray-500 mt-0.5">Recevez un code à saisir dans WhatsApp.</p>
-              </div>
-            </div>
-
-            {!pairCode ? <>
-              <label htmlFor="whatsapp-pair-phone" className="block text-sm font-medium text-gray-800 mt-5">Votre numéro WhatsApp</label>
-              <input
-                id="whatsapp-pair-phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                data-onboarding="phone" value={pairPhone}
-                onChange={(e) => setPairPhone(e.target.value)}
-                placeholder="+33 6 12 34 56 78"
-                className="mt-2 w-full h-12 rounded-xl border border-gray-300 bg-white px-3 text-base focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-              <button
-                type="button"
-                onClick={requestPairCode}
-                disabled={pairing || startingSession}
-                className="mt-3 w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
-              >
-                {pairing ? "Génération du code…" : pairExpired ? "Générer un nouveau code" : "Obtenir mon code"}
-              </button>
-            </> : <div className="mt-5">
-              <div className="text-xs uppercase tracking-widest font-bold text-gray-500 text-center">Votre code de liaison</div>
-              <div className="mt-2 rounded-xl border-2 border-green-200 bg-white px-4 py-4 text-center font-mono text-2xl font-bold tracking-[0.18em] text-gray-950 break-all">
-                {pairCode}
-              </div>
-              {pairSecondsLeft != null && <div className="mt-3 text-center">
-                <p role="timer" aria-live="off" className="text-sm font-semibold text-blue-800">
-                  Expire dans {Math.floor(pairSecondsLeft / 60)}:{String(pairSecondsLeft % 60).padStart(2, "0")}
-                </p>
-                <p className="mt-1 text-xs text-gray-600">Saisissez ce code avant la fin du compte à rebours. À expiration, générez un nouveau code.</p>
-              </div>}
-              <button type="button" onClick={() => { setPairAttempt(null); setPairError(""); }} className="mt-2 w-full min-h-11 text-sm font-medium text-blue-700">
-                Utiliser un autre numéro
-              </button>
-            </div>}
-
-            {pairFeedback && !pairing && <div role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{pairFeedback}</div>}
-          </div>
-
-          <div>
-            {pairCode && <p className="mb-3 text-sm font-medium text-gray-900">Ouvrez maintenant WhatsApp sur votre téléphone, saisissez ce code, puis revenez sur ShiftFlow. {connectionOnly ? "Vous pourrez ensuite reprendre votre mission." : "Vos contacts apparaîtront après la connexion."}</p>}
-            <h4 className="mb-3 text-sm font-semibold text-gray-900">Guide en images</h4>
-            <img
-              src="/phone-link-guide.png"
-              alt="Étapes pour connecter WhatsApp avec un numéro de téléphone"
-              className="block w-full h-auto rounded-xl border border-gray-200 shadow-sm"
-            />
-            <p className="mt-2 px-1 text-xs leading-relaxed text-gray-500">
-              Dans WhatsApp : <strong>Appareils connectés</strong> → <strong>Connecter un appareil</strong> → <strong>Connecter plutôt avec un numéro de téléphone</strong>, puis saisissez le code affiché dans ShiftFlow.
-            </p>
-          </div>
-
-          {(pairCode || startingSession) && <div className="flex items-center justify-center gap-2 text-sm text-gray-500 md:col-span-2">
-            <RefreshCw className="w-4 h-4 animate-spin" />
-            {pairCode ? "En attente de la connexion WhatsApp…" : "Préparation de WhatsApp…"}
-          </div>}
-        </div>
+        <WhatsAppPairingSteps step={pairStep} phone={pairPhone} onPhoneChange={setPairPhone} code={pairCode} secondsLeft={pairSecondsLeft} expired={pairExpired} feedback={pairFeedback} pairing={pairing} starting={startingSession} onRequestCode={requestPairCode} onChangeNumber={() => { setPairAttempt(null); setPairError(""); setPairStep(1); }} connectionOnly={connectionOnly} />
       </div>}
 
       {status?.connected && <div className="mt-6">
