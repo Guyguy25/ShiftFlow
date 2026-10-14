@@ -2,7 +2,13 @@
   "services": {
     "frontend": {
       "root": "frontend",
-      "framework": "create-react-app"
+      "framework": "create-react-app",
+      "rewrites": [
+        { "source": "/", "destination": "/seo/home.html" },
+        { "source": "/pricing", "destination": "/seo/pricing.html" },
+        { "source": "/demo", "destination": "/seo/demo.html" },
+        { "source": "/((?!api(?:/|$)).*)", "destination": "/app-shell.html" }
+      ]
     },
     "backend": {
       "root": "backend",

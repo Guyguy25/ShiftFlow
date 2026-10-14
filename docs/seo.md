@@ -7,10 +7,13 @@ l'exécution de JavaScript. `src/lib/seo.js` centralise ces informations et la l
 des pages du sitemap. Le domaine canonique est `https://www.shiftflow.io`, comme
 le domaine de production existant.
 
-Le script de compilation écrit `build/seo/*.html` et `build/sitemap.xml`.
-Les réécritures de `frontend/vercel.json` servent les trois pages publiques ; le
+Le script de compilation écrit `build/seo/*.html`, les index de répertoire des
+pages publiques et `build/sitemap.xml`. `build/index.html` contient l'accueil.
+Les réécritures du service frontend (et de `frontend/vercel.json` pour un
+déploiement autonome) servent les trois pages publiques ; le
 routage API défini à la racine reste inchangé. Le HTML de repli des autres routes
-porte `noindex` et ne contient pas de contenu marketing ni d'URL canonique.
+`build/app-shell.html` porte `noindex` et ne contient pas de contenu marketing
+ni d'URL canonique.
 La navigation React met également les métadonnées à jour et retire les données
 structurées publiques des écrans privés. `noindex` ne remplace pas les contrôles
 d'accès existants. Les routes privées restent explorables afin que les moteurs

@@ -28,6 +28,7 @@ const pages = {
 };
 const buildDir = path.resolve(__dirname, "../build");
 const template = fs.readFileSync(path.join(buildDir, "index.html"), "utf8");
+fs.writeFileSync(path.join(buildDir, "app-shell.html"), template);
 const escape = value => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 fs.mkdirSync(path.join(buildDir, "seo"), { recursive: true });
 
@@ -55,8 +56,24 @@ for (const [route, Component] of Object.entries(pages)) {
   if (!html.includes(content) || !html.includes(page.canonical)) throw new Error(`Failed to prerender ${route}`);
   const filename = route === "/" ? "home" : route.slice(1);
   fs.writeFileSync(path.join(buildDir, "seo", `${filename}.html`), html);
+  // Also expose directory indexes for hosts that use filesystem routing before
+  // framework rewrites. The homepage must never fall back to a noindex shell.
+  const directory = route === "/" ? buildDir : path.join(buildDir, route.slice(1));
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, "index.html"), html);
   console.log(`Prerendered ${route} (${content.length} characters)`);
 }
 
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${Object.keys(PUBLIC_PAGES).map(route => `  <url><loc>${getPageSeo(route).canonical}</loc></url>`).join("\n")}\n</urlset>\n`;
 fs.writeFileSync(path.join(buildDir, "sitemap.xml"), sitemap);
+
+// The same noindex application shell for fixed non-marketing entry points.
+// This also protects direct requests when a host prefers filesystem routing.
+for (const route of ["login", "register", "onboarding", "admin", "payment/success", "payment/cancel",
+  "mentions-legales", "conditions", "confidentialite", "cookies", "dpa", "app", "app/dashboard",
+  "app/missions", "app/missions/new", "app/workers", "app/calendar", "app/history", "app/help",
+  "app/tutorial", "app/profile", "app/settings"]) {
+  const directory = path.join(buildDir, route);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, "index.html"), template);
+}
