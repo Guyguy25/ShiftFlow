@@ -170,10 +170,10 @@ export default function Landing() {
                 3 missions offertes · sans date limite · aucune carte bancaire
               </div>
               <h1 className="sf-fade-up sf-fade-up-delay-1 mt-6 text-4xl sm:text-5xl lg:text-7xl leading-[1.02] tracking-[-0.04em] font-display font-bold text-slate-950">
-                Vos équipes événementielles, <span className="text-blue-600">sans les relances à répétition.</span>
+                ShiftFlow, votre logiciel de gestion des équipes <span className="text-blue-600">événementielles.</span>
               </h1>
               <p className="sf-fade-up sf-fade-up-delay-2 mt-6 max-w-2xl mx-auto text-base sm:text-lg leading-relaxed text-slate-600">
-                Avec votre réseau habituel d’intervenants, préparez une mission et choisissez qui contacter en priorité. ShiftFlow envoie les demandes depuis votre WhatsApp et suit les réponses pour vous aider à compléter votre équipe.
+                Sur ShiftFlow.io, organisez vos missions de montage de stands, de son et lumière ou de technique événementielle avec votre réseau habituel d’intervenants. Choisissez qui contacter en priorité : ShiftFlow envoie les demandes depuis votre WhatsApp et suit les réponses pour vous aider à compléter votre équipe.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <Link to="/register" data-testid="hero-cta-primary" className="sf-shine w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-xl font-semibold shadow-[0_10px_30px_rgba(37,99,235,0.22)] transition-all hover:-translate-y-0.5">

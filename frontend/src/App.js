@@ -29,6 +29,7 @@ import PaymentCancel from "./pages/PaymentCancel";
 import Admin from "./pages/Admin";
 import { LegalNotice, Terms, Privacy, Cookies, DPA } from "./pages/LegalPages";
 import MetaPixel from "./components/MetaPixel";
+import Seo from "./components/Seo";
 import { Toaster } from "sonner";
 
 function AppRoutes() {
@@ -81,6 +82,7 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
+        <Seo />
         <AuthProvider>
           <AppRoutes />
           <PublicLegalGate />
