@@ -8,8 +8,8 @@ des pages du sitemap. Le domaine canonique est `https://www.shiftflow.io`, comme
 le domaine de production existant.
 
 Le script de compilation écrit `build/seo/*.html` et `build/sitemap.xml`.
-Les réécritures Vercel servent les trois pages publiques ; les routes API et le
-repli de l'application restent inchangés. Le HTML de repli des autres routes
+Les réécritures de `frontend/vercel.json` servent les trois pages publiques ; le
+routage API défini à la racine reste inchangé. Le HTML de repli des autres routes
 porte `noindex` et ne contient pas de contenu marketing ni d'URL canonique.
 La navigation React met également les métadonnées à jour et retire les données
 structurées publiques des écrans privés. `noindex` ne remplace pas les contrôles

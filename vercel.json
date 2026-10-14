@@ -18,30 +18,6 @@
       }
     },
     {
-      "source": "/",
-      "destination": {
-        "type": "service",
-        "service": "frontend",
-        "path": "/seo/home.html"
-      }
-    },
-    {
-      "source": "/pricing",
-      "destination": {
-        "type": "service",
-        "service": "frontend",
-        "path": "/seo/pricing.html"
-      }
-    },
-    {
-      "source": "/demo",
-      "destination": {
-        "type": "service",
-        "service": "frontend",
-        "path": "/seo/demo.html"
-      }
-    },
-    {
       "source": "/(.*)",
       "destination": {
         "type": "service",

@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/", "destination": "/seo/home.html" },
+    { "source": "/pricing", "destination": "/seo/pricing.html" },
+    { "source": "/demo", "destination": "/seo/demo.html" },
+    { "source": "/((?!api(?:/|$)).*)", "destination": "/index.html" }
+  ]
+}
