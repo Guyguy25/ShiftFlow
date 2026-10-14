@@ -13,6 +13,8 @@ from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import mission_billing as billing
+import return_feedback
+import secrets
 
 
 class Collection:
@@ -38,6 +40,39 @@ def function(name, **namespace):
 
 
 class BillingTests(IsolatedAsyncioTestCase):
+    async def test_feedback_checkout_collects_card_and_does_not_reuse_regular_payment(self):
+        self.raw.users.update_one({"id": "u"}, {"$set": {
+            "free_missions_used": 3, "visit_days": ["2026-10-12", "2026-10-14"],
+            "return_feedback": {"promo_code": "AVIS-U"},
+        }})
+        self.raw.payment_transactions.insert_one({"session_id": "regular", "user_id": "u",
+            "lookup_key": "shiftflow_pro_monthly", "status": "initiated", "quantity": 1,
+            "offer_version": "2026-10-01", "created_at": "2026-10-14"})
+        create = Mock(return_value=SimpleNamespace(id="discounted", url="https://checkout.stripe.com/test"))
+        retrieve = Mock(return_value=SimpleNamespace(status="open", id="regular", url="https://checkout.stripe.com/regular"))
+        coupon = type("Coupon", (dict,), {"id": "coupon-u"})({"valid": True})
+        stripe = SimpleNamespace(checkout=SimpleNamespace(Session=SimpleNamespace(create=create, retrieve=retrieve)),
+            Coupon=SimpleNamespace(retrieve=Mock(return_value=coupon)),
+            Price=SimpleNamespace(list=Mock(return_value=SimpleNamespace(data=[SimpleNamespace(
+                id="price_month", product="prod_pro", recurring=SimpleNamespace(interval="month"), currency="eur", unit_amount=4900)]))))
+        fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing,
+            return_feedback=return_feedback, secrets=secrets,
+            ALLOWED_STRIPE_PRICES={"shiftflow_pro_monthly": {"interval": "month", "amount": 4900}},
+            stripe_lib=stripe, FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id",
+            request_client_ip=lambda _: None, now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
+        payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_pro_monthly", origin_url="https://www.shiftflow.io",
+            legal_acceptance={"version": "2026-10-01"}, meta_consent=False, promo_code="AVIS-U")
+        await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        retrieve.assert_not_called()
+        args = create.call_args.kwargs
+        self.assertEqual(args["discounts"], [{"coupon": "coupon-u"}])
+        self.assertEqual(args["payment_method_collection"], "always")
+        self.assertNotIn("allow_promotion_codes", args)
+        self.assertEqual(self.raw.payment_transactions.find_one({"session_id": "discounted"})["amount"], 0)
+        retrieve.return_value = SimpleNamespace(status="open", id="discounted", url="https://checkout.stripe.com/test")
+        await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        self.assertEqual(create.call_count, 1)
+
     def setUp(self):
         self.raw = mongomock.MongoClient().db
         self.db = SimpleNamespace(**{name: Collection(self.raw[name]) for name in
@@ -117,7 +152,7 @@ class BillingTests(IsolatedAsyncioTestCase):
             stripe_lib=stripe, FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id",
             request_client_ip=lambda _: None, now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
         payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_mission", origin_url="https://evil.test",
-            legal_acceptance={"version": "2026-10-01"}, meta_consent=False)
+            legal_acceptance={"version": "2026-10-01"}, meta_consent=False, promo_code="")
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         args = create.call_args.kwargs
         self.assertEqual(args["mode"], "payment")
@@ -154,7 +189,7 @@ class BillingTests(IsolatedAsyncioTestCase):
             FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id", request_client_ip=lambda _: None,
             now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
         payload = SimpleNamespace(quantity=5, lookup_key="shiftflow_mission", origin_url="https://www.shiftflow.io",
-            legal_acceptance={"version": "2026-10-01"}, meta_consent=False)
+            legal_acceptance={"version": "2026-10-01"}, meta_consent=False, promo_code="")
         # Free credits do not prevent an explicitly chosen bulk purchase.
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         args = create.call_args.kwargs

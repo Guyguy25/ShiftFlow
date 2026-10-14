@@ -17,6 +17,18 @@ beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = jest.fn();
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+test("feedback reward is visible and applies exclusively to monthly Pro", async () => {
+  api.get.mockImplementation(url => Promise.resolve({ data: url === "/feedback/status" ? { promo_code: "AVIS-U" } : { plan: "free", can_create_mission: false } }));
+  api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
+  await act(async () => root.render(<Pricing/>));
+  expect(host.textContent).toContain("2 mois de Pro offerts");
+  await act(async () => host.querySelector('input[type="checkbox"]').click());
+  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
+  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_monthly", promo_code: "AVIS-U" }));
+  await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Annuel · −15 %").click());
+  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
+  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_yearly", promo_code: "" }));
+});
 test("displays the complete offer without a trial deadline or annual default", async () => {
   await act(async () => root.render(<Pricing/>));
   expect(host.textContent).toContain("4,90 €");

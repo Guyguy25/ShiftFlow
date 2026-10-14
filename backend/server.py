@@ -23,6 +23,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
 import mission_billing
+import return_feedback
 from return_visits import record_visit, visit_summary, retention_summary
 
 # Twilio (optional — fallback to demo if not configured)
@@ -1860,7 +1861,29 @@ async def get_quota(user=Depends(get_current_user)):
     }
 
 
+@api.get("/feedback/status")
+async def feedback_status(user=Depends(get_current_user)):
+    await record_visit(db.users, user["id"], now_utc())
+    current = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return return_feedback.status(current, now_utc())
+
+
+@api.post("/feedback/snooze")
+async def feedback_snooze(user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "feedback_snoozed_until": iso(now_utc() + timedelta(days=7)),
+    }})
+    return {"ok": True}
+
+
+@api.post("/feedback")
+async def feedback_submit(payload: return_feedback.FeedbackIn, user=Depends(get_current_user)):
+    current = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return await return_feedback.submit(db.users, current, payload, now_utc())
+
+
 class CheckoutIn(BaseModel):
+    promo_code: str = Field(default="", max_length=100)
     lookup_key: str
     quantity: int = Field(default=1, ge=1, le=100, strict=True)
     origin_url: str
@@ -1925,9 +1948,16 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     current = await mission_billing.account(db, user["id"])
     if current.get("plan") == "pro":
         raise HTTPException(409, "Votre abonnement Pro est déjà actif. Gérez-le depuis votre compte.")
+    if payload.promo_code:
+        if payload.lookup_key != "shiftflow_pro_monthly":
+            raise HTTPException(400, "Les deux mois offerts s’appliquent uniquement à Pro mensuel.")
+        reward = current.get("return_feedback") or {}
+        if not return_feedback.eligible(current) or not secrets.compare_digest(payload.promo_code, reward.get("promo_code", "")):
+            raise HTTPException(403, "Ce code personnel n’est pas disponible pour votre compte.")
     pending = await db.payment_transactions.find_one({
         "user_id": user["id"], "lookup_key": payload.lookup_key, "status": "initiated",
         "quantity": quantity, "offer_version": "2026-10-01",
+        "feedback_promo_code": payload.promo_code or {"$in": [None, ""]},
     }, sort=[("created_at", -1)])
     if pending:
         previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
@@ -1947,6 +1977,10 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             raise HTTPException(503, "Le tarif de paiement doit être vérifié par le support.")
         line_items = [{"price": price.id, "quantity": 1}]
 
+    discount = {"allow_promotion_codes": True}
+    if payload.promo_code:
+        discount = return_feedback.discount_options(stripe_lib, current, payload.lookup_key,
+            payload.promo_code, price.product)
     origin = FRONTEND_URL or "https://www.shiftflow.io"
     completed_purchases = await db.payment_transactions.count_documents({"user_id": user["id"], "fulfilled": True})
     # French micro-entrepreneur franchise en base de TVA (art. 293 B du CGI): no VAT applied.
@@ -1954,11 +1988,11 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         line_items=line_items,
         mode="payment" if expected_interval == "one_time" else "subscription",
         payment_method_types=["card"],
-        idempotency_key=f"checkout-v2-{user['id']}-{payload.lookup_key}-{quantity}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
+        idempotency_key=f"checkout-v2-{user['id']}-{payload.lookup_key}-{quantity}-{payload.promo_code}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
         **({"customer": current["stripe_customer_id"]} if current.get("stripe_customer_id") else {"customer_email": user.get("email")}),
-        allow_promotion_codes=True,
+        **discount,
         metadata={
             "user_id": user["id"],
             "lookup_key": payload.lookup_key,
@@ -1966,13 +2000,14 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             "mission_credits": str(purchase["mission_credits"] if purchase else 0),
         },
         custom_text={
-            "submit": {"message": "TVA non applicable, art. 293 B du CGI"},
+            "submit": {"message": "2 mois à 0 €, puis 49 €/mois. Carte requise. Résiliation à tout moment avant la prochaine échéance." if payload.promo_code else "TVA non applicable, art. 293 B du CGI"},
         },
     )
     await db.payment_transactions.update_one({"_id": session.id}, {"$setOnInsert": {
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
         "lookup_key": payload.lookup_key, "billing_interval": expected_interval,
-        "amount": expected_amount,
+        "amount": 0 if payload.promo_code else expected_amount,
+        "feedback_promo_code": payload.promo_code,
         "quantity": quantity, "bonus_missions": purchase["bonus_missions"] if purchase else 0,
         "mission_credits": purchase["mission_credits"] if purchase else 0, "offer_version": "2026-10-01",
         "currency": "eur", "status": "initiated", "payment_status": "pending",
@@ -2238,6 +2273,7 @@ async def admin_dashboard(owner=Depends(require_owner)):
             "created_at": user_doc.get("created_at"),
             "last_seen_at": user_doc.get("last_seen_at"),
             "reconnection": visit_summary(user_doc, now),
+            "return_feedback": user_doc.get("return_feedback"),
             "signup_device_type": user_doc.get("signup_device_type") or "unknown",
             "last_device_type": user_doc.get("last_device_type") or "unknown",
             "missions_count": mission_counts.get(uid, 0),

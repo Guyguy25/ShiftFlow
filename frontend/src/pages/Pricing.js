@@ -19,6 +19,13 @@ export default function Pricing() {
   const [volume, setVolume] = useState(5);
   const [quantity, setQuantity] = useState(5);
   const [annual, setAnnual] = useState(false);
+  const [feedbackCode, setFeedbackCode] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setFeedbackCode("");
+    if (user) api.get("/feedback/status").then(({ data }) => { if (!cancelled) setFeedbackCode(data.promo_code || ""); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user]);
   const bonus = Math.floor(quantity / 5);
   const credits = quantity + bonus;
   const proLookup = annual ? "shiftflow_pro_yearly" : "shiftflow_pro_monthly";
@@ -50,6 +57,7 @@ export default function Pricing() {
     try {
       const { data } = await api.post("/payments/checkout", {
         lookup_key: lookup, origin_url: window.location.origin,
+        promo_code: lookup === "shiftflow_pro_monthly" ? feedbackCode : "",
         quantity: lookup === "shiftflow_mission" ? quantity : 1,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: new Date().toISOString(), scope: lookup === "shiftflow_mission" ? "mission_purchase" : "pro_subscription" },
         meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
@@ -70,6 +78,7 @@ export default function Pricing() {
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
         <p className="mt-5 text-lg leading-relaxed text-gray-600">Valables à vie, sans carte bancaire. Ensuite, payez une mission quand vous en avez besoin ou choisissez l’illimité.</p>
       </div>
+      {feedbackCode && !pro && <section className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5"><h2 className="font-bold text-blue-900">Merci pour votre avis : 2 mois de Pro offerts</h2><p className="mt-2 text-sm text-blue-900">Code personnel : <strong className="break-all">{feedbackCode}</strong>. Appliqué automatiquement à Pro mensuel : 0 € pendant deux mois, puis 49 €/mois. Carte requise. Résiliable à tout moment avant la prochaine échéance. Une utilisation par compte.</p></section>}
       {error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
       {pro && <p className="mt-6 text-center font-semibold text-emerald-700">Votre abonnement Pro est actif. Vos missions sont illimitées.</p>}
       <div className="mt-10 grid gap-5 lg:grid-cols-3">
@@ -109,7 +118,7 @@ export default function Pricing() {
           <p className="mt-2 text-sm text-gray-300">{annual ? "499,80 € payés en une fois pour 12 mois, renouvelés chaque année." : "49 € facturés chaque mois. Sans engagement annuel."}</p>
           <p className="mt-2 text-sm text-blue-200">{annual ? "88,20 € économisés par an par rapport au mensuel." : "Choisissez l’annuel pour économiser 15 %."}</p>
           <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Toutes vos missions, toute votre équipe, un budget fixe. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
-          <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? "Choisir Pro — 499,80 €/an" : "Choisir Pro — 49 €/mois"}</button>
+          <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? "Choisir Pro — 499,80 €/an" : feedbackCode ? "Activer Pro — 2 mois à 0 €" : "Choisir Pro — 49 €/mois"}</button>
         </section>
       </div>
       <section className="mt-7 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">

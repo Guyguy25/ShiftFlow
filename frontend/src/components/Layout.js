@@ -4,6 +4,7 @@ import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, Histor
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
+import ReturnFeedbackDialog from "./ReturnFeedbackDialog";
 import GettingStarted from "./GettingStarted";
 import { api } from "../lib/api";
 
@@ -182,6 +183,7 @@ export default function Layout({ children }) {
         </div>
       </main>
       <WelcomeDialog key={user.id} user={user} />
+      <ReturnFeedbackDialog key={`feedback-${user.id}`} user={user} />
     </div>
   );
 }
