@@ -10,6 +10,10 @@ export default function ShiftEditor({ missionId, shift, onSaved, onCancel }) {
   const change = (name, value) => setForm(prev => ({ ...prev, [name]: value }));
   const submit = async event => {
     event.preventDefault(); if (saving) return;
+    if (form.pay_type === "fixed" && !["gross", "net"].includes(form.pay_basis)) {
+      setError("Précisez brut ou net pour le cachet.");
+      return;
+    }
     setSaving(true); setError("");
     try {
       const payload = { ...form, people_needed: Number(form.people_needed), rate_hourly: Number(form.rate_hourly), fixed_amount: Number(form.fixed_amount) };
