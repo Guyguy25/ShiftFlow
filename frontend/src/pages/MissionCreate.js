@@ -50,9 +50,9 @@ export default function MissionCreate() {
   }, [draftKey, mission, shifts, step]);
 
   const setM = (k, v) => setMission({ ...mission, [k]: v });
-  const setS = (i, k, v) => setShifts(shifts.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
-  const addShift = () => setShifts([...shifts, emptyShift()]);
-  const removeShift = (i) => setShifts(shifts.length > 1 ? shifts.filter((_, idx) => idx !== i) : shifts);
+  const setS = (i, k, v) => setShifts(prev => prev.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
+  const addShift = () => setShifts(prev => [...prev, emptyShift()]);
+  const removeShift = (i) => setShifts(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
 
   const submit = async (e) => {
     e.preventDefault(); setError("");
