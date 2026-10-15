@@ -1,5 +1,5 @@
 import React from "react";
-import { CalendarDays, Clock3, Users, Euro, SlidersHorizontal } from "lucide-react";
+import { CalendarDays, Users, Euro, SlidersHorizontal } from "lucide-react";
 
 export const MAX_CREW = 500;
 
