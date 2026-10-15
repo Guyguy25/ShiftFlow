@@ -6,6 +6,7 @@ import { Plus, Trash2, Pencil } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import UpgradeModal from "../components/UpgradeModal";
+import ShiftFields, { MAX_CREW } from "../components/ShiftFields";
 
 const TYPES = [
   { v: "montage", l: "Montage" },
@@ -20,20 +21,6 @@ const emptyShift = () => ({
   people_needed: 4, rate_hourly: 15, pay_type: "hourly", fixed_amount: 0, pay_basis: "unspecified",
   mission_type: "montage", skill_required: "", description: "",
 });
-
-function estimate(sh) {
-  try {
-    if (!sh.start_time || !sh.end_time) return 0;
-    const [sh1, sm1] = sh.start_time.split(":").map(Number);
-    const [sh2, sm2] = sh.end_time.split(":").map(Number);
-    if (isNaN(sh1) || isNaN(sh2)) return 0;
-    let hours = (sh2 + sm2/60) - (sh1 + sm1/60);
-    if (hours <= 0) hours += 24;
-    const rate = Number(sh.rate_hourly) || 0;
-    const people = Number(sh.people_needed) || 0;
-    return Math.round((sh.pay_type === "fixed" ? Number(sh.fixed_amount || 0) : hours * rate) * people * 100) / 100;
-  } catch { return 0; }
-}
 
 export default function MissionCreate() {
   const { user } = useAuth();
@@ -74,7 +61,7 @@ export default function MissionCreate() {
       if (!mission.name.trim() || !mission.location.trim()) { setError("Indiquez le nom et le lieu de la mission."); return; }
       setStep(1); return;
     }
-    if (shifts.some(s => !s.date || !s.start_time || !s.end_time || Number(s.people_needed) < 1 || !Number.isInteger(Number(s.people_needed)) || (s.pay_type === "fixed" ? s.fixed_amount === "" || Number(s.fixed_amount) < 0 : s.rate_hourly === "" || Number(s.rate_hourly) < 0))) { setError("Complétez la date, les horaires, le nombre de personnes et le tarif de chaque créneau."); setStep(1); return; }
+    if (shifts.some(s => !s.date || !s.start_time || !s.end_time || !Number.isInteger(Number(s.people_needed)) || Number(s.people_needed) < 1 || Number(s.people_needed) > MAX_CREW || (s.pay_type === "fixed" ? s.fixed_amount === "" || !Number.isFinite(Number(s.fixed_amount)) || Number(s.fixed_amount) < 0 : s.rate_hourly === "" || !Number.isFinite(Number(s.rate_hourly)) || Number(s.rate_hourly) < 0))) { setError("Complétez la date, les horaires, le nombre de personnes et le tarif de chaque créneau."); setStep(1); return; }
     if (shifts.some(s => s.pay_type === "fixed" && !["gross", "net"].includes(s.pay_basis))) { setError("Précisez brut ou net pour chaque cachet fixe."); setStep(1); return; }
     const pastShift = shifts.find(s => s.date && s.date < todayStr);
     if (pastShift) {
@@ -150,62 +137,16 @@ export default function MissionCreate() {
             </button>
           </div>
           {shifts.map((s, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 space-y-4" data-testid={`mc-shift-${i}`}>
+            <div key={i} className="rounded-2xl border border-gray-200 bg-white p-3 sm:p-5 space-y-4 shadow-sm" data-testid={`mc-shift-${i}`}>
               <div className="flex items-center justify-between">
                 <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Créneau {i + 1}</div>
                 {shifts.length > 1 && (
-                  <button type="button" onClick={()=>removeShift(i)} data-testid={`mc-remove-shift-${i}`} className="p-1.5 rounded hover:bg-red-50 text-red-600">
+                  <button type="button" onClick={()=>removeShift(i)} data-testid={`mc-remove-shift-${i}`} aria-label={"Supprimer le créneau " + (i + 1)} className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-red-50 text-red-600">
                     <Trash2 className="w-4 h-4"/>
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor={`mc-shift-${i}-date`} className="text-sm font-medium text-gray-700">Date *</label>
-                  <input type="date" required min={todayStr} id={`mc-shift-${i}-date`} data-testid={`mc-shift-${i}-date`} data-onboarding={!s.date || s.date < todayStr ? "date" : undefined} className={inputCls} value={s.date} onChange={(e)=>setS(i, "date", e.target.value)}/>
-                </div>
-                <div>
-                  <label htmlFor={`mc-shift-${i}-start`} className="text-sm font-medium text-gray-700">Début *</label>
-                  <input type="time" required id={`mc-shift-${i}-start`} data-testid={`mc-shift-${i}-start`} data-onboarding={s.date && !s.start_time ? "hours" : undefined} className={inputCls} value={s.start_time} onChange={(e)=>setS(i, "start_time", e.target.value)}/>
-                </div>
-                <div>
-                  <label htmlFor={`mc-shift-${i}-end`} className="text-sm font-medium text-gray-700">Fin *</label>
-                  <input type="time" required id={`mc-shift-${i}-end`} data-testid={`mc-shift-${i}-end`} data-onboarding={s.date && s.start_time && !s.end_time ? "hours" : undefined} className={inputCls} value={s.end_time} onChange={(e)=>setS(i, "end_time", e.target.value)}/>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor={`mc-shift-${i}-people`} className="text-sm font-medium text-gray-700">Personnes *</label>
-                  <input type="number" min="1" required id={`mc-shift-${i}-people`} data-testid={`mc-shift-${i}-people`} data-onboarding={s.date && s.start_time && s.end_time ? "needs" : undefined} className={inputCls} value={s.people_needed} onChange={(e)=>setS(i, "people_needed", e.target.value)}/>
-                </div>
-                <div>
-                  <label htmlFor={`mc-shift-${i}-rate`} className="text-sm font-medium text-gray-700">Rémunération par personne *</label>
-                  <select aria-label={`Type de rémunération créneau ${i + 1}`} className={inputCls} value={s.pay_type || "hourly"} onChange={e => setS(i, "pay_type", e.target.value)}><option value="hourly">Tarif horaire</option><option value="fixed">Cachet fixe par personne et créneau</option></select>
-                  <input type="number" min="0" step="0.01" required aria-label={`Montant créneau ${i + 1}`} id={`mc-shift-${i}-rate`} data-testid={`mc-shift-${i}-rate`} className={inputCls} value={s.pay_type === "fixed" ? s.fixed_amount : s.rate_hourly} onChange={e => setS(i, s.pay_type === "fixed" ? "fixed_amount" : "rate_hourly", e.target.value)} />
-                  <select aria-label={`Brut ou net créneau ${i + 1}`} className={inputCls} value={s.pay_basis || "unspecified"} onChange={e => setS(i, "pay_basis", e.target.value)}><option value="unspecified">{s.pay_type === "fixed" ? "Choisir brut ou net" : "Brut/net non précisé"}</option><option value="gross">Brut</option><option value="net">Net</option></select>
-                </div>
-                <div>
-                  <label htmlFor={`mc-shift-${i}-type`} className="text-sm font-medium text-gray-700">Type</label>
-                  <select id={`mc-shift-${i}-type`} data-testid={`mc-shift-${i}-type`} className={inputCls} value={s.mission_type} onChange={(e)=>setS(i, "mission_type", e.target.value)}>
-                    {TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
-                  </select>
-                </div>
-              </div>
-              <details><summary className="cursor-pointer py-2 text-sm text-blue-700">Compétence et consignes (facultatif)</summary><div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor={`mc-shift-${i}-skill`} className="text-sm font-medium text-gray-700">Compétence requise</label>
-                  <input id={`mc-shift-${i}-skill`} data-testid={`mc-shift-${i}-skill`} className={inputCls} value={s.skill_required} onChange={(e)=>setS(i, "skill_required", e.target.value)} placeholder="ex: technique"/>
-                </div>
-                <div>
-                  <label htmlFor={`mc-shift-${i}-desc`} className="text-sm font-medium text-gray-700">Consignes du shift</label>
-                  <input id={`mc-shift-${i}-desc`} data-testid={`mc-shift-${i}-desc`} className={inputCls} value={s.description} onChange={(e)=>setS(i, "description", e.target.value)} placeholder="Point de RDV, tenue, etc."/>
-                </div>
-              </div>
-              </details>
-              <div className="text-xs text-gray-500 border-t border-gray-100 pt-3" data-testid={`mc-shift-${i}-estimate`}>
-                Estimation coût brut : <span className="font-semibold text-gray-900">{estimate(s)} €</span>
-                <span className="text-gray-400"> ({s.people_needed} pers. × {compensationLabel(s)})</span>
-              </div>
+              <ShiftFields value={s} idPrefix={"mc-shift-" + i} minDate={todayStr} onChange={(name, value) => setS(i, name, value)} />
             </div>
           ))}
         </div>
