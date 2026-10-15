@@ -5,7 +5,7 @@ export const SITE_NAME = "ShiftFlow.io";
 export const PUBLIC_PAGES = {
   "/": {
     title: "ShiftFlow.io | Gestion des équipes événementielles",
-    description: "ShiftFlow.io, le logiciel pour organiser vos équipes événementielles : missions, disponibilités, confirmations et relances WhatsApp. 3 missions offertes.",
+    description: "Constituez vos équipes événementielles sans contacter chacun à la main. ShiftFlow envoie vos demandes WhatsApp et centralise les réponses. 3 missions offertes.",
     label: "Accueil",
   },
   "/pricing": {

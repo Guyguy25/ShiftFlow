@@ -17,8 +17,8 @@ export default function Demo() {
     <div className="mx-auto max-w-2xl">
       <Link to={user ? "/app/dashboard" : "/"} className="inline-flex min-h-11 items-center font-semibold text-blue-700">← Retour à {user ? "mon espace" : "ShiftFlow"}</Link>
       <p className="mt-6 text-xs font-bold uppercase tracking-widest text-blue-700">Simulation · aucun envoi réel</p>
-      <h1 className="mt-3 text-3xl font-bold">Découvrez votre première cascade</h1>
-      <p className="mt-3 leading-relaxed text-gray-600">Contacts fictifs, sans connexion WhatsApp. Cette démonstration ne crée aucune mission, ne consomme aucun quota et ne consomme aucune mission offerte.</p>
+      <h1 className="mt-3 text-3xl font-bold">Un refus ? Voyez comment le suivant est contacté.</h1>
+      <p className="mt-3 leading-relaxed text-gray-600">Parcourez une demande de mission, du premier message à la confirmation. Contacts fictifs, sans connexion WhatsApp ni envoi réel. Vos trois missions offertes restent disponibles.</p>
       <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 sm:p-8">
         <div aria-live="polite" aria-atomic="true"><p className="text-sm text-blue-700">Étape {step + 1} sur {steps.length}</p><h2 className="mt-2 text-xl font-bold">{current.title}</h2><p className="mt-3 leading-relaxed text-gray-600">{current.description}</p>
           <ol className="my-5 space-y-3">{["Camille", "Alex"].map((name, index) => <li key={name} className="flex flex-wrap justify-between gap-2 rounded-lg bg-slate-50 p-3"><span className="font-semibold">{index + 1}. {name} · fictif</span><span className="text-sm">{current.status[index]}</span></li>)}</ol>

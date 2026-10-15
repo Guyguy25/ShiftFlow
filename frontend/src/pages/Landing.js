@@ -1,343 +1,94 @@
-import FirstMissionHelp from "../components/FirstMissionHelp";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  Zap,
-  Users,
-  Clock3,
-  MessageCircle,
-  RefreshCw,
-  ShieldCheck,
-  CalendarDays,
-  BellRing,
-  ChevronRight,
-  PlayCircle,
-  MousePointer2,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, CheckCircle2, XCircle, Zap, Users, MessageCircle, ShieldCheck, CalendarDays, PlayCircle, ChevronDown, Clock3 } from "lucide-react";
 
-const DEMO_STEPS = [
-  { id: "created", label: "Mission créée", detail: "Montage stand · Lille · 8 personnes" },
-  { id: "sent", label: "WhatsApp envoyé", detail: "Les premiers intervenants sont contactés" },
-  { id: "confirmed", label: "Réponses reçues", detail: "6 confirmés · 1 refus · 1 sans réponse" },
-  { id: "filled", label: "Équipe complète", detail: "ShiftFlow poursuit jusqu'à remplir les 8 places" },
+const wrap = "mx-auto max-w-6xl px-5 sm:px-8";
+const title = "text-3xl font-bold leading-[1.1] tracking-tight sm:text-4xl lg:text-5xl";
+const primary = "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/10 transition-colors hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600";
+const secondary = "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 hover:bg-slate-50";
+const steps = [
+  { label: "La demande", name: "Camille", camille: "Contactée", alex: "En attente", result: "1 place à pourvoir · demande envoyée", text: "Vous avez choisi Camille en premier. Elle reçoit les informations et un lien pour accepter ou refuser, sans compte." },
+  { label: "Le refus", name: "Alex", camille: "A refusé", alex: "Contacté", result: "Camille refuse → Alex est contacté", text: "Camille a refusé via son lien. La proposition passe à Alex, le suivant dans votre liste. Vous n’avez pas à la renvoyer à la main." },
+  { label: "La confirmation", name: "Alex", camille: "A refusé", alex: "Confirmé", result: "1/1 confirmé · la place est pourvue", text: "Dans cet exemple, Alex accepte via son lien. Sa réponse apparaît dans la mission. Vous voyez que la place est pourvue." },
 ];
-
-function AppPreview() {
-  const [activeStep, setActiveStep] = useState(1);
-  const current = DEMO_STEPS[activeStep];
-
-  return (
-    <div className="relative">
-      <div className="absolute -inset-10 bg-blue-500/10 blur-3xl rounded-full" aria-hidden="true" />
-      <div className="relative rounded-2xl border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.14)] overflow-hidden">
-        <div className="h-11 border-b border-slate-200 bg-slate-50 flex items-center gap-2 px-4">
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-          <div className="ml-3 h-6 flex-1 max-w-48 rounded bg-white border border-slate-200" />
-        </div>
-        <div className="grid grid-cols-[72px_1fr] sm:grid-cols-[170px_1fr] min-h-[430px]">
-          <aside className="border-r border-slate-200 bg-white p-3">
-            <div className="flex items-center gap-2 px-2 py-1.5">
-              <div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white" /></div>
-              <span className="hidden sm:block text-sm font-bold">ShiftFlow</span>
-            </div>
-            <div className="mt-5 space-y-2">
-              {["Vue", "Missions", "Équipe", "Calendrier"].map((item, i) => (
-                <div key={item} className={`h-8 rounded-md flex items-center px-2 text-xs ${i === 1 ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-400"}`}>
-                  <span className="w-2 h-2 rounded-full bg-current sm:mr-2" />
-                  <span className="hidden sm:inline">{item}</span>
-                </div>
-              ))}
-            </div>
-          </aside>
-          <div className="p-4 sm:p-6 bg-[#fbfcfe]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-blue-600 font-bold">Mission en cours</div>
-                <div className="mt-1 text-lg sm:text-xl font-bold text-slate-950">Montage stand · Lille</div>
-              </div>
-              <span className="text-[10px] sm:text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-1">6/8 confirmés</span>
-            </div>
-
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              {[['8', 'postes'], ['6', 'confirmés'], ['2', 'à remplir']].map(([n, l]) => (
-                <div key={l} className="rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="text-lg font-bold text-slate-950">{n}</div>
-                  <div className="text-[10px] sm:text-xs text-slate-500">{l}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-semibold text-slate-700">Cascade automatique</div>
-                <div className="flex items-center gap-1.5 text-[10px] text-emerald-700 font-semibold"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />active</div>
-              </div>
-              <div className="mt-4 space-y-2.5">
-                {[
-                  { name: "Karim B.", status: "Confirmé", cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-                  { name: "Sofia M.", status: "Confirmé", cls: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-                  { name: "Lucas D.", status: "Refus", cls: "text-rose-700 bg-rose-50 border-rose-200" },
-                  { name: "Nassim R.", status: "Contacté", cls: "text-blue-700 bg-blue-50 border-blue-200" },
-                ].map((person, i) => (
-                  <div key={person.name} className={`flex items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 ${i === 3 ? "sf-pulse-ring" : ""}`}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="w-6 h-6 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600 flex items-center justify-center">{i + 1}</span>
-                      <span className="text-xs sm:text-sm font-medium text-slate-800 truncate">{person.name}</span>
-                    </div>
-                    <span className={`text-[10px] rounded-full border px-2 py-0.5 ${person.cls}`}>{person.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-4 gap-1.5">
-              {DEMO_STEPS.map((step, i) => (
-                <button key={step.id} type="button" onClick={() => setActiveStep(i)} className={`h-1.5 rounded-full transition-all ${i <= activeStep ? "bg-blue-600" : "bg-slate-200"}`} aria-label={step.label} />
-              ))}
-            </div>
-            <div className="mt-3 rounded-lg bg-slate-950 text-white p-3 flex items-start gap-2">
-              <Sparkles className="w-4 h-4 text-blue-300 mt-0.5 shrink-0" />
-              <div>
-                <div className="text-xs font-semibold">{current.label}</div>
-                <div className="text-[11px] text-slate-300 mt-0.5">{current.detail}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="hidden lg:block absolute -left-8 top-20 sf-float rounded-xl border border-slate-200 bg-white shadow-xl px-3 py-2.5">
-        <div className="text-[10px] text-slate-500">WhatsApp</div>
-        <div className="mt-0.5 text-xs font-semibold text-slate-900">Message envoyé ✓</div>
-      </div>
-      <div className="hidden lg:block absolute -right-8 bottom-16 sf-float-delayed rounded-xl border border-emerald-200 bg-emerald-50 shadow-xl px-3 py-2.5">
-        <div className="text-[10px] text-emerald-700">Équipe</div>
-        <div className="mt-0.5 text-xs font-semibold text-emerald-900">+1 confirmation</div>
-      </div>
-    </div>
-  );
+function Brand() {
+  return <Link to="/" aria-label="ShiftFlow, accueil" data-testid="landing-logo" className="inline-flex items-center gap-2 text-lg font-bold tracking-tight"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white"><Zap size={17} aria-hidden="true" /></span>ShiftFlow<span className="text-blue-600">.</span></Link>;
 }
-
-function FlowStep({ icon: Icon, number, title, text }) {
-  return (
-    <div className="group relative rounded-2xl border border-slate-200 bg-white p-6 hover:-translate-y-1 hover:shadow-[0_18px_50px_rgba(15,23,42,0.08)] transition-all duration-300">
-      <div className="flex items-center justify-between">
-        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center"><Icon className="w-5 h-5 text-blue-700" /></div>
-        <div className="text-xs font-mono text-slate-300">0{number}</div>
-      </div>
-      <h3 className="mt-5 text-lg font-bold text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-slate-600">{text}</p>
-    </div>
-  );
+function Trial({ id, light = false }) {
+  return <Link to="/register" data-testid={id} className={light ? "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-7 py-4 text-sm font-semibold text-blue-700 shadow-lg hover:bg-blue-50" : primary}>Essayer gratuitement <ArrowRight size={17} aria-hidden="true" /></Link>;
 }
-
+function Eyebrow({ children, light = false }) {
+  return <p className={`text-xs font-bold uppercase tracking-[0.16em] ${light ? "text-blue-300" : "text-blue-700"}`}>{children}</p>;
+}
+function ContactStatus({ status }) {
+  const styles = {
+    "Contactée": { icon: MessageCircle, color: "border-emerald-200 bg-emerald-50 text-emerald-900" },
+    "Contacté": { icon: MessageCircle, color: "border-emerald-200 bg-emerald-50 text-emerald-900" },
+    "A refusé": { icon: XCircle, color: "border-red-200 bg-red-50 text-red-700" },
+    "Confirmé": { icon: CheckCircle2, color: "border-emerald-200 bg-emerald-100 text-emerald-900" },
+    "En attente": { icon: Clock3, color: "border-slate-200 bg-white text-slate-500" },
+  };
+  const { icon: Icon, color } = styles[status];
+  return <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${color}`}>
+    <Icon size={14} aria-hidden="true" />{status}
+  </span>;
+}
+function Example({ expanded = false }) {
+  const [step, setStep] = useState(0);
+  const current = steps[step];
+  return <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-[0_24px_70px_-25px_rgba(15,23,42,0.25)]">
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4"><span className="flex items-center gap-2 text-sm font-bold"><span className="h-2 w-2 rounded-full bg-blue-600" />Une mission, côté concret</span><span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">Exemple fictif</span></div>
+    <div className="p-5 sm:p-6">
+      <div className="flex items-start justify-between gap-3"><div><p className="text-xs text-slate-500">Vendredi · 8 h – 12 h · Lille</p><h3 className="mt-1 text-xl font-bold">Montage de stand</h3></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${step === 2 ? "bg-emerald-50 text-emerald-800" : "bg-blue-50 text-blue-700"}`}>{step === 2 ? "1/1 confirmé" : "1 place"}</span></div>
+      <ol className="my-5 space-y-2" aria-label="Votre ordre de priorité">{[["Camille", current.camille], ["Alex", current.alex]].map(([name, status], i) => <li key={name} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-sm"><span className="flex items-center gap-2.5"><span className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-xs text-slate-500">{i + 1}</span><strong>{name}</strong></span><ContactStatus status={status} /></li>)}</ol>
+      <div className="rounded-xl border border-emerald-100 bg-[#eff8f3] p-4"><p className="flex items-center gap-2 text-xs font-semibold text-emerald-900"><MessageCircle size={15} aria-hidden="true" />{step === 2 ? "Réponse via le lien" : `Votre WhatsApp → ${current.name}`}</p><p className="mt-3 text-sm leading-relaxed">{step === 2 ? "Alex a accepté la proposition via son lien de réponse. Sa confirmation est visible dans ShiftFlow." : `Bonjour ${current.name} 👋 Une mission de montage de stand est prévue vendredi à Lille, de 8 h à 12 h. Êtes-vous disponible ?`}</p>{step !== 2 && <p className="mt-3 border-t border-emerald-200 pt-2 text-xs font-semibold text-emerald-800">Lien pour accepter ou refuser · sans compte</p>}</div>
+      <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Message illustratif, adapté pour expliquer le fonctionnement.</p>
+      <div className="mt-5 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" aria-label="Étapes de l’exemple">{steps.map((item, index) => <button key={item.label} type="button" aria-pressed={step === index} onClick={() => setStep(index)} className={`min-h-11 rounded-lg px-1 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${step === index ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:bg-slate-200"}`}>{index + 1}. {item.label}</button>)}</div>
+      <div className="mt-4 min-h-[44px]" aria-live="polite" aria-atomic="true"><p className="flex items-start gap-2 text-sm font-semibold"><CheckCircle2 size={16} className="mt-0.5 shrink-0 text-blue-600" aria-hidden="true" />{current.result}</p>{expanded && <p className="mt-3 text-sm leading-relaxed text-slate-600">{current.text}</p>}</div>
+    </div>
+  </div>;
+}
+const questions = [
+  ["Est-ce que ShiftFlow me fournit des intervenants ?", "Non. ShiftFlow organise les sollicitations auprès de votre propre réseau. Vous choisissez les personnes à contacter et leur ordre de priorité. Il ne s’agit pas d’une plateforme de recrutement."],
+  ["Mes intervenants doivent-ils installer une application ?", "Non. Ils reçoivent votre proposition sur WhatsApp, puis ouvrent un lien pour accepter ou refuser. Ils n’ont pas besoin de créer un compte ShiftFlow."],
+  ["Qu’est-ce qu’une mission, et quand est-elle décomptée ?", "Une mission correspond à un événement ou une intervention, avec ses créneaux, ses intervenants et son suivi. Plusieurs créneaux du même événement sont inclus. Elle est décomptée à sa création, y compris lors d’une duplication. La modifier ne consomme pas de nouvelle mission ; l’annuler ne la recrédite pas."],
+  ["Un message part-il dès que je crée mon compte ?", "Non. Créer votre compte, préparer une mission ou importer des contacts ne lance pas de demande. Vous vérifiez le message et les destinataires avant de confirmer le lancement. Ensuite, les demandes suivantes et les rappels peuvent partir automatiquement. Reconnecter WhatsApp peut permettre la reprise d’automatisations déjà lancées."],
+  ["Quels contacts sont accessibles en connectant WhatsApp ?", "La connexion synchronise les noms et numéros des contacts disponibles dans votre WhatsApp pour vous permettre de les choisir. Seuls ceux que vous sélectionnez et importez sont ajoutés à vos intervenants ShiftFlow. Vous pouvez aussi ajouter vos intervenants manuellement."],
+  ["Et si personne n’accepte la mission ?", "ShiftFlow organise les demandes auprès des personnes sélectionnées ; il ne garantit pas leur disponibilité. Si votre liste ne permet pas de pourvoir les places, le besoin reste à compléter. Vous voyez les réponses et les places encore ouvertes dans votre mission."],
+  ["Puis-je découvrir le fonctionnement sans envoyer de message ?", "Oui. La simulation utilise des personnages fictifs, sans connexion WhatsApp ni envoi réel. Elle ne crée aucune mission et ne consomme aucune de vos trois missions offertes."],
+  ["Que se passe-t-il après les trois missions offertes ?", "Il n’y a aucun passage automatique au payant. Vos missions existantes restent utilisables. Pour en créer d’autres, vous pouvez acheter des missions à 4,90 € l’unité ou choisir une formule Pro. Les tarifs détaillent les packs et les abonnements."],
+];
 export default function Landing() {
-  return (
-    <div className="min-h-screen bg-white text-slate-950">
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-5 sm:px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5" data-testid="landing-logo">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-sm"><Zap className="w-4 h-4 text-white" /></div>
-            <span className="font-display font-bold text-lg tracking-tight">ShiftFlow</span>
-          </Link>
-          <nav className="hidden md:flex items-center gap-7 text-sm text-slate-600">
-            <a href="#produit" className="hover:text-slate-950">Produit</a>
-            <a href="#fonctionnement" className="hover:text-slate-950">Fonctionnement</a>
-            <Link to="/pricing" data-testid="landing-pricing-link" className="hover:text-slate-950">Tarifs</Link>
-          </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Link to="/login" data-testid="landing-login-link" className="text-sm text-slate-600 hover:text-slate-950 hidden sm:inline">Se connecter</Link>
-            <Link to="/register" data-testid="landing-cta-nav" className="text-sm font-semibold bg-slate-950 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
-              Essayer gratuitement
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main>
-        <section className="relative overflow-hidden border-b border-slate-100">
-          <div className="absolute inset-0 sf-grid-mask" aria-hidden="true" />
-          <div className="absolute top-[-12rem] left-1/2 -translate-x-1/2 w-[44rem] h-[34rem] rounded-full bg-blue-100/70 blur-3xl" aria-hidden="true" />
-          <div className="max-w-7xl mx-auto px-5 sm:px-6 py-20 sm:py-24 lg:py-28 relative">
-            <div className="text-center max-w-4xl mx-auto">
-              <div className="sf-fade-up inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50/80 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-                3 missions offertes · sans date limite · aucune carte bancaire
-              </div>
-              <h1 className="sf-fade-up sf-fade-up-delay-1 mt-6 text-4xl sm:text-5xl lg:text-7xl leading-[1.02] tracking-[-0.04em] font-display font-bold text-slate-950">
-                ShiftFlow, votre logiciel de gestion des équipes <span className="text-blue-600">événementielles.</span>
-              </h1>
-              <p className="sf-fade-up sf-fade-up-delay-2 mt-6 max-w-2xl mx-auto text-base sm:text-lg leading-relaxed text-slate-600">
-                Sur ShiftFlow.io, organisez vos missions de montage de stands, de son et lumière ou de technique événementielle avec votre réseau habituel d’intervenants. Choisissez qui contacter en priorité : ShiftFlow envoie les demandes depuis votre WhatsApp et suit les réponses pour vous aider à compléter votre équipe.
-              </p>
-              <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <Link to="/register" data-testid="hero-cta-primary" className="sf-shine w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3.5 rounded-xl font-semibold shadow-[0_10px_30px_rgba(37,99,235,0.22)] transition-all hover:-translate-y-0.5">
-                  Créer mon compte gratuitement <ArrowRight className="w-4 h-4" />
-                </Link>
-                <Link to="/demo" data-testid="hero-cta-secondary" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 px-6 py-3.5 rounded-xl font-semibold transition-colors">
-                  <PlayCircle className="w-4 h-4" /> Essayer la simulation
-                </Link>
-              </div>
-              <div className="mt-7 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
-                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />Sans compte pour les intervenants</span>
-                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />WhatsApp connecté, même sur mobile</span>
-                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-emerald-600" />Sans engagement</span>
-              </div>
-            </div>
-
-            <div id="produit" className="mt-16 sm:mt-20 max-w-5xl mx-auto">
-              <AppPreview />
-              <p className="mt-4 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5"><MousePointer2 className="w-3.5 h-3.5" />Cliquez sur les étapes sous l'aperçu pour simuler le flux</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="py-9 border-b border-slate-100 bg-slate-50/60">
-          <div className="max-w-6xl mx-auto px-5 sm:px-6">
-            <p className="text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Pensé pour les équipes qui travaillent dans le réel</p>
-            <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-              {["Montage de stands", "Technique événementielle", "Son & lumière", "Montage / démontage"].map((label) => (
-                <div key={label} className="text-center text-sm font-medium text-slate-600 rounded-xl border border-slate-200 bg-white px-4 py-3">{label}</div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section id="fonctionnement" className="py-20 sm:py-24">
-          <div className="max-w-7xl mx-auto px-5 sm:px-6">
-            <div className="max-w-2xl">
-              <div className="text-xs uppercase tracking-[0.18em] text-blue-700 font-bold">Le flux ShiftFlow</div>
-              <h2 className="mt-3 text-3xl sm:text-5xl font-display font-bold tracking-[-0.03em] text-slate-950">De « il nous manque quelqu'un » à « équipe complète ».</h2>
-              <p className="mt-4 text-slate-600 text-base sm:text-lg leading-relaxed">Vous gardez le contrôle sur l'ordre de priorité. ShiftFlow s'occupe de la partie répétitive.</p>
-            </div>
-            <div className="mt-12 grid md:grid-cols-2 lg:grid-cols-4 gap-5">
-              <FlowStep number={1} icon={CalendarDays} title="Créez la mission" text="Lieu, date, horaires, nombre de personnes et tarif. Vous posez le cadre en quelques minutes." />
-              <FlowStep number={2} icon={Users} title="Classez votre équipe" text="Sélectionnez les intervenants et définissez exactement dans quel ordre ils doivent être contactés." />
-              <FlowStep number={3} icon={MessageCircle} title="ShiftFlow contacte" text="Les messages partent via votre WhatsApp connecté avec un lien simple pour accepter ou refuser." />
-              <FlowStep number={4} icon={RefreshCw} title="La cascade continue" text="Refus, annulation ou place encore vide : ShiftFlow poursuit avec les suivants jusqu'à compléter le besoin." />
-            </div>
-          </div>
-        </section>
-
-        <section className="py-20 sm:py-24 bg-slate-950 text-white overflow-hidden">
-          <div className="max-w-7xl mx-auto px-5 sm:px-6 grid lg:grid-cols-2 gap-14 items-center">
-            <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-blue-300 font-bold">Le problème que vous connaissez déjà</div>
-              <h2 className="mt-3 text-3xl sm:text-5xl font-display font-bold tracking-[-0.03em]">Un désistement ne devrait pas déclencher 20 messages et 10 appels.</h2>
-              <p className="mt-5 text-slate-300 leading-relaxed text-lg">Quand une personne se retire, votre temps devrait servir à gérer l'événement — pas à parcourir WhatsApp pour retrouver quelqu'un en urgence.</p>
-              <div className="mt-8 space-y-4">
-                {[
-                  "Vous choisissez l'ordre des personnes à contacter.",
-                  "Les confirmations remontent dans un seul tableau de bord.",
-                  "Les intervenants répondent sans créer de compte.",
-                  "Les relances et rappels restent visibles dans le journal WhatsApp.",
-                ].map((item) => (
-                  <div key={item} className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" /><span className="text-slate-200">{item}</span></div>
-                ))}
-              </div>
-            </div>
-
-            <div className="relative">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 sm:p-6 backdrop-blur">
-                <div className="flex items-center justify-between">
-                  <div><div className="text-xs text-slate-400">Vendredi · 06:00</div><div className="mt-1 font-semibold">Montage stand · 8 personnes</div></div>
-                  <span className="rounded-full bg-rose-500/10 text-rose-300 border border-rose-400/20 px-2.5 py-1 text-xs">1 désistement</span>
-                </div>
-                <div className="mt-6 relative h-2 rounded-full bg-white/10 overflow-hidden">
-                  <div className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-blue-500" />
-                  <span className="sf-flow-dot absolute top-1/2 -translate-y-1/2 left-0 w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,.9)]" />
-                </div>
-                <div className="mt-6 space-y-3">
-                  {[
-                    ["18:42", "Lucas annule sa participation", "rose"],
-                    ["18:42", "ShiftFlow contacte automatiquement Nassim", "blue"],
-                    ["18:47", "Nassim confirme depuis WhatsApp", "green"],
-                    ["18:47", "Équipe complète : 8/8", "green"],
-                  ].map(([time, text, tone]) => (
-                    <div key={time + text} className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/10 px-4 py-3">
-                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${tone === 'rose' ? 'bg-rose-400' : tone === 'blue' ? 'bg-blue-400' : 'bg-emerald-400'}`} />
-                      <div className="min-w-0"><div className="text-[11px] text-slate-500">{time}</div><div className="text-sm text-slate-200 mt-0.5">{text}</div></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="py-20 sm:py-24 bg-[#f8fafc] border-y border-slate-100">
-          <div className="max-w-7xl mx-auto px-5 sm:px-6">
-            <div className="text-center max-w-2xl mx-auto">
-              <div className="text-xs uppercase tracking-[0.18em] text-blue-700 font-bold">Simple à mettre en place</div>
-              <h2 className="mt-3 text-3xl sm:text-5xl font-display font-bold tracking-[-0.03em]">Votre équipe existe déjà. Importez-la, puis travaillez.</h2>
-              <p className="mt-4 text-slate-600 text-lg">Pas besoin de reconstruire votre organisation depuis zéro.</p>
-            </div>
-            <div className="mt-12 grid lg:grid-cols-3 gap-5">
-              {[
-                { icon: MessageCircle, title: "Connectez WhatsApp, même sur mobile", text: "Sur téléphone, liez votre WhatsApp avec un code depuis Appareils connectés. Sur ordinateur, scannez le QR code. Vous utilisez ensuite votre propre session WhatsApp dans ShiftFlow.", badge: "Principal" },
-                { icon: Users, title: "Importez vos contacts", text: "Récupérez vos contacts WhatsApp et sélectionnez ceux qui doivent devenir des intervenants ShiftFlow.", badge: "Rapide" },
-                { icon: ShieldCheck, title: "Gardez le contrôle", text: "Vous décidez qui contacter, dans quel ordre, et vous voyez l'état de chaque mission en temps réel.", badge: "Clair" },
-              ].map(({ icon: Icon, title, text, badge }) => (
-                <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 hover:shadow-[0_18px_50px_rgba(15,23,42,0.07)] transition-shadow">
-                  <div className="flex items-center justify-between"><div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center"><Icon className="w-5 h-5 text-blue-700" /></div><span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{badge}</span></div>
-                  <h3 className="mt-5 text-lg font-bold">{title}</h3>
-                  <p className="mt-2 text-sm text-slate-600 leading-relaxed">{text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="py-20 sm:py-24">
-          <div className="max-w-7xl mx-auto px-5 sm:px-6 grid lg:grid-cols-[0.85fr_1.15fr] gap-12 items-start">
-            <div className="lg:sticky lg:top-28">
-              <div className="text-xs uppercase tracking-[0.18em] text-blue-700 font-bold">Tout au même endroit</div>
-              <h2 className="mt-3 text-3xl sm:text-5xl font-display font-bold tracking-[-0.03em]">Moins de chaos opérationnel. Plus de visibilité.</h2>
-              <p className="mt-4 text-slate-600 leading-relaxed text-lg">ShiftFlow remplace les informations éparpillées entre WhatsApp, les notes, les appels et les fichiers par un flux unique et lisible.</p>
-            </div>
-            <div className="space-y-4">
-              {[
-                { icon: CalendarDays, title: "Missions & shifts", text: "Centralisez vos dates, horaires, lieux, besoins en personnel et état de remplissage." },
-                { icon: BellRing, title: "Relances WhatsApp", text: "Envoyez les demandes via votre session WhatsApp et suivez les éventuels échecs dans le journal." },
-                { icon: Users, title: "Intervenants", text: "Gardez votre équipe enregistrée et réutilisez-la d'une mission à l'autre sans repartir de zéro." },
-                { icon: Clock3, title: "Rappels 24h", text: "Réduisez les oublis avec des rappels automatiques avant les shifts lorsque votre WhatsApp est connecté." },
-              ].map(({ icon: Icon, title, text }) => (
-                <div key={title} className="group rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 flex gap-4 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-white flex items-center justify-center shrink-0"><Icon className="w-5 h-5 text-slate-700" /></div>
-                  <div><h3 className="font-bold text-slate-950">{title}</h3><p className="mt-1.5 text-sm leading-relaxed text-slate-600">{text}</p></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <div className="mx-auto max-w-3xl px-5 py-8"><FirstMissionHelp /></div>
-        <section className="py-20 sm:py-24 bg-blue-600 text-white relative overflow-hidden">
-          <div className="absolute inset-0 sf-grid-mask opacity-20" aria-hidden="true" />
-          <div className="max-w-4xl mx-auto px-5 sm:px-6 text-center relative">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold"><Zap className="w-3.5 h-3.5" />3 missions offertes</div>
-            <h2 className="mt-5 text-4xl sm:text-6xl font-display font-bold tracking-[-0.04em]">La prochaine relance peut être la dernière que vous faites à la main.</h2>
-            <p className="mt-5 text-blue-100 text-lg max-w-2xl mx-auto">Créez votre compte et organisez vos 3 premières missions gratuitement, sans date limite. Retrouvez les disponibilités de votre équipe au même endroit.</p>
-            <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
-              <Link to="/register" data-testid="footer-cta" className="inline-flex items-center justify-center gap-2 rounded-xl bg-white text-blue-700 px-7 py-3.5 font-semibold hover:bg-blue-50 transition-colors">Tester ShiftFlow <ArrowRight className="w-4 h-4" /></Link>
-              <Link to="/pricing" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-7 py-3.5 font-semibold hover:bg-white/15 transition-colors">Voir les tarifs <ChevronRight className="w-4 h-4" /></Link>
-            </div>
-            <div className="mt-5 text-sm text-blue-100">Puis 4,90 € la mission · 5 achetées + 1 offerte · Pro mensuel ou annuel</div>
-          </div>
-        </section>
-      </main>
-
-      <footer className="border-t border-slate-100 py-8 bg-white">
-        <div className="max-w-7xl mx-auto px-5 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
-          <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-md bg-blue-600 flex items-center justify-center"><Zap className="w-3.5 h-3.5 text-white" /></div><span className="font-semibold text-slate-700">ShiftFlow</span><span>© 2026</span></div>
-          <div className="flex gap-6"><Link to="/pricing" className="hover:text-slate-900">Tarifs</Link><Link to="/login" className="hover:text-slate-900">Connexion</Link><Link to="/register" className="hover:text-slate-900">Essayer gratuitement</Link></div>
-        </div>
-      </footer>
-    </div>
-  );
+  return <div className="min-h-screen bg-white text-slate-950 selection:bg-blue-100">
+    <a href="#contenu" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:p-4">Aller au contenu</a>
+    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl"><div className={`${wrap} flex min-h-20 items-center justify-between gap-3`}><Brand /><nav aria-label="Navigation principale" className="hidden items-center gap-6 text-sm text-slate-600 md:flex"><a href="#fonctionnement" className="hover:text-blue-700">Comment ça marche</a><a href="#tarifs" className="hover:text-blue-700">Tarifs</a><a href="#questions" className="hover:text-blue-700">Questions fréquentes</a></nav><div className="flex items-center gap-5"><Link to="/login" data-testid="landing-login-link" className="hidden text-sm text-slate-600 hover:text-blue-700 sm:inline">Connexion</Link><Link to="/register" data-testid="landing-cta-nav" className="inline-flex min-h-11 items-center rounded-lg bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 sm:text-sm">Essayer gratuitement</Link></div></div></header>
+    <main id="contenu">
+      <section className="overflow-hidden border-b border-slate-100 bg-gradient-to-br from-white via-white to-blue-50/80"><div className={`${wrap} grid items-center gap-10 py-12 sm:py-16 lg:grid-cols-[1.05fr_1fr] lg:gap-12`}>
+        <div><Eyebrow>Pour les prestataires techniques de l’événementiel</Eyebrow><h1 className="mt-5 text-[2.65rem] font-bold leading-[1.04] tracking-[-0.045em] sm:text-6xl lg:text-[3.5rem]">Constituez vos équipes.<br /><span className="text-blue-600">Sans contacter chacun à la main.</span></h1><p className="mt-6 max-w-xl text-base leading-relaxed text-slate-600 sm:text-lg">Choisissez les intervenants de votre réseau et leur ordre de priorité. ShiftFlow envoie vos propositions de mission depuis votre WhatsApp, centralise les réponses et contacte les suivants si nécessaire.</p><div className="mt-7 flex flex-col gap-3 sm:flex-row"><Trial id="hero-cta-primary" /><Link to="/demo" data-testid="hero-cta-secondary" className={secondary}><PlayCircle size={17} aria-hidden="true" />Voir comment ça marche</Link></div><p className="mt-4 text-sm font-medium leading-relaxed text-slate-600">3 missions offertes · Sans carte bancaire · Sans date limite</p><p className="mt-2 text-xs text-slate-500">La simulation est accessible sans inscription.</p><div className="mt-6 flex items-start gap-2 border-t border-slate-200 pt-5 text-sm leading-relaxed text-slate-600"><ShieldCheck size={18} className="mt-0.5 shrink-0 text-blue-600" aria-hidden="true" /><span>Vous vérifiez le message et les destinataires avant de lancer les demandes.</span></div></div>
+        <div id="produit" className="scroll-mt-28"><Example /><p className="mt-3 text-center text-xs leading-relaxed text-slate-500">Explorez les 3 étapes. Aucun message réel n’est envoyé.</p></div>
+      </div></section>
+      <section className="border-b border-slate-200 bg-slate-50/60 py-7"><div className={`${wrap} flex flex-col items-center justify-between gap-5 lg:flex-row`}><p className="text-sm font-semibold text-slate-600">Pour ceux qui constituent les équipes,<br className="hidden lg:block" /> mission après mission.</p><ul className="flex flex-wrap justify-center gap-x-7 gap-y-3 text-sm font-semibold text-slate-800">{["Montage de stands", "Son & lumière", "Technique événementielle"].map(text => <li key={text} className="flex items-center gap-2"><Check size={15} className="text-blue-600" aria-hidden="true" />{text}</li>)}</ul></div></section>
+      <section className="py-16 sm:py-24"><div className={wrap}><div className="grid gap-6 lg:grid-cols-2 lg:gap-16"><div><Eyebrow>Le travail derrière chaque équipe</Eyebrow><h2 className={`${title} mt-4`}>Une mission à préparer.<br />Et tous ces messages à gérer.</h2></div><p className="self-end text-lg leading-relaxed text-slate-600">Qui est disponible ? Qui a confirmé ? Qui contacter après un refus ? Quand les réponses s’éparpillent, constituer l’équipe devient un travail à part entière.</p></div><div className="mt-10 grid gap-4 sm:grid-cols-3">{[
+        [MessageCircle, "La même demande, encore et encore.", "Reprendre les informations de la mission et solliciter chaque personne à la main."],
+        [Clock3, "Des réponses à retrouver.", "Parcourir vos échanges pour distinguer les confirmations, les refus et les places encore ouvertes."],
+        [Users, "Un refus, et il faut repartir.", "Trouver le suivant dans votre réseau et lui transmettre à nouveau la proposition."],
+      ].map(([Icon, label, text]) => <div key={label} className="rounded-2xl border border-slate-200 p-6"><Icon size={23} className="text-blue-600" aria-hidden="true" /><h3 className="mt-5 text-lg font-bold">{label}</h3><p className="mt-3 text-sm leading-relaxed text-slate-600">{text}</p></div>)}</div></div></section>
+      <section id="fonctionnement" className="scroll-mt-20 bg-slate-950 py-16 text-white sm:py-24"><div className={wrap}><div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-16"><div><Eyebrow light>Votre réseau. Votre ordre.</Eyebrow><h2 className={`${title} mt-4`}>Vous choisissez les bonnes personnes.<br /><span className="text-blue-300">ShiftFlow s’occupe des demandes.</span></h2><ol className="mt-9 space-y-7">{[
+        ["Préparez votre mission.", "Date, lieu, horaires, tarif et nombre de personnes : les informations utiles sont au même endroit."],
+        ["Choisissez qui contacter en premier.", "Sélectionnez les intervenants de votre réseau et classez-les selon vos préférences."],
+        ["Vérifiez. Puis lancez.", "Contrôlez le message et les destinataires. Une fois le lancement confirmé, les demandes partent depuis votre WhatsApp connecté."],
+        ["Suivez les réponses, sans les recopier.", "Les intervenants acceptent ou refusent via leur lien. ShiftFlow met à jour la mission et poursuit les sollicitations si nécessaire."],
+      ].map(([label, text], index) => <li key={label} className="flex gap-4"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700 text-xs font-semibold text-blue-200">0{index + 1}</span><div><h3 className="font-semibold">{label}</h3><p className="mt-2 text-sm leading-relaxed text-slate-300">{text}</p></div></li>)}</ol></div><div><Example expanded /><p className="mt-4 text-xs leading-relaxed text-slate-400">Scénario illustratif. Le remplissage dépend des réponses de votre réseau : aucune disponibilité n’est garantie.</p></div></div><div className="mt-12 flex flex-col items-start justify-between gap-5 border-t border-slate-800 pt-7 sm:flex-row sm:items-center"><p className="text-sm leading-relaxed text-slate-300">Envie de parcourir le scénario vous-même ?<br /><span className="text-slate-400">Sans inscription, sans connexion WhatsApp.</span></p><Link to="/demo" className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-blue-50">Ouvrir la simulation <ArrowUpRight size={17} aria-hidden="true" /></Link></div></div></section>
+      <section className="py-16 sm:py-24"><div className={wrap}><div className="max-w-2xl"><Eyebrow>Chacun garde ses habitudes</Eyebrow><h2 className={`${title} mt-4`}>Un espace pour vous.<br />Un simple lien pour eux.</h2></div><div className="mt-10 grid gap-5 md:grid-cols-2"><div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-7 sm:p-9"><CalendarDays size={26} className="text-blue-600" aria-hidden="true" /><p className="mt-6 text-xs font-bold uppercase tracking-widest text-blue-700">Côté organisateur</p><h3 className="mt-3 text-2xl font-bold">Vous savez où en est l’équipe.</h3><p className="mt-4 leading-relaxed text-slate-600">Retrouvez vos missions, vos créneaux et les réponses de vos intervenants. Identifiez les confirmations et les places encore à pourvoir sans reconstituer le fil de vos conversations.</p></div><div className="rounded-2xl border border-emerald-100 bg-[#f2f8f4] p-7 sm:p-9"><MessageCircle size={26} className="text-emerald-700" aria-hidden="true" /><p className="mt-6 text-xs font-bold uppercase tracking-widest text-emerald-800">Côté intervenant</p><h3 className="mt-3 text-2xl font-bold">Une proposition sur WhatsApp. Une réponse via un lien.</h3><p className="mt-4 leading-relaxed text-slate-600">Vos intervenants consultent la mission et acceptent ou refusent via le lien reçu. Aucun compte ShiftFlow à créer, aucune application supplémentaire à installer.</p></div></div></div></section>
+      <section className="border-y border-slate-200 bg-slate-50 py-16 sm:py-20"><div className={`${wrap} grid gap-10 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16`}><div><Eyebrow>Votre première mission</Eyebrow><h2 className={`${title} mt-4`}>Vous partez de votre équipe actuelle.</h2><p className="mt-5 leading-relaxed text-slate-600">ShiftFlow travaille avec votre réseau. Vous n’avez pas à trouver vos intervenants sur une nouvelle plateforme.</p></div><div className="space-y-6">{[
+        [MessageCircle, "Connectez votre WhatsApp.", "Depuis un ordinateur ou un téléphone, associez votre session pour envoyer les propositions depuis votre propre compte."],
+        [Users, "Retrouvez vos intervenants.", "Sélectionnez les contacts WhatsApp à importer, ou ajoutez-les manuellement. Réutilisez ensuite votre liste d’une mission à l’autre."],
+        [ShieldCheck, "Préparez votre premier envoi.", "Créez une mission, choisissez l’ordre de contact et vérifiez l’aperçu avant de confirmer le lancement."],
+      ].map(([Icon, label, text]) => <div key={label} className="flex gap-4"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white"><Icon size={20} className="text-blue-600" aria-hidden="true" /></span><div><h3 className="text-lg font-bold">{label}</h3><p className="mt-2 text-sm leading-relaxed text-slate-600">{text}</p></div></div>)}</div></div></section>
+      <section id="tarifs" className="scroll-mt-20 py-16 sm:py-24"><div className={`${wrap} grid items-center gap-10 lg:grid-cols-2 lg:gap-16`}><div><Eyebrow>Essayez sur votre terrain</Eyebrow><h2 className={`${title} mt-4`}>Vos 3 premières missions sont offertes.</h2><p className="mt-5 text-lg leading-relaxed text-slate-600">Découvrez ce que ShiftFlow change pour votre organisation, avec vos événements et votre réseau.</p><ul className="mt-6 space-y-3 text-sm text-slate-700">{["Sans carte bancaire", "Sans date limite pour utiliser vos missions", "Aucun passage automatique au payant"].map(text => <li key={text} className="flex gap-2"><Check size={18} className="shrink-0 text-emerald-700" aria-hidden="true" />{text}</li>)}</ul></div><div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-7 sm:p-9"><p className="text-sm font-semibold text-blue-700">Pour commencer</p><p className="mt-3 text-5xl font-bold">0 €</p><p className="mt-3 text-lg font-semibold">3 missions, à votre rythme.</p><p className="mt-4 text-sm leading-relaxed text-slate-600">Une mission correspond à un événement ou une intervention, avec ses créneaux et son suivi. Elle est décomptée à sa création.</p><div className="mt-7"><Trial /></div><div className="mt-6 border-t border-blue-200 pt-5"><p className="text-sm leading-relaxed text-slate-600">Ensuite : <strong className="text-slate-900">4,90 € par mission</strong>, sans abonnement, ou une formule Pro selon votre activité.</p><Link to="/pricing" data-testid="landing-pricing-link" className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700 hover:underline">Comparer les formules et les packs <ArrowRight size={16} aria-hidden="true" /></Link></div></div></div></section>
+      <section id="questions" className="scroll-mt-20 border-t border-slate-100 py-16 sm:py-20"><div className={`${wrap} grid gap-8 lg:grid-cols-[0.7fr_1.3fr] lg:gap-16`}><div><Eyebrow>Avant de commencer</Eyebrow><h2 className={`${title} mt-4`}>Les réponses à vos questions.</h2><p className="mt-5 leading-relaxed text-slate-600">Un autre point à éclaircir ?</p><a href="mailto:contact@shiftflow.io" className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700 hover:underline">Écrivez-nous <ArrowUpRight size={16} aria-hidden="true" /></a></div><div className="divide-y divide-slate-200 border-y border-slate-200">{questions.map(([question, answer]) => <details key={question} className="group py-5"><summary className="flex cursor-pointer list-none items-start justify-between gap-5 font-semibold leading-relaxed marker:content-none [&::-webkit-details-marker]:hidden">{question}<ChevronDown size={18} className="mt-1 shrink-0 text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" /></summary><p className="mt-4 pr-6 text-sm leading-relaxed text-slate-600">{answer}</p></details>)}</div></div></section>
+      <section className="bg-blue-600 py-16 text-white sm:py-20"><div className={`${wrap} text-center`}><p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-100">Votre prochaine mission commence ici</p><h2 className="mx-auto mt-5 max-w-3xl text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">Gardez la main sur votre équipe.<br />Déléguez les demandes.</h2><p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-blue-50">Préparez votre première mission et laissez ShiftFlow organiser les sollicitations auprès de votre réseau.</p><div className="mt-8"><Trial id="footer-cta" light /></div><p className="mt-4 text-sm text-blue-100">3 missions offertes · Sans carte bancaire · Sans date limite</p><Link to="/demo" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm text-white underline underline-offset-4">Ou découvrir la simulation, sans inscription</Link></div></section>
+    </main>
+    <footer className="border-t border-slate-100 py-9"><div className={`${wrap} flex flex-col justify-between gap-6 sm:flex-row sm:items-center`}><div><Brand /><p className="mt-3 text-xs text-slate-500">Les sollicitations WhatsApp de vos équipes événementielles, organisées.</p></div><nav aria-label="Liens de pied de page" className="flex flex-wrap gap-x-6 gap-y-3 text-sm text-slate-600"><Link to="/pricing" className="hover:text-blue-700">Tarifs</Link><Link to="/login" className="hover:text-blue-700">Connexion</Link><a href="mailto:contact@shiftflow.io" className="hover:text-blue-700">Contact</a></nav></div></footer>
+  </div>;
 }
