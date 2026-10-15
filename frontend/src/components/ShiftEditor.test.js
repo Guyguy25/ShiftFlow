@@ -21,3 +21,19 @@ test("an API rejection preserves the editor and explains the capacity conflict",
   await act(async () => host.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
   expect(host.querySelector('[role="alert"]').textContent).toContain("surnombre"); expect(saved).not.toHaveBeenCalled();
 });
+
+test("editing with visual controls saves selected gross hourly pay, team size and technique type", async () => {
+  api.put.mockResolvedValue({ data: {} });
+  await act(async () => root.render(<ShiftEditor missionId="m" shift={shift} onSaved={jest.fn()} onCancel={jest.fn()} />));
+  await act(async () => {
+    host.querySelector('[data-testid="edit-shift-pay-hourly"]').click();
+    host.querySelector('[data-testid="edit-shift-basis-gross"]').click();
+    host.querySelector('[data-testid="edit-shift-type-technique"]').click();
+    host.querySelector('[aria-label="Ajouter un intervenant"]').click();
+  });
+  await act(async () => host.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(api.put).toHaveBeenCalledWith("/shifts/s", expect.objectContaining({
+    people_needed: 3, pay_type: "hourly", rate_hourly: 20,
+    pay_basis: "gross", mission_type: "technique"
+  }));
+});

@@ -40,3 +40,31 @@ test("missing and past dates cannot advance to creation", async () => {
   await submit(); expect(host.textContent).toContain("date déjà passée"); expect(api.post).not.toHaveBeenCalled();
 });
 
+
+test("visual choices preserve exact crew, fixed gross pay and type in the mission payload", async () => {
+  await start();
+  await fill("mc-shift-0-date", "2099-10-01");
+  await fill("mc-shift-0-start", "08:00");
+  await fill("mc-shift-0-end", "12:00");
+  await act(async () => host.querySelector('[data-testid="mc-shift-0-pay-fixed"]').click());
+  await submit();
+  expect(host.textContent).toContain("Précisez brut ou net");
+  expect(api.post).not.toHaveBeenCalled();
+
+  await act(async () => {
+    host.querySelector('[data-testid="mc-shift-0-basis-gross"]').click();
+    host.querySelector('[data-testid="mc-shift-0-type-demontage"]').click();
+  });
+  const number = host.querySelector('[data-testid="mc-shift-0-people"]');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(number, "18");
+    number.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelector('[data-testid="mc-shift-0-people-slider"]').value).toBe("18");
+  await submit(); await submit();
+  expect(api.post).toHaveBeenCalledWith("/missions", expect.objectContaining({
+    shifts: [expect.objectContaining({
+      people_needed: 18, pay_type: "fixed", fixed_amount: 0, pay_basis: "gross", mission_type: "demontage"
+    })]
+  }));
+});
