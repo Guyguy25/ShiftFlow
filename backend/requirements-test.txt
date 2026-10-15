@@ -1,0 +1,3 @@
+# Additional dependency for offline regression tests; production remains unchanged.
+-r requirements.txt
+mongomock==4.3.0

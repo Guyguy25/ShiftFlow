@@ -1,3 +1,4 @@
+import { compensationLabel } from "../lib/compensation";
 import { counted } from "../lib/french";
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -16,7 +17,7 @@ const TYPES = [
 
 const emptyShift = () => ({
   date: "", start_time: "", end_time: "",
-  people_needed: 4, rate_hourly: 15,
+  people_needed: 4, rate_hourly: 15, pay_type: "hourly", fixed_amount: 0, pay_basis: "unspecified",
   mission_type: "montage", skill_required: "", description: "",
 });
 
@@ -30,7 +31,7 @@ function estimate(sh) {
     if (hours <= 0) hours += 24;
     const rate = Number(sh.rate_hourly) || 0;
     const people = Number(sh.people_needed) || 0;
-    return Math.round(hours * rate * people * 100) / 100;
+    return Math.round((sh.pay_type === "fixed" ? Number(sh.fixed_amount || 0) : hours * rate) * people * 100) / 100;
   } catch { return 0; }
 }
 
@@ -73,7 +74,8 @@ export default function MissionCreate() {
       if (!mission.name.trim() || !mission.location.trim()) { setError("Indiquez le nom et le lieu de la mission."); return; }
       setStep(1); return;
     }
-    if (shifts.some(s => !s.date || !s.start_time || !s.end_time || Number(s.people_needed) < 1 || !Number.isInteger(Number(s.people_needed)) || s.rate_hourly === "" || Number(s.rate_hourly) < 0)) { setError("Complétez la date, les horaires, le nombre de personnes et le tarif de chaque créneau."); setStep(1); return; }
+    if (shifts.some(s => !s.date || !s.start_time || !s.end_time || Number(s.people_needed) < 1 || !Number.isInteger(Number(s.people_needed)) || (s.pay_type === "fixed" ? s.fixed_amount === "" || Number(s.fixed_amount) < 0 : s.rate_hourly === "" || Number(s.rate_hourly) < 0))) { setError("Complétez la date, les horaires, le nombre de personnes et le tarif de chaque créneau."); setStep(1); return; }
+    if (shifts.some(s => s.pay_type === "fixed" && !["gross", "net"].includes(s.pay_basis))) { setError("Précisez brut ou net pour chaque cachet fixe."); setStep(1); return; }
     const pastShift = shifts.find(s => s.date && s.date < todayStr);
     if (pastShift) {
       setError("Un ou plusieurs shifts ont une date déjà passée. Corrigez la date avant de continuer.");
@@ -91,6 +93,7 @@ export default function MissionCreate() {
           ...s,
           people_needed: Number(s.people_needed),
           rate_hourly: Number(s.rate_hourly),
+          fixed_amount: Number(s.fixed_amount || 0),
         })),
       };
       const { data } = await api.post("/missions", payload);
@@ -176,8 +179,10 @@ export default function MissionCreate() {
                   <input type="number" min="1" required id={`mc-shift-${i}-people`} data-testid={`mc-shift-${i}-people`} data-onboarding={s.date && s.start_time && s.end_time ? "needs" : undefined} className={inputCls} value={s.people_needed} onChange={(e)=>setS(i, "people_needed", e.target.value)}/>
                 </div>
                 <div>
-                  <label htmlFor={`mc-shift-${i}-rate`} className="text-sm font-medium text-gray-700">Tarif horaire (€/h) *</label>
-                  <input type="number" min="0" step="0.5" required id={`mc-shift-${i}-rate`} data-testid={`mc-shift-${i}-rate`} className={inputCls} value={s.rate_hourly} onChange={(e)=>setS(i, "rate_hourly", e.target.value)}/>
+                  <label htmlFor={`mc-shift-${i}-rate`} className="text-sm font-medium text-gray-700">Rémunération par personne *</label>
+                  <select aria-label={`Type de rémunération créneau ${i + 1}`} className={inputCls} value={s.pay_type || "hourly"} onChange={e => setS(i, "pay_type", e.target.value)}><option value="hourly">Tarif horaire</option><option value="fixed">Cachet fixe par personne et créneau</option></select>
+                  <input type="number" min="0" step="0.01" required aria-label={`Montant créneau ${i + 1}`} id={`mc-shift-${i}-rate`} data-testid={`mc-shift-${i}-rate`} className={inputCls} value={s.pay_type === "fixed" ? s.fixed_amount : s.rate_hourly} onChange={e => setS(i, s.pay_type === "fixed" ? "fixed_amount" : "rate_hourly", e.target.value)} />
+                  <select aria-label={`Brut ou net créneau ${i + 1}`} className={inputCls} value={s.pay_basis || "unspecified"} onChange={e => setS(i, "pay_basis", e.target.value)}><option value="unspecified">{s.pay_type === "fixed" ? "Choisir brut ou net" : "Brut/net non précisé"}</option><option value="gross">Brut</option><option value="net">Net</option></select>
                 </div>
                 <div>
                   <label htmlFor={`mc-shift-${i}-type`} className="text-sm font-medium text-gray-700">Type</label>
@@ -199,7 +204,7 @@ export default function MissionCreate() {
               </details>
               <div className="text-xs text-gray-500 border-t border-gray-100 pt-3" data-testid={`mc-shift-${i}-estimate`}>
                 Estimation coût brut : <span className="font-semibold text-gray-900">{estimate(s)} €</span>
-                <span className="text-gray-400"> ({s.people_needed} pers. × {s.rate_hourly}€/h)</span>
+                <span className="text-gray-400"> ({s.people_needed} pers. × {compensationLabel(s)})</span>
               </div>
             </div>
           ))}
@@ -223,7 +228,7 @@ export default function MissionCreate() {
               Modifier
             </button>
           </div>
-          {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>Créneau {i + 1} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {counted(s.people_needed, "personne")} · {s.rate_hourly} €/h</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
+          {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>Créneau {i + 1} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {counted(s.people_needed, "personne")} · {compensationLabel(s)}</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
           <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl sm:rounded-md px-4 py-3">
             <input type="checkbox" data-testid="mc-cascade" checked={mission.cascade_enabled} onChange={(e)=>setM("cascade_enabled", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
             <div>

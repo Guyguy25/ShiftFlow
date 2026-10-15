@@ -1,3 +1,4 @@
+import { compensationLabel } from "../lib/compensation";
 import { counted } from "../lib/french";
 import React, { useEffect, useRef, useState } from "react";
 import { CheckCheck, MessageCircle } from "lucide-react";
@@ -7,8 +8,8 @@ import { useAuth } from "../context/AuthContext";
 export function renderInvitationPreview(template, worker, shift, mission, agency) {
   const values = { prenom: worker.first_name, nom: worker.last_name, mission: mission.name,
     date: shift.date, heure_debut: shift.start_time, heure_fin: shift.end_time, lieu: mission.location,
-    tarif: shift.rate_hourly, agence: agency.agency_name || "Votre agence", lien: "[Lien personnel généré lors de l’envoi]" };
-  return template.replace(/\{([^{}]+)\}/g, (token, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] ?? "") : token);
+    tarif: shift.pay_type === "fixed" ? shift.fixed_amount : shift.rate_hourly, remuneration: compensationLabel(shift), agence: agency.agency_name || "Votre agence", lien: "[Lien personnel généré lors de l’envoi]" };
+  return template.replace(/\{tarif\}\s*€\s*\/\s*h\b/g, "{remuneration}").replace(/\{([^{}]+)\}/g, (token, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] ?? "") : token);
 }
 
 export default function InvitationReview({ workers, mission, shift, saving, onConfirm, onCancel }) {
@@ -19,6 +20,7 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
     reviewSection.current?.focus({ preventScroll: true });
   }, []);
   const [template, setTemplate] = useState(null);
+  const [config, setConfig] = useState(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [index, setIndex] = useState(0);
@@ -27,16 +29,22 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
     setTemplate(null); setError("");
     api.get("/whatsapp/message-template").then(({ data }) => {
       if (typeof data.template !== "string" || !data.template.trim()) throw new Error("Modèle de message indisponible.");
-      if (!cancelled) setTemplate(data.template);
+      if (!cancelled) { setTemplate(data.template); setConfig(data); }
     }).catch(err => { if (!cancelled) setError(formatApiError(err.response?.data?.detail) || "Impossible de charger le message. Aucun envoi n’a été lancé."); });
     return () => { cancelled = true; };
   }, [attempt]);
   const worker = workers[index] || workers[0];
+  const templateErrors = template === null ? [] : validateMessage(template, config);
+
   return <section ref={reviewSection} tabIndex={-1} className="scroll-mt-20 outline-none mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4" aria-label="Vérification avant envoi">
     <h3 className="font-semibold">Vérifiez avant de lancer les demandes</h3>
     <p className="mt-2 text-sm leading-relaxed text-gray-700">{counted(workers.length, "intervenant")} dans votre sélection, dans l’ordre ci-dessous. L’envoi réel commence après votre confirmation, selon les places restantes et les personnes déjà dans la cascade.</p>
     <ol className="mt-3 list-inside list-decimal text-sm">{workers.map(w => <li key={w.id}>{w.first_name} {w.last_name} · {w.phone}</li>)}</ol>
     <p className="mt-3 text-sm text-gray-700">Après lancement, les demandes suivantes et rappels sont automatiques. Le lien de réponse sera généré lors du lancement ; vos intervenants n’ont pas besoin de compte.</p>
+    {template !== null && <label className="mt-4 block text-sm font-medium">Modifier le message avant envoi
+      <textarea aria-label="Message WhatsApp avant envoi" className="mt-2 w-full rounded-lg border p-3 font-mono text-sm" rows={7} value={template} disabled={saving} onChange={event => setTemplate(event.target.value)} />
+      <span className="block mt-1 text-xs text-gray-600">Conservez les variables obligatoires : {'{prenom}, {mission}, {date}, {lien}'}. Ce texte s’applique à cette sélection. Vos modèles restent dans Paramètres › Automatisations.</span>
+    </label>}
     {error ? <div role="alert" className="mt-3 text-sm text-red-700"><p>{error}</p><button type="button" onClick={() => setAttempt(n => n + 1)} className="min-h-11 underline">Réessayer</button></div> : !template ? <p role="status" className="mt-3 text-sm">Chargement de l’aperçu…</p> : <>
       <div className="mt-5 overflow-hidden rounded-2xl border border-emerald-900/10 bg-white shadow-sm">
         <div className="flex items-center justify-between gap-3 bg-[#075E54] px-4 py-3 text-white">
@@ -73,8 +81,22 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
         </div>
       </div>
     </>}
-    <button type="button" disabled={saving || !template || !worker} data-onboarding="send" onClick={onConfirm} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"><MessageCircle className="h-5 w-5" />{saving ? "Vérification / envoi…" : "Confirmer et envoyer les demandes WhatsApp"}</button>
+    {templateErrors.length > 0 && <p role="alert" className="mt-3 text-sm text-red-700">{templateErrors.join(" ")}</p>}
+    <button type="button" disabled={saving || !template || !worker || templateErrors.length > 0} data-onboarding="send" onClick={() => onConfirm(template)} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"><MessageCircle className="h-5 w-5" />{saving ? "Vérification / envoi…" : "Confirmer et envoyer les demandes WhatsApp"}</button>
     <div data-onboarding-inline="send" />
     <button type="button" disabled={saving} onClick={onCancel} className="mt-2 min-h-11 text-sm font-semibold text-blue-700">Revenir à la sélection</button>
   </section>;
+}
+
+export function validateMessage(template, config = {}) {
+  const errors = [];
+  const required = config?.required || ["{prenom}", "{mission}", "{date}", "{lien}"];
+  if (!template.trim()) errors.push("Le message ne peut pas être vide.");
+  if (template.length > (config?.max_chars || 500) || template.split("\n").length > (config?.max_lines || 10)) errors.push("Maximum 500 caractères et 10 lignes.");
+  if (required.some(token => !template.includes(token))) errors.push(`Conservez ${required.join(", ")}.`);
+  if ((template.match(/\{lien\}/g) || []).length !== 1) errors.push("Conservez exactement un {lien}.");
+  const allowed = config?.variables?.map(variable => variable.token);
+  if (allowed && (template.match(/\{[^{}]+\}/g) || []).some(token => !allowed.includes(token))) errors.push("Variable inconnue.");
+  if (/(?:https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/i.test(template.replace("{lien}", ""))) errors.push("Utilisez uniquement le lien sécurisé {lien}.");
+  return errors;
 }
