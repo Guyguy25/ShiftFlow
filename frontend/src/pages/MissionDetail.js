@@ -1,3 +1,5 @@
+import ShiftEditor from "../components/ShiftEditor";
+import { compensationLabel } from "../lib/compensation";
 import MissionFollowUp, { invitationStatusLabel } from "../components/MissionFollowUp";
 import MissionTeamSetup from "../components/MissionTeamSetup";
 import InvitationReview from "../components/InvitationReview";
@@ -48,13 +50,14 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
     return arr;
   }); };
 
-  const sendSelection = useCallback(async () => {
+  const sendSelection = useCallback(async (invitationTemplate) => {
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
     setSaving(true); setError(""); setWaitingForWhatsApp(false); setConnectOpen(false);
     try {
-      await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected });
+      const { data } = await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected, invitation_template: invitationTemplate });
       setReviewOpen(false);
-      toast.success("Cascade démarrée sur ce shift");
+      if (data.notifications?.failed) toast.error("La sélection est enregistrée, mais des invitations ont échoué. Reconnectez WhatsApp puis reprenez les invitations en attente.");
+      else reportDelivery(data, "Invitations traitées");
       onSelected();
     } catch (err) {
       const detail = formatApiError(err.response?.data?.detail) || err.message;
@@ -67,7 +70,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
     } finally { setSaving(false); }
   }, [onSelected, selected, shift.id]);
 
-  const submit = async () => {
+  const submit = async (invitationTemplate) => {
     if (submitLock.current || !reviewOpen) return;
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
     if (selected.length < missingNeeded) {
@@ -85,7 +88,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
         setConnectOpen(true);
         return;
       }
-      await sendSelection();
+      await sendSelection(invitationTemplate);
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || "Impossible de vérifier la connexion WhatsApp.");
     } finally {
@@ -241,6 +244,8 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
 export function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
   const noSlots = !shift.slots || shift.slots.length === 0;
   const filled = shift.confirmed_count >= shift.people_needed;
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [expandSelect, setExpandSelect] = useState(autoExpand && noSlots && !filled);
   const missing = Math.max(0, shift.people_needed - shift.confirmed_count);
 
@@ -249,6 +254,23 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
     else if (autoExpand) setExpandSelect(true);
   }, [autoExpand, filled, noSlots]);
 
+  const slotAction = async (slot, action) => {
+    if (busy) return;
+    if (action === "remove" && !window.confirm("Retirer cet intervenant confirmé et le prévenir par WhatsApp ?")) return;
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/mission-workers/${slot.id}/${action}`);
+      reportDelivery(data, action === "remove" ? "Intervenant retiré" : "Relance traitée"); onReload();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Action impossible"); }
+    finally { setBusy(false); }
+  };
+  const deleteShift = async () => {
+    if (!window.confirm("Supprimer ce créneau et notifier tous ses intervenants ?")) return;
+    setBusy(true);
+    try { const { data } = await api.delete(`/shifts/${shift.id}`); reportDelivery(data, "Créneau supprimé"); onReload(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Suppression impossible"); }
+    finally { setBusy(false); }
+  };
   const copyLink = (token) => {
     const url = `${window.location.origin}/m/${token}`;
     navigator.clipboard.writeText(url);
@@ -299,7 +321,8 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
         </div>
       </div>
 
-      {noSlots ? (
+      {editing && <ShiftEditor missionId={mission.id} shift={shift} onSaved={() => { setEditing(false); onReload(); }} onCancel={() => setEditing(false)} />}
+      {noSlots && mission.status !== "cancelled" && shift.status !== "cancelled" ? (
         <div className="px-4 sm:px-6 py-5 sm:py-6">
           {!expandSelect ? (
             <button onClick={()=>setExpandSelect(true)} data-testid={`open-select-${shift.id}`}
@@ -314,7 +337,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
         <div>
           <div className="px-4 sm:px-6 pt-4 pb-2 text-sm font-semibold text-gray-900">Demandes et réponses</div>
           <div className="divide-y divide-gray-100">
-          {shift.slots.map((s) => (
+          {(shift.slots || []).map((s) => (
             <div key={s.id} className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2" data-testid={`slot-${s.id}`}>
               <div className="flex items-center gap-4">
                 <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-700 text-xs font-bold flex items-center justify-center">{s.priority + 1}</span>
@@ -333,7 +356,9 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
                   <summary className="cursor-pointer py-2">Actions pour {s.worker?.first_name || "cet intervenant"}</summary>
                   <div className="flex flex-wrap gap-2 pb-2">
                     <button onClick={()=>copyLink(s.token)} data-testid={`copy-link-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 flex items-center gap-1 text-gray-700"><Copy className="w-3 h-3"/> Copier le lien</button>
-                    {s.status === "contacted" && <button onClick={()=>markNoAnswer(s.id)} data-testid={`no-answer-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-700">Marquer sans réponse</button>}
+                    {mission.status !== "cancelled" && shift.status !== "cancelled" && ["contacted", "no_answer"].includes(s.status) && !filled && <button disabled={busy} onClick={() => slotAction(s, "followup")} className="min-h-11 px-3 rounded-lg border">Relancer par WhatsApp</button>}
+                    {mission.status !== "cancelled" && shift.status !== "cancelled" && s.status === "confirmed" && <button disabled={busy} onClick={() => slotAction(s, "remove")} className="min-h-11 px-3 rounded-lg border text-red-700">Retirer et notifier</button>}
+                    {mission.status !== "cancelled" && s.status === "contacted" && <button onClick={()=>markNoAnswer(s.id)} data-testid={`no-answer-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-700">Marquer sans réponse</button>}
                   </div>
                 </details>
               </div>
@@ -364,9 +389,17 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
           )}
         </div>
       )}
+      {!filled && mission.status !== "cancelled" && shift.status !== "cancelled" && shift.slots?.some(slot => slot.status === "pending") && <button disabled={busy} className="px-4 min-h-11 text-blue-700" onClick={async () => {
+        setBusy(true);
+        try { const { data } = await api.post(`/shifts/${shift.id}/next-cascade`); reportDelivery(data, "Invitations traitées"); onReload(); }
+        catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Reprise impossible"); }
+        finally { setBusy(false); }
+      }}>Reprendre les invitations en attente</button>}
       <details className="border-t border-gray-100 px-4 sm:px-6 py-2 text-sm text-gray-500">
         <summary className="cursor-pointer min-h-11 py-3">Détails du créneau</summary>
-        <p data-testid={`shift-rate-${shift.id}`}>Tarif intervenant : {shift.rate_hourly} €/h</p>
+        <p data-testid={`shift-estimate-${shift.id}`}>Budget estimé : {shift.estimated_cost ?? 0} €</p>
+        <p data-testid={`shift-rate-${shift.id}`}>Tarif intervenant : {compensationLabel(shift)}</p>
+        {mission.status !== "cancelled" && shift.status !== "cancelled" && <div className="flex gap-3"><button disabled={busy} onClick={() => setEditing(true)} className="min-h-11 text-blue-700">Modifier ce créneau</button><button disabled={busy} onClick={deleteShift} className="min-h-11 text-red-700">Supprimer et notifier</button></div>}
         <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} className="min-h-11 mt-2 inline-flex items-center gap-2 text-gray-600"><CopyPlus size={16}/> Dupliquer ce créneau</button>
       </details>
     </div>
@@ -379,6 +412,8 @@ export default function MissionDetail() {
   const [searchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [workers, setWorkers] = useState([]);
+  const [addingShift, setAddingShift] = useState(false);
+  const [missionBusy, setMissionBusy] = useState(false);
   const [workersLoading, setWorkersLoading] = useState(true);
   const [workersError, setWorkersError] = useState("");
   const reloadWorkers = useCallback(async () => {
@@ -410,16 +445,18 @@ export default function MissionDetail() {
     : null;
 
   const cancelMission = async () => {
-    if (!window.confirm("Annuler définitivement cette mission ?")) return;
-    await api.post(`/missions/${id}/cancel`);
-    toast.success("Mission annulée");
-    await load();
+    if (missionBusy || !window.confirm("Annuler cette mission et notifier tous les intervenants par WhatsApp ?")) return;
+    setMissionBusy(true);
+    try { const { data } = await api.post(`/missions/${id}/cancel`); reportDelivery(data, "Mission annulée"); await load(); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Annulation impossible"); }
+    finally { setMissionBusy(false); }
   };
   const deleteMission = async () => {
-    if (!window.confirm("Archiver cette mission ? Elle restera consultable dans la section Archives.")) return;
-    await api.delete(`/missions/${id}`);
-    toast.success("Mission archivée");
-    nav("/app/missions");
+    if (!window.confirm("Archiver cette mission ? Les créneaux seront annulés et les intervenants prévenus. Elle restera consultable dans Archives.")) return;
+    setMissionBusy(true);
+    try { const { data } = await api.delete(`/missions/${id}`); reportDelivery(data, "Mission archivée"); nav("/app/missions"); }
+    catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Archivage impossible"); }
+    finally { setMissionBusy(false); }
   };
   const duplicateMission = async () => {
     try {
@@ -447,6 +484,14 @@ export default function MissionDetail() {
         {m.first_date && <p className="flex items-center gap-2"><CalendarClock size={16}/>{m.first_date.split("-").reverse().join("/")}{m.last_date && m.last_date !== m.first_date ? ` – ${m.last_date.split("-").reverse().join("/")}` : ""}</p>}
       </div>
       <MissionFollowUp mission={m} />
+      <button disabled={missionBusy} className="mt-4 min-h-11 text-blue-700" onClick={async () => {
+        setMissionBusy(true);
+        try { const { data } = await api.post(`/missions/${id}/retry-notifications`); reportDelivery(data, "Notifications traitées"); await load(); }
+        catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Réessai impossible"); }
+        finally { setMissionBusy(false); }
+      }}>Réessayer les notifications en échec</button>
+      {m.status !== "cancelled" && <button className="ml-4 min-h-11 text-blue-700" onClick={() => setAddingShift(true)}>Ajouter un créneau</button>}
+      {addingShift && <ShiftEditor missionId={id} onSaved={() => { setAddingShift(false); load(); }} onCancel={() => setAddingShift(false)} />}
       <h2 className="mt-6 font-display font-bold text-lg">Suivi par créneau</h2>
       <div className="mt-3 space-y-4">{m.shifts.map(sh => <ShiftCard key={sh.id} mission={m} shift={sh} workers={workers} onReload={load} autoExpand={sh.id === autoExpandShiftId} />)}</div>
       <details className="mt-5 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
@@ -455,10 +500,16 @@ export default function MissionDetail() {
         <p className="mb-2 text-gray-500">{MISSION_STATUS_LABEL[m.status] || m.status}</p>
         <div className="flex flex-wrap gap-2 pb-2">
           <button onClick={duplicateMission} data-testid="mission-duplicate-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Dupliquer</button>
-          {m.status !== "cancelled" && <button onClick={cancelMission} data-testid="mission-cancel-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Annuler la mission</button>}
-          <button onClick={deleteMission} data-testid="mission-delete-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Archiver</button>
+          {m.status !== "cancelled" && <button disabled={missionBusy} onClick={cancelMission} data-testid="mission-cancel-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Annuler la mission</button>}
+          <button disabled={missionBusy} onClick={deleteMission} data-testid="mission-delete-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Archiver</button>
         </div>
       </details>
     </div>
   );
+}
+
+export function reportDelivery(data, label) {
+  const result = data.notifications;
+  if (result?.failed) toast.error(`${label}. ${result.failed} notification(s) en échec : reconnectez WhatsApp puis réessayez les notifications.`);
+  else toast.success(`${label}${result ? ` · ${result.sent} notification(s) envoyée(s)` : ""}`);
 }

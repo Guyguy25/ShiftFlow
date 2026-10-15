@@ -2,6 +2,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from compensation import compensation_label
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -29,6 +30,7 @@ MESSAGE_TEMPLATE_ALLOWED = {
     "{heure_fin}",
     "{lieu}",
     "{tarif}",
+    "{remuneration}",
     "{agence}",
     "{lien}",
 }
@@ -36,9 +38,18 @@ MESSAGE_TEMPLATE_REQUIRED = {"{prenom}", "{mission}", "{date}", "{lien}"}
 DEFAULT_INVITE_TEMPLATE = (
     "Bonjour {prenom} 👋\n\n"
     "{agence} vous propose la mission « {mission} » le {date}, de {heure_debut} à {heure_fin}, à {lieu}.\n"
-    "Rémunération : {tarif}€/h.\n\n"
+    "Rémunération : {remuneration}.\n\n"
     "Pour accepter ou refuser : {lien}"
 )
+DEFAULT_TEMPLATES = {
+    "invite": DEFAULT_INVITE_TEMPLATE,
+    "followup": "Bonjour {prenom}, avez-vous pu consulter la mission « {mission} » du {date} ? Merci de répondre : {lien}",
+    "cancellation": "Bonjour {prenom}, {agence} vous informe que le créneau de « {mission} » du {date} est annulé. Détails : {lien}",
+    "removal": "Bonjour {prenom}, {agence} vous informe de votre retrait du créneau de « {mission} » du {date}. Détails : {lien}",
+    "change": "Bonjour {prenom}, le créneau de « {mission} » a été modifié : {date}, {heure_debut}–{heure_fin}, {lieu}, {remuneration}. Détails : {lien}",
+}
+
+
 URL_LIKE_RE = re.compile(
     r"(?i)(?:https?://|www\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s]*)?)"
 )
@@ -120,8 +131,6 @@ def validate_invite_template(raw_template: str) -> str:
 
 
 def active_invite_template(agency: dict) -> str:
-    if agency.get("plan") != "pro":
-        return DEFAULT_INVITE_TEMPLATE
     custom = agency.get("whatsapp_invite_template")
     if not custom:
         return DEFAULT_INVITE_TEMPLATE
@@ -133,6 +142,7 @@ def active_invite_template(agency: dict) -> str:
 
 
 def render_invite_template(template: str, worker: dict, shift: dict, mission: dict, agency: dict, url: str) -> str:
+    template = re.sub(r"\{tarif\}\s*€\s*/\s*h\b", "{remuneration}", template)
     values = {
         "{prenom}": str(worker.get("first_name") or ""),
         "{nom}": str(worker.get("last_name") or ""),
@@ -141,14 +151,13 @@ def render_invite_template(template: str, worker: dict, shift: dict, mission: di
         "{heure_debut}": str(shift.get("start_time") or ""),
         "{heure_fin}": str(shift.get("end_time") or ""),
         "{lieu}": str(mission.get("location") or ""),
-        "{tarif}": str(shift.get("rate_hourly") or ""),
+        "{tarif}": str(shift.get("fixed_amount", 0) if shift.get("pay_type") == "fixed" else shift.get("rate_hourly", 0)),
         "{agence}": str(agency.get("agency_name") or "Votre agence"),
         "{lien}": url,
     }
-    body = template
-    for token, value in values.items():
-        body = body.replace(token, value)
-    return body
+    values["{remuneration}"] = compensation_label(shift)
+    # Single pass: user data containing braces must never become template code.
+    return PLACEHOLDER_RE.sub(lambda match: values.get(match.group(0), match.group(0)), template)
 
 
 def build_invite_message(worker: dict, shift: dict, mission: dict, agency: dict, url: str) -> str:
@@ -190,15 +199,17 @@ def usable_contact(contact: dict) -> bool:
     return True
 
 
-async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: dict, agency: dict) -> dict:
+async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: dict, agency: dict, kind="invite") -> dict:
     url = f"{server_module.FRONTEND_URL}/m/{slot['token']}" if server_module.FRONTEND_URL else f"/m/{slot['token']}"
-    body = build_invite_message(worker, shift, mission, agency, url)
+    template = slot.get("invitation_template") if kind == "invite" else None
+    template = template or active_template(agency, kind)
+    body = render_invite_template(template, worker, shift, mission, agency, url)
     to = server_module.normalize_phone(worker.get("phone", ""))
 
     if not to:
         return await _insert_notification(
             mission_id=mission["id"], shift_id=shift["id"], slot_id=slot["id"], worker_id=worker["id"],
-            to=None, body=body, url=url, status="failed", error="Numéro de téléphone invalide", kind="invite",
+            to=None, body=body, url=url, status="failed", error="Numéro de téléphone invalide", kind=kind,
         )
 
     try:
@@ -212,10 +223,10 @@ async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: d
 
     notification = await _insert_notification(
         mission_id=mission["id"], shift_id=shift["id"], slot_id=slot["id"], worker_id=worker["id"],
-        to=to, body=body, url=url, status=status, error=error, kind="invite",
+        to=to, body=body, url=url, status=status, error=error, kind=kind,
         provider_message_id=(result or {}).get("messageId") if result else None,
     )
-    if status == "sent":
+    if status == "sent" and kind == "invite":
         await server_module.record_activation_event(
             agency,
             "first_cascade_sent",
@@ -279,7 +290,7 @@ async def send_reminder_whatsapp(slot: dict, shift: dict, mission: dict, agency:
 async def cascade_all_selected_for_shift(shift_id: str):
     """Send pending invitations in priority order until the shift is full."""
     shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
-    if not shift:
+    if not shift or shift.get("status") == "cancelled":
         return 0
     mission = await db.missions.find_one({"id": shift["mission_id"]}, {"_id": 0})
     if not mission or mission.get("status") == "cancelled":
@@ -320,9 +331,9 @@ async def cascade_all_selected_for_shift(shift_id: str):
     return {"sent": sent, "failed": failed, "total": sent + failed}
 
 
-async def run_whatsapp_followups():
+async def run_whatsapp_followups(agency_id=None):
     now = now_utc()
-    shifts = await db.shifts.find({"status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(5000)
+    shifts = await db.shifts.find({"status": {"$ne": "cancelled"}, **({"agency_id": agency_id} if agency_id else {})}, {"_id": 0}).to_list(5000)
     sent = 0
     for shift in shifts:
         shift_dt = shift_start_utc(shift)
@@ -344,7 +355,12 @@ async def run_whatsapp_followups():
             worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
             if not worker:
                 continue
-            notification = await send_invite_whatsapp(slot, shift, mission, worker, agency)
+            try:
+                notification = await send_followup(slot, shift, mission, agency, worker)
+            except HTTPException as exc:
+                if exc.status_code == 409:
+                    continue
+                raise
             if notification.get("status") == "sent":
                 await db.mission_workers.update_one({"id": slot["id"]}, {"$set": {"followup_sent_at": iso(now_utc())}})
                 sent += 1
@@ -400,10 +416,9 @@ server_module.twilio_ready = lambda: False
 
 @router.get("/message-template")
 async def get_message_template(user=Depends(get_current_user)):
-    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0, "plan": 1, "whatsapp_invite_template": 1})
-    plan = (agency or {}).get("plan", "free")
+    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     stored = (agency or {}).get("whatsapp_invite_template")
-    template = stored if plan == "pro" and stored else DEFAULT_INVITE_TEMPLATE
+    template = stored or DEFAULT_INVITE_TEMPLATE
     try:
         template = validate_invite_template(template)
     except HTTPException:
@@ -411,7 +426,7 @@ async def get_message_template(user=Depends(get_current_user)):
     return {
         "template": template,
         "default_template": DEFAULT_INVITE_TEMPLATE,
-        "can_edit": plan == "pro",
+        "can_edit": True,
         "max_chars": MESSAGE_TEMPLATE_MAX_CHARS,
         "max_lines": MESSAGE_TEMPLATE_MAX_LINES,
         "required": ["{prenom}", "{mission}", "{date}", "{lien}"],
@@ -423,6 +438,7 @@ async def get_message_template(user=Depends(get_current_user)):
             {"token": "{heure_debut}", "label": "Heure de début", "required": False},
             {"token": "{heure_fin}", "label": "Heure de fin", "required": False},
             {"token": "{lieu}", "label": "Lieu", "required": False},
+            {"token": "{remuneration}", "label": "Montant, unité et brut/net", "required": False},
             {"token": "{tarif}", "label": "Tarif horaire", "required": False},
             {"token": "{agence}", "label": "Nom de l'agence", "required": False},
             {"token": "{lien}", "label": "Lien accepter / refuser", "required": True},
@@ -432,9 +448,6 @@ async def get_message_template(user=Depends(get_current_user)):
 
 @router.put("/message-template")
 async def update_message_template(payload: dict, user=Depends(get_current_user)):
-    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0, "plan": 1})
-    if not agency or agency.get("plan") != "pro":
-        raise HTTPException(status_code=403, detail="La personnalisation du message WhatsApp est réservée au plan Pro.")
 
     template = validate_invite_template(payload.get("template"))
     await db.users.update_one(
@@ -446,9 +459,6 @@ async def update_message_template(payload: dict, user=Depends(get_current_user))
 
 @router.delete("/message-template")
 async def reset_message_template(user=Depends(get_current_user)):
-    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0, "plan": 1})
-    if not agency or agency.get("plan") != "pro":
-        raise HTTPException(status_code=403, detail="La personnalisation du message WhatsApp est réservée au plan Pro.")
     await db.users.update_one(
         {"id": user["id"]},
         {"$unset": {"whatsapp_invite_template": "", "whatsapp_invite_template_updated_at": ""}},
@@ -539,7 +549,7 @@ async def whatsapp_stats(user=Depends(get_current_user)):
 
 @router.post("/cron/followups")
 async def whatsapp_followups_cron(user=Depends(get_current_user)):
-    count = await run_whatsapp_followups()
+    count = await run_whatsapp_followups(user["id"])
     return {"ok": True, "sent": count}
 
 
@@ -602,3 +612,53 @@ async def whatsapp_import(payload: dict, request: Request, user=Depends(get_curr
             event_source_path="/app/workers",
         )
     return {"success": True, "created": len(created), "skipped": len(skipped), "workers": created, "quota_hit": limit is not None and len(skipped) > 0 and current_count >= limit, "limit": limit}
+
+
+def active_template(agency, kind):
+    custom = agency.get("whatsapp_templates", {}).get(kind) if kind != "invite" else None
+    if not custom and kind == "invite":
+        return active_invite_template(agency)
+    try:
+        return validate_invite_template(custom or DEFAULT_TEMPLATES[kind])
+    except HTTPException:
+        return DEFAULT_TEMPLATES[kind]
+
+
+@router.get("/automations")
+async def get_automations(user=Depends(get_current_user)):
+    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
+    config = await get_message_template(user)
+    return {**config, "templates": {kind: active_template(agency, kind) for kind in DEFAULT_TEMPLATES}, "defaults": DEFAULT_TEMPLATES}
+
+
+@router.put("/automations/{kind}")
+async def save_automation(kind: str, payload: dict, user=Depends(get_current_user)):
+    if kind not in DEFAULT_TEMPLATES:
+        raise HTTPException(404, "Type de message inconnu")
+    template = validate_invite_template(payload.get("template"))
+    # Keep the original field and endpoint as the canonical invitation setting.
+    field = "whatsapp_invite_template" if kind == "invite" else f"whatsapp_templates.{kind}"
+    await db.users.update_one({"id": user["id"]}, {"$set": {field: template}})
+    return {"ok": True, "template": template}
+
+
+async def send_followup(slot, shift, mission, agency, worker):
+    if slot.get("status") not in ("contacted", "no_answer") or shift.get("status") == "cancelled" or mission.get("status") == "cancelled":
+        raise HTTPException(409, "Cet intervenant n'est plus en attente")
+    now = now_utc()
+    claim = await db.mission_workers.update_one({
+        "id": slot["id"], "status": {"$in": ["contacted", "no_answer"]},
+        "$and": [
+            {"$or": [{"followup_lock_until": {"$exists": False}}, {"followup_lock_until": {"$lte": iso(now)}}]},
+            {"$or": [{"followup_sent_at": {"$exists": False}}, {"followup_sent_at": {"$lte": iso(now - timedelta(hours=1))}}]},
+        ],
+    }, {"$set": {"followup_lock_until": iso(now + timedelta(minutes=3))}})
+    if not claim.modified_count:
+        raise HTTPException(409, "Relance déjà en cours ou envoyée il y a moins d'une heure")
+    try:
+        notification = await send_invite_whatsapp(slot, shift, mission, worker, agency, kind="followup")
+        if notification.get("status") == "sent":
+            await db.mission_workers.update_one({"id": slot["id"]}, {"$set": {"followup_sent_at": iso(now_utc())}})
+        return notification
+    finally:
+        await db.mission_workers.update_one({"id": slot["id"]}, {"$unset": {"followup_lock_until": ""}})

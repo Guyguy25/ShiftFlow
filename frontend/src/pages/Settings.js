@@ -1,6 +1,6 @@
 import { counted } from "../lib/french";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Crown, ExternalLink, Save, LockKeyhole, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Crown, ExternalLink, Save, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { api, formatApiError } from "../lib/api";
@@ -19,13 +19,16 @@ export default function Settings() {
   const [messageTemplate, setMessageTemplate] = useState("");
   const [messageSaving, setMessageSaving] = useState(false);
   const messageRef = useRef(null);
+  const [automationKind, setAutomationKind] = useState("invite");
+  const [automationConfig, setAutomationConfig] = useState(null);
 
   useEffect(() => {
     api.get("/plan/quota").then((r) => setQuota(r.data)).catch(() => {});
-    api.get("/whatsapp/message-template").then((r) => {
+    api.get("/whatsapp/automations").then((r) => {
+      setAutomationConfig(r.data);
       setMessageConfig(r.data);
       setMessageTemplate(r.data.template || "");
-    }).catch(() => {});
+    }).catch(() => toast.error("Impossible de charger les modèles. Réessayez en rechargeant cette page."));
     reloadNotifs();
   }, []);
 
@@ -69,7 +72,6 @@ export default function Settings() {
   }, [allowedTokens, maxChars, maxLines, messageTemplate, requiredTokens]);
 
   const insertToken = (token) => {
-    if (!isPro) return;
     const textarea = messageRef.current;
     if (!textarea) {
       setMessageTemplate((prev) => `${prev}${prev ? " " : ""}${token}`);
@@ -88,11 +90,12 @@ export default function Settings() {
   };
 
   const saveMessageTemplate = async () => {
-    if (!isPro || !messageValidation.valid) return;
+    if (!messageValidation.valid) return;
     setMessageSaving(true);
     try {
-      const { data } = await api.put("/whatsapp/message-template", { template: messageTemplate });
+      const { data } = await api.put(`/whatsapp/automations/${automationKind}`, { template: messageTemplate });
       setMessageTemplate(data.template);
+      setAutomationConfig(prev => ({ ...prev, templates: { ...prev.templates, [automationKind]: data.template } }));
       toast.success("Message WhatsApp enregistré");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || "Impossible d'enregistrer le message.");
@@ -100,11 +103,11 @@ export default function Settings() {
   };
 
   const resetMessageTemplate = async () => {
-    if (!isPro) return;
     setMessageSaving(true);
     try {
-      const { data } = await api.delete("/whatsapp/message-template");
+      const { data } = await api.put(`/whatsapp/automations/${automationKind}`, { template: automationConfig.defaults[automationKind] });
       setMessageTemplate(data.template);
+      setAutomationConfig(prev => ({ ...prev, templates: { ...prev.templates, [automationKind]: data.template } }));
       toast.success("Message par défaut restauré");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail) || "Impossible de restaurer le message.");
@@ -150,21 +153,28 @@ export default function Settings() {
           </div>
         </div>
 
-        <details className="group"><summary className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 font-semibold">Personnaliser mes messages WhatsApp</summary>
-        <div className={`relative bg-white border rounded-xl p-6 overflow-hidden ${isPro ? "border-gray-200" : "border-blue-200"}`} data-testid="settings-whatsapp-template-block">
+        <details className="group"><summary className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 font-semibold">Automatisations</summary>
+        <div className="relative bg-white border border-gray-200 rounded-xl p-6" data-testid="settings-whatsapp-template-block">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
                 <MessageCircle className="w-5 h-5 text-green-600" />
-                <h2 className="font-display font-bold text-lg">Message WhatsApp des cascades</h2>
-                <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold bg-blue-50 text-blue-700 border border-blue-200 rounded px-2 py-1"><Crown className="w-3 h-3"/> Pro</span>
+                <h2 className="font-display font-bold text-lg">Messages WhatsApp</h2>
+
               </div>
-              <p className="mt-1 text-sm text-gray-600">Personnalisez le message envoyé automatiquement aux intervenants lors d'une cascade ou d'une relance.</p>
+              <p className="mt-1 text-sm text-gray-600">Modèles accessibles à tous. Les modifications s’appliquent aux prochains envois. Les messages déjà validés pour une sélection sont conservés.</p>
             </div>
-            {!isPro && <LockKeyhole className="w-5 h-5 text-blue-600 shrink-0" />}
           </div>
 
-          <div className={`mt-5 ${!isPro ? "pointer-events-none select-none opacity-45 blur-[0.2px]" : ""}`}>
+          <label className="mt-4 block text-sm font-medium">Type de message
+            <select aria-label="Type de message" className="mt-2 w-full border rounded-lg p-3" value={automationKind} disabled={messageSaving || !automationConfig} onChange={event => {
+              if (messageTemplate !== automationConfig.templates[automationKind] && !window.confirm("Abandonner les modifications non enregistrées ?")) return;
+              const kind = event.target.value; setAutomationKind(kind); setMessageTemplate(automationConfig.templates[kind]);
+            }}>
+              <option value="invite">Première invitation</option><option value="followup">Relance sans réponse</option><option value="cancellation">Annulation</option><option value="removal">Retrait d’un intervenant</option><option value="change">Modification de créneau</option>
+            </select>
+          </label>
+          <div className="mt-5">
             <div className="flex items-center justify-between gap-3 mb-2">
               <label className="text-sm font-medium text-gray-900">Message envoyé</label>
               <div className={`text-xs font-medium ${messageTemplate.length > maxChars ? "text-red-600" : "text-gray-500"}`}>{messageTemplate.length}/{maxChars} caractères · {messageValidation.lines}/{maxLines} lignes</div>
@@ -173,7 +183,7 @@ export default function Settings() {
               ref={messageRef}
               value={messageTemplate}
               onChange={(e) => setMessageTemplate(e.target.value.slice(0, maxChars + 20))}
-              disabled={!isPro}
+              disabled={!automationConfig || messageSaving}
               rows={8}
               spellCheck="true"
               data-testid="settings-whatsapp-template-input"
@@ -212,27 +222,16 @@ export default function Settings() {
             )}
 
             <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <button type="button" onClick={resetMessageTemplate} disabled={!isPro || messageSaving} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <button type="button" onClick={resetMessageTemplate} disabled={messageSaving || !automationConfig} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                 <RotateCcw className="w-4 h-4"/> Restaurer le message par défaut
               </button>
-              <button type="button" onClick={saveMessageTemplate} disabled={!isPro || messageSaving || !messageValidation.valid} data-testid="settings-whatsapp-template-save" className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+              <button type="button" onClick={saveMessageTemplate} disabled={messageSaving || !automationConfig || !messageValidation.valid} data-testid="settings-whatsapp-template-save" className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                 <Save className="w-4 h-4"/>{messageSaving ? "Enregistrement…" : "Enregistrer le message"}
               </button>
             </div>
           </div>
 
-          {!isPro && (
-            <div className="absolute inset-x-4 bottom-4 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[340px] bg-white/95 backdrop-blur border border-blue-200 shadow-lg rounded-xl p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0"><Crown className="w-4 h-4 text-blue-700"/></div>
-                <div>
-                  <div className="font-semibold text-sm text-gray-900">Personnalisation réservée au Pro</div>
-                  <p className="mt-1 text-xs text-gray-600">Vous pouvez voir les variables et le format, mais seuls les comptes Pro peuvent modifier le message envoyé automatiquement.</p>
-                  <Link to="/pricing" className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-blue-700 hover:text-blue-800">Découvrir le plan Pro <ExternalLink className="w-3.5 h-3.5"/></Link>
-                </div>
-              </div>
-            </div>
-          )}
+
         </div>
 
         </details>

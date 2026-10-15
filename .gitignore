@@ -17,6 +17,7 @@ node_modules/
 !.yarn/versions
 
 # Testing
+.test-cache/
 /coverage
 
 # Next.js

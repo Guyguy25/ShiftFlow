@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from profile_data import validate_avatar
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
@@ -499,10 +499,27 @@ class ShiftIn(BaseModel):
     start_time: str
     end_time: str
     people_needed: int = Field(ge=1)
-    rate_hourly: float = 0
+    rate_hourly: float = Field(default=0, ge=0, allow_inf_nan=False)
+    pay_type: Literal["hourly", "fixed"] = "hourly"
+    fixed_amount: float = Field(default=0, ge=0, allow_inf_nan=False)
+    pay_basis: Literal["gross", "net", "unspecified"] = "unspecified"
     mission_type: Literal["montage", "demontage", "montage_demontage", "technique", "autre"] = "montage"
     skill_required: Optional[str] = ""
     description: Optional[str] = ""
+
+    @model_validator(mode="after")
+    def _fixed_basis(self):
+        if self.pay_type == "fixed" and self.pay_basis == "unspecified":
+            raise ValueError("Précisez brut ou net pour un cachet fixe.")
+        return self
+
+    @field_validator("start_time", "end_time")
+    @classmethod
+    def _valid_time(cls, value):
+        import re
+        if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value):
+            raise ValueError("Horaire invalide (HH:MM).")
+        return value
 
     @field_validator("date")
     @classmethod
@@ -538,6 +555,7 @@ class MissionUpdateIn(BaseModel):
 
 class SelectWorkersIn(BaseModel):
     worker_ids: List[str]
+    invitation_template: Optional[str] = None
 
 
 class ConfirmIn(BaseModel):
@@ -580,16 +598,16 @@ async def update_shift_and_mission_status(shift_id: str):
     filled = confirmed >= shift["people_needed"]
     new_status = "filled" if filled else "in_progress"
     if shift.get("status") != "cancelled":
-        await db.shifts.update_one({"id": shift_id}, {"$set": {"status": new_status, "confirmed_count": confirmed}})
+        await db.shifts.update_one({"id": shift_id, "status": {"$ne": "cancelled"}}, {"$set": {"status": new_status, "confirmed_count": confirmed}})
 
     # Mission status = filled if all shifts filled, else in_progress
     mission_id = shift["mission_id"]
     mission = await db.missions.find_one({"id": mission_id}, {"_id": 0})
     if not mission or mission.get("status") == "cancelled":
         return
-    all_shifts = await db.shifts.find({"mission_id": mission_id}, {"_id": 0}).to_list(1000)
+    all_shifts = await db.shifts.find({"mission_id": mission_id, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(1000)
     if all_shifts and all(s.get("status") == "filled" for s in all_shifts):
-        await db.missions.update_one({"id": mission_id}, {"$set": {"status": "filled"}})
+        await db.missions.update_one({"id": mission_id, "status": {"$ne": "cancelled"}}, {"$set": {"status": "filled"}})
         agency = await db.users.find_one({"id": mission.get("agency_id")}, {"_id": 0})
         if agency:
             await record_activation_event(
@@ -600,7 +618,7 @@ async def update_shift_and_mission_status(shift_id: str):
                 event_source_path=f"/app/missions/{mission_id}",
             )
     else:
-        await db.missions.update_one({"id": mission_id}, {"$set": {"status": "in_progress"}})
+        await db.missions.update_one({"id": mission_id, "status": {"$ne": "cancelled"}}, {"$set": {"status": "in_progress"}})
 
 
 # Anonymous registration drafts: capability token, bounded payload, seven-day expiry.
@@ -926,6 +944,8 @@ async def delete_worker(worker_id: str, user=Depends(get_current_user)):
 def compute_shift_estimate(shift: dict) -> float:
     """hours × rate_hourly × people_needed (as a target cost)."""
     try:
+        if shift.get("pay_type") == "fixed":
+            return round(float(shift.get("fixed_amount", 0)) * int(shift.get("people_needed", 0)), 2)
         s = shift["start_time"].split(":")
         e = shift["end_time"].split(":")
         sh = int(s[0]) + int(s[1]) / 60
@@ -949,12 +969,15 @@ async def mission_with_shifts(mission: dict, include_slots: bool = False) -> dic
             for s in slots:
                 s["worker"] = workers.get(s["worker_id"])
             sh["slots"] = slots
+    # Cancelled shifts remain in history but no longer count toward staffing.
+    shifts = [sh for sh in shifts if not sh.get("deleted_at")]
+    active = [sh for sh in shifts if sh.get("status") != "cancelled"]
     # aggregate: earliest date, total people & confirmed
-    if shifts:
-        mission["first_date"] = min(sh["date"] for sh in shifts)
-        mission["last_date"] = max(sh["date"] for sh in shifts)
-        mission["total_needed"] = sum(sh["people_needed"] for sh in shifts)
-        mission["total_confirmed"] = sum(sh.get("confirmed_count", 0) for sh in shifts)
+    if active:
+        mission["first_date"] = min(sh["date"] for sh in active)
+        mission["last_date"] = max(sh["date"] for sh in active)
+        mission["total_needed"] = sum(sh["people_needed"] for sh in active)
+        mission["total_confirmed"] = sum(sh.get("confirmed_count", 0) for sh in active)
     else:
         mission["first_date"] = None
         mission["last_date"] = None
@@ -1096,6 +1119,9 @@ async def delete_mission(mission_id: str, user=Depends(get_current_user)):
     if not mission:
         raise HTTPException(status_code=404, detail="Mission introuvable")
 
+    from mission_operations import cancel_owned_mission
+    cancellation = await cancel_owned_mission(mission_id, user)
+
     # "Delete" is intentionally a soft delete. Archived missions still count
     # toward the three-mission trial allowance, preventing quota bypasses.
     archived_at = iso(now_utc())
@@ -1112,16 +1138,13 @@ async def delete_mission(mission_id: str, user=Depends(get_current_user)):
         {"mission_id": mission_id, "status": {"$ne": "cancelled"}},
         {"$set": {"status": "cancelled"}},
     )
-    return {"ok": True, "archived": True, "archived_at": archived_at}
+    return {"ok": True, "archived": True, "archived_at": archived_at, "notifications": cancellation["notifications"]}
 
 
 @api.post("/missions/{mission_id}/cancel")
 async def cancel_mission(mission_id: str, user=Depends(get_current_user)):
-    res = await db.missions.update_one({"id": mission_id, "agency_id": user["id"]}, {"$set": {"status": "cancelled"}})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Mission introuvable")
-    await db.shifts.update_many({"mission_id": mission_id}, {"$set": {"status": "cancelled"}})
-    return {"ok": True}
+    from mission_operations import cancel_owned_mission
+    return await cancel_owned_mission(mission_id, user)
 
 
 # ---- Shift-level actions ----
@@ -1136,6 +1159,12 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, requ
     if int(shift.get("confirmed_count") or 0) >= int(shift.get("people_needed") or 0):
         raise HTTPException(status_code=400, detail="L'équipe de ce shift est déjà complète")
 
+    mission = await db.missions.find_one({"id": shift["mission_id"], "agency_id": user["id"]}, {"_id": 0})
+    if not mission or mission.get("status") == "cancelled" or mission.get("archived"):
+        raise HTTPException(409, "Mission annulée ou archivée")
+    if payload.invitation_template is not None:
+        from whatsapp_routes import validate_invite_template
+        payload.invitation_template = validate_invite_template(payload.invitation_template)
     existing = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).sort("priority", 1).to_list(1000)
     existing_worker_ids = {slot.get("worker_id") for slot in existing}
     next_priority = max((int(slot.get("priority") or 0) for slot in existing), default=-1) + 1
@@ -1160,6 +1189,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, requ
             "priority": next_priority + len(slots),
             "token": secrets.token_urlsafe(24),
             "status": "pending",
+            **({"invitation_template": payload.invitation_template} if payload.invitation_template is not None else {}),
             "contacted_at": None,
             "responded_at": None,
             "response_reason": None,
@@ -1173,8 +1203,8 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, requ
         )
 
     await db.mission_workers.insert_many(slots)
-    await db.shifts.update_one({"id": shift_id}, {"$set": {"status": "in_progress"}})
-    await db.missions.update_one({"id": shift["mission_id"]}, {"$set": {"status": "in_progress"}})
+    await db.shifts.update_one({"id": shift_id, "status": {"$ne": "cancelled"}}, {"$set": {"status": "in_progress"}})
+    await db.missions.update_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"$set": {"status": "in_progress"}})
     await record_activation_event(
         user,
         "cascade_started",
@@ -1183,7 +1213,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, requ
         meta_event_name="CascadeStarted",
         event_source_path=f"/app/missions/{shift['mission_id']}",
     )
-    await cascade_next_for_shift(shift_id)
+    dispatch = await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
 
     refreshed_shift = await db.shifts.find_one({"id": shift_id}, {"_id": 0})
@@ -1191,6 +1221,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, requ
     remaining = max(0, int(shift.get("people_needed") or 0) - confirmed)
     return {
         "ok": True,
+        "notifications": {"sent": (dispatch or {}).get("sent", 0), "failed": (dispatch or {}).get("failed", 0)},
         "slots_created": len(slots),
         "total_candidates": len(existing) + len(slots),
         "remaining_needed": remaining,
@@ -1211,9 +1242,9 @@ async def force_cascade(shift_id: str, request: Request, user=Depends(get_curren
         meta_event_name="CascadeStarted",
         event_source_path=f"/app/missions/{shift['mission_id']}",
     )
-    await cascade_next_for_shift(shift_id)
+    dispatch = await cascade_next_for_shift(shift_id)
     await update_shift_and_mission_status(shift_id)
-    return {"ok": True}
+    return {"ok": True, "notifications": {"sent": (dispatch or {}).get("sent", 0), "failed": (dispatch or {}).get("failed", 0)}}
 
 
 @api.post("/mission-workers/{slot_id}/mark-no-answer")
@@ -1225,7 +1256,9 @@ async def mark_no_answer(slot_id: str, user=Depends(get_current_user)):
     shift = await db.shifts.find_one({"id": slot["shift_id"], "agency_id": user["id"]}, {"_id": 0})
     if not shift:
         raise HTTPException(status_code=404, detail="Shift introuvable")
-    await db.mission_workers.update_one({"id": slot_id}, {"$set": {"status": "no_answer", "responded_at": iso(now_utc())}})
+    if slot.get("status") != "contacted":
+        raise HTTPException(409, "Cet intervenant n’est plus en attente")
+    await db.mission_workers.update_one({"id": slot_id, "status": "contacted"}, {"$set": {"status": "no_answer", "responded_at": iso(now_utc())}})
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
     return {"ok": True}
@@ -1248,6 +1281,8 @@ async def public_get(token: str):
         "shift": {
             "date": shift["date"], "start_time": shift["start_time"], "end_time": shift["end_time"],
             "rate_hourly": shift["rate_hourly"], "mission_type": shift["mission_type"],
+            "pay_type": shift.get("pay_type", "hourly"), "fixed_amount": shift.get("fixed_amount", 0),
+            "pay_basis": shift.get("pay_basis", "unspecified"),
             "description": shift.get("description", "") or mission.get("description", ""),
         },
         "mission": {
@@ -1264,12 +1299,13 @@ async def public_accept(token: str):
     slot = await db.mission_workers.find_one({"token": token}, {"_id": 0})
     if not slot:
         raise HTTPException(status_code=404, detail="Lien invalide")
+    shift = await db.shifts.find_one({"id": slot["shift_id"]}, {"_id": 0})
+    mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
+    if slot.get("status") == "cancelled" or not shift or shift.get("status") == "cancelled" or not mission or mission.get("status") == "cancelled":
+        raise HTTPException(409, "Cette invitation a été annulée")
+
     if slot["status"] in ("confirmed", "refused"):
         return {"ok": True, "status": slot["status"]}
-    mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
-    shift = await db.shifts.find_one({"id": slot["shift_id"]}, {"_id": 0})
-    if mission and mission.get("status") == "cancelled":
-        raise HTTPException(status_code=400, detail="Cette mission a été annulée")
     slots = await db.mission_workers.find({"shift_id": slot["shift_id"]}, {"_id": 0}).to_list(1000)
     confirmed_count = sum(1 for s in slots if s["status"] == "confirmed")
     if shift and confirmed_count >= shift["people_needed"]:
@@ -1279,8 +1315,10 @@ async def public_accept(token: str):
                       "response_reason": "Équipe déjà complète"}}
         )
         return {"ok": False, "status": "cancelled", "reason": "Équipe déjà complète"}
-    await db.mission_workers.update_one({"id": slot["id"]},
+    result = await db.mission_workers.update_one({"id": slot["id"], "status": slot["status"]},
                                         {"$set": {"status": "confirmed", "responded_at": iso(now_utc())}})
+    if not result.modified_count:
+        raise HTTPException(409, "Cette invitation a changé. Rechargez la page.")
     agency = await db.users.find_one({"id": slot["agency_id"]}, {"_id": 0}) if slot.get("agency_id") else None
     if not agency and mission:
         agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
@@ -1297,12 +1335,19 @@ async def public_refuse(token: str, payload: ConfirmIn):
     slot = await db.mission_workers.find_one({"token": token}, {"_id": 0})
     if not slot:
         raise HTTPException(status_code=404, detail="Lien invalide")
+    shift = await db.shifts.find_one({"id": slot["shift_id"]}, {"_id": 0})
+    mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
+    if slot.get("status") == "cancelled" or not shift or shift.get("status") == "cancelled" or not mission or mission.get("status") == "cancelled":
+        raise HTTPException(409, "Cette invitation a été annulée")
+
     if slot["status"] in ("confirmed", "refused"):
         return {"ok": True, "status": slot["status"]}
-    await db.mission_workers.update_one(
-        {"id": slot["id"]},
+    result = await db.mission_workers.update_one(
+        {"id": slot["id"], "status": slot["status"]},
         {"$set": {"status": "refused", "responded_at": iso(now_utc()), "response_reason": payload.reason}}
     )
+    if not result.modified_count:
+        raise HTTPException(409, "Cette invitation a changé. Rechargez la page.")
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
     return {"ok": True, "status": "refused"}
@@ -1351,6 +1396,9 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
     original = await db.missions.find_one({"id": mission_id, "agency_id": user["id"]}, {"_id": 0})
     if not original:
         raise HTTPException(status_code=404, detail="Mission introuvable")
+    original_shifts = await db.shifts.find({"mission_id": mission_id, "deleted_at": {"$exists": False}}, {"_id": 0}).sort("date", 1).to_list(500)
+    if not original_shifts:
+        raise HTTPException(409, "Ajoutez un créneau avant de dupliquer cette mission")
     new_mission = {
         "id": new_id(),
         "agency_id": user["id"],
@@ -1372,7 +1420,6 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
             await mission_billing.release(db, user["id"], source)
         raise
     new_mission.pop("_id", None)
-    original_shifts = await db.shifts.find({"mission_id": mission_id}, {"_id": 0}).sort("date", 1).to_list(500)
     for sh in original_shifts:
         try:
             base_dt = datetime.fromisoformat(f"{sh['date']}T00:00:00+00:00")
@@ -1388,6 +1435,8 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
             "end_time": sh["end_time"],
             "people_needed": sh["people_needed"],
             "rate_hourly": sh["rate_hourly"],
+            "pay_type": sh.get("pay_type", "hourly"), "fixed_amount": sh.get("fixed_amount", 0),
+            "pay_basis": sh.get("pay_basis", "unspecified"),
             "mission_type": sh["mission_type"],
             "skill_required": sh.get("skill_required", ""),
             "description": sh.get("description", ""),
@@ -1405,6 +1454,9 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
     original = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not original:
         raise HTTPException(status_code=404, detail="Shift introuvable")
+    mission = await db.missions.find_one({"id": original["mission_id"], "agency_id": user["id"]}, {"_id": 0})
+    if original.get("deleted_at") or not mission or mission.get("status") == "cancelled":
+        raise HTTPException(409, "Créneau supprimé ou mission annulée")
     clone = {
         "id": new_id(),
         "mission_id": original["mission_id"],
@@ -1414,6 +1466,8 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
         "end_time": original["end_time"],
         "people_needed": original["people_needed"],
         "rate_hourly": original["rate_hourly"],
+        "pay_type": original.get("pay_type", "hourly"), "fixed_amount": original.get("fixed_amount", 0),
+        "pay_basis": original.get("pay_basis", "unspecified"),
         "mission_type": original["mission_type"],
         "skill_required": original.get("skill_required", ""),
         "description": original.get("description", ""),
@@ -2317,6 +2371,8 @@ async def admin_dashboard(owner=Depends(require_owner)):
 # whatsapp_routes.py, afin d'éviter une importation circulaire.
 from whatsapp_routes import router as whatsapp_router
 api.include_router(whatsapp_router)
+from mission_operations import router as operations_router
+api.include_router(operations_router)
 
 app.include_router(api)
 

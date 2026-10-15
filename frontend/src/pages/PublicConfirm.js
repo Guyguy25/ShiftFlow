@@ -1,3 +1,4 @@
+import { compensationLabel } from "../lib/compensation";
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CalendarClock, MapPin, Euro, CheckCircle2, XCircle, Zap, AlertTriangle, Hammer } from "lucide-react";
@@ -114,7 +115,7 @@ export default function PublicConfirm() {
             <Euro className="w-5 h-5 text-gray-400"/>
             <div>
               <div className="text-xs uppercase text-gray-500 tracking-widest">Rémunération</div>
-              <div className="font-medium text-gray-900" data-testid="public-shift-rate">{shift.rate_hourly} €/h</div>
+              <div className="font-medium text-gray-900" data-testid="public-shift-rate">{compensationLabel(shift)}</div>
             </div>
           </div>
           <div className="flex items-center gap-3">

@@ -2,7 +2,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ShiftSelector } from "../pages/MissionDetail";
 import Demo from "../pages/Demo";
-import { renderInvitationPreview } from "./InvitationReview";
+import { renderInvitationPreview, validateMessage } from "./InvitationReview";
 import { api } from "../lib/api";
 
 jest.mock("../lib/api", () => ({ api: { get: jest.fn(), post: jest.fn() }, formatApiError: value => value }));
@@ -20,7 +20,7 @@ beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   window.matchMedia = () => ({ matches: false });
   jest.clearAllMocks();
-  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom}, {agence} propose {mission} : {lien}" } : { connected: true } }));
+  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom}, {agence} propose {mission} le {date} : {lien}" } : { connected: true } }));
   api.post.mockResolvedValue({ data: {} });
   host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
 });
@@ -35,7 +35,7 @@ test("selecting contacts and reading the real template does not send; confirmati
   expect(api.post).not.toHaveBeenCalled();
   await click("Confirmer et envoyer");
   expect(api.post).toHaveBeenCalledTimes(1);
-  expect(api.post).toHaveBeenCalledWith("/shifts/s1/select-workers", { worker_ids: ["w1"] });
+  expect(api.post).toHaveBeenCalledWith("/shifts/s1/select-workers", { worker_ids: ["w1"], invitation_template: "Bonjour {prenom}, {agence} propose {mission} le {date} : {lien}" });
 });
 
 test("a template loading failure blocks sending and supports retry", async () => {
@@ -57,7 +57,7 @@ test("changing recipients invalidates review", async () => {
 
 test("connecting WhatsApp returns to review without automatically sending", async () => {
   let statusCalls = 0;
-  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom} {lien}" } : { connected: ++statusCalls > 1 } }));
+  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom} {mission} {date} {lien}" } : { connected: ++statusCalls > 1 } }));
   await review();
   await click("Confirmer et envoyer");
   expect(host.textContent).toContain("Vérifiez avant de lancer les demandes");
@@ -67,7 +67,7 @@ test("connecting WhatsApp returns to review without automatically sending", asyn
 });
 
 test("mission connection on desktop starts with phone pairing before showing the guide", async () => {
-  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom} {lien}" } : { connected: false, hasQR: true, qr: "data:image/png;base64,test" } }));
+  api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom} {mission} {date} {lien}" } : { connected: false, hasQR: true, qr: "data:image/png;base64,test" } }));
   await review();
   await click("Confirmer et envoyer");
   expect(host.querySelector("#whatsapp-pair-phone")).toBeTruthy();
@@ -98,5 +98,35 @@ test("demo completes and resets without API calls or real mission creation", asy
 });
 
 test("preview safely preserves currency, newlines and zero values", () => {
-  expect(renderInvitationPreview("{prenom}\n{tarif}€/h {lieu} {lien}", workers[0], { ...shift, rate_hourly: 0 }, { ...mission, location: "$&" }, {})).toBe("Camille\n0€/h $& [Lien personnel généré lors de l’envoi]");
+  expect(renderInvitationPreview("{prenom}\n{tarif}€/h {lieu} {lien}", workers[0], { ...shift, rate_hourly: 0 }, { ...mission, location: "$&" }, {})).toBe("Camille\n0 €/h $& [Lien personnel généré lors de l’envoi]");
+});
+
+test("editing updates the preview and sends the exact reviewed template", async () => {
+  await review();
+  const textarea = host.querySelector('textarea[aria-label="Message WhatsApp avant envoi"]');
+  const template = "Bonjour {prenom}, mon nouveau message pour {mission} le {date} : {lien}";
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, template);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.textContent).toContain("mon nouveau message pour Montage");
+  expect(api.post).not.toHaveBeenCalled();
+  await click("Confirmer et envoyer");
+  expect(api.post).toHaveBeenCalledWith("/shifts/s1/select-workers", { worker_ids: ["w1"], invitation_template: template });
+});
+
+test("invalid edited text blocks sending", async () => {
+  await review();
+  const textarea = host.querySelector("textarea");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Bonjour");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Confirmer et envoyer");
+  expect(api.post).not.toHaveBeenCalled();
+  expect(validateMessage("{prenom} {mission} {date} {lien} https://evil.invalid").length).toBeGreaterThan(0);
+});
+
+test("legacy hourly placeholder shows a fixed net cachet truthfully", () => {
+  expect(renderInvitationPreview("{tarif}€/h", workers[0], { ...shift, pay_type: "fixed", fixed_amount: 180, pay_basis: "net" }, mission, {})).toBe("180 € net / cachet");
 });
