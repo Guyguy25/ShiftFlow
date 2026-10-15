@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -13,6 +13,7 @@ const nav = [
   { to: "/app/missions", label: "Missions", icon: CalendarClock, id: "nav-missions" },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
+  { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "nav-automations" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
 ];
 
@@ -26,6 +27,7 @@ const mobileNav = [
 const mobileMoreNav = [
   { to: "/app/profile", label: "Profil", icon: UserRound },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon },
+  { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "mobile-nav-automations" },
   { to: "/app/history", label: "Historique", icon: History },
   { to: "/app/help", label: "Aide", icon: LifeBuoy },
   { to: "/app/settings", label: "Paramètres", icon: Settings },
@@ -132,6 +134,7 @@ export default function Layout({ children }) {
               <NavLink
                 key={n.to}
                 to={n.to}
+                data-testid={n.id}
                 onClick={() => setOpen(false)}
                 className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${isActive ? "bg-blue-50 text-blue-700" : "text-gray-700"}`}
               >

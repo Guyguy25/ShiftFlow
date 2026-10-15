@@ -20,6 +20,7 @@ import Workers from "./pages/Workers";
 import History from "./pages/History";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
+import Automations from "./pages/Automations";
 import Calendar from "./pages/Calendar";
 import Tutorial from "./pages/Tutorial";
 import PublicConfirm from "./pages/PublicConfirm";
@@ -63,6 +64,7 @@ function AppRoutes() {
         <Route path="tutorial" element={<Navigate to="/app/help" replace />} />
         <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="automations" element={<Automations />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
