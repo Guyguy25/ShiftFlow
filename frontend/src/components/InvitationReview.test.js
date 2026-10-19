@@ -92,10 +92,10 @@ test("rapid repeated confirmation cannot duplicate a pending request", async () 
 
 test("demo completes and resets without API calls or real mission creation", async () => {
   await act(async () => root.render(<Demo />));
-  await click("Simuler la première demande"); await click("Simuler le refus"); await click("Simuler la confirmation");
+  await click("Continuer avec cette mission"); await click("Voir la demande WhatsApp"); await click("Simuler un refus"); await click("Simuler la confirmation");
   expect(host.textContent).toContain("L’équipe de l’exemple est complète");
   await click("Recommencer");
-  expect(host.textContent).toContain("Étape 1 sur 4");
+  expect(host.querySelector("#demo-name").value).toBe("Montage de stand");
   expect(api.get).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
 });
 
@@ -137,11 +137,42 @@ test("guest demo reveals signup after completion and resets without real sends",
   mockUser = null;
   await act(async () => root.render(<Demo />));
   expect(host.querySelector('[data-testid="demo-success"]')).toBeNull();
-  await click("Simuler la première demande"); await click("Simuler le refus"); await click("Simuler la confirmation");
+  await click("Continuer avec cette mission"); await click("Voir la demande WhatsApp"); await click("Simuler un refus"); await click("Simuler la confirmation");
   expect(host.querySelector('[data-testid="demo-success-cta"]').getAttribute("href")).toBe("/register");
   expect(host.querySelector('[data-testid="demo-success"]').textContent).toContain("trois premières missions sont offertes");
   await click("Recommencer");
   expect(host.querySelector('[data-testid="demo-success"]')).toBeNull();
   expect(api.get).not.toHaveBeenCalled();
   expect(api.post).not.toHaveBeenCalled();
+});
+
+test("demo preserves edited mission and selected priority in simulated messages", async () => {
+  await act(async () => root.render(<Demo />));
+  const name = host.querySelector('#demo-name');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(name, "Concert de test");
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Continuer avec cette mission");
+  await act(async () => host.querySelector('button[aria-label="Contacter Alex en premier"]').click());
+  await click("Voir la demande WhatsApp");
+  expect(host.textContent).toContain("Bonjour Alex");
+  expect(host.textContent).toContain("Concert de test");
+  await click("Simuler un refus");
+  expect(host.textContent).toContain("Bonjour Camille");
+  await click("Simuler la confirmation");
+  expect(host.querySelector('[data-testid="demo-success-cta"]').getAttribute("href")).toBe("/app/missions/new");
+  await click("Recommencer");
+  expect(host.querySelector('#demo-name').value).toBe("Montage de stand");
+  expect(api.get).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
+});
+
+test("demo cannot proceed with an empty mission name", async () => {
+  await act(async () => root.render(<Demo />));
+  const name = host.querySelector('#demo-name');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(name, " ");
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelector('[data-testid="demo-next"]').disabled).toBe(true);
 });
