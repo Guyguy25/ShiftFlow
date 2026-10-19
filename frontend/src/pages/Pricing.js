@@ -35,7 +35,7 @@ export default function Pricing() {
     return () => { cancelled = true; };
   }, [user]);
   const pro = quota?.plan === "pro" || user?.plan === "pro";
-  const available = !!quota?.can_create_mission;
+  const freeAvailable = !!quota && quota.free_missions_remaining > 0;
   const checkout = async (lookup) => {
     if (!user) { window.location.href = "/register"; return; }
     if (!accepted) {
@@ -63,7 +63,7 @@ export default function Pricing() {
       <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold"><Zap className="text-blue-600"/>ShiftFlow</Link>
       <Link to={user ? "/app/dashboard" : "/"} className="flex min-h-11 items-center gap-2 text-sm text-gray-600"><ArrowLeft size={16}/>Retour</Link>
     </div></header>
-    <main className="mx-auto max-w-6xl px-5 py-10 sm:py-16">
+    <main className="mx-auto max-w-4xl px-5 py-10 sm:py-16">
       <div className="mx-auto max-w-3xl text-center">
         <p className="text-sm font-semibold text-blue-700">Moins de relances. Une équipe prête pour chaque mission.</p>
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
@@ -77,32 +77,34 @@ export default function Pricing() {
           <p className="text-sm font-semibold text-emerald-700">Pour découvrir</p><h2 className="mt-2 text-xl font-bold">3 missions offertes</h2>
           <p className="mt-5 text-4xl font-bold">0 €</p><p className="mt-2 text-sm text-gray-500">Une seule fois par compte · valables à vie</p>
           <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Testez ShiftFlow sur vos vrais événements. Aucun passage automatique au payant.</p>
-          <Link to={user ? (available || pro ? "/app/missions/new" : "/app/dashboard") : "/register"} className={button + " border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"} data-testid="pricing-free-cta">
-            {user ? quota ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Ouvrir mon espace" : "Commencer gratuitement"}
-          </Link>
+          {user && (checking || !freeAvailable) ? <button type="button" disabled className={button + " border border-gray-200 bg-gray-100 text-gray-500"} data-testid="pricing-free-cta">
+            {checking ? "Vérification des missions…" : quota ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Solde indisponible"}
+          </button> : <Link to={user ? "/app/missions/new" : "/register"} className={button + " border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"} data-testid="pricing-free-cta">
+            {user ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Commencer gratuitement"}
+          </Link>}
         </section>
         <section className="flex flex-col rounded-2xl border border-gray-900 bg-gray-900 p-6 text-white" data-testid="pricing-card-pro">
           <p className="text-sm font-semibold text-blue-300">Pour une activité régulière</p><h2 className="mt-2 text-xl font-bold">ShiftFlow</h2>
           <div role="group" aria-label="Fréquence de facturation" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-800 p-1">
             <button aria-pressed={!annual} onClick={() => setAnnual(false)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (!annual ? "bg-white text-gray-900" : "text-gray-200")}>Mensuel</button>
-            <button aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-gray-200")}>Annuel · −25 %</button>
+            <button aria-label="Annuel · −25 %" aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"flex min-h-11 flex-wrap items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-white hover:bg-gray-700")}><span>Annuel</span><span className="rounded-full bg-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-950">−25 %</span></button>
           </div>
           <p className="mt-5 text-4xl font-bold">{annual ? "59,25 €" : "79 €"}<span className="text-base font-normal text-gray-300"> / mois</span></p>
           <p className="mt-2 text-sm text-gray-300">{annual ? "711 € payés en une fois pour 12 mois, renouvelés chaque année." : "79 € facturés chaque mois. Sans engagement annuel."}</p>
-          {annual && <p className="mt-2 text-sm text-blue-200">237 € économisés par an, soit 25 % par rapport à 12 mensualités.</p>}
+          <p className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2.5 text-sm font-medium text-emerald-200"><Check size={18} className="mt-0.5 shrink-0"/><span><strong>237 € économisés par an</strong> avec l’annuel, soit 25 % par rapport à 12 mensualités.</span></p>
           <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Toutes vos missions, toute votre équipe, un budget fixe. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
           <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? "Choisir ShiftFlow — 711 €/an" : feedbackCode ? "Activer Pro — 2 mois à 0 €" : "Choisir ShiftFlow — 79 €/mois"}</button>
         </section>
       </div>
       <section className="mt-7 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
         <h2 className="font-semibold">Les mêmes outils pour réussir chaque mission</h2>
-        <ul className="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">{features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="shrink-0 text-emerald-600"/>{feature}</li>)}</ul>
+        <ul className="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-2">{features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="shrink-0 text-emerald-600"/>{feature}</li>)}</ul>
       </section>
       {!pro && <div ref={consentRef} className={"mt-6 rounded-xl border p-4 " + (consentError ? "border-red-500 bg-red-50" : "border-gray-200 bg-white")}>
         <label className="flex cursor-pointer items-start gap-3 text-sm text-gray-700"><input type="checkbox" checked={accepted} onChange={e => { setAccepted(e.target.checked); setConsentError(false); }} className="mt-0.5 h-5 w-5 shrink-0" aria-invalid={consentError}/><span>Avant un achat, j’accepte les <Link className="text-blue-700 underline" to="/conditions" target="_blank">conditions de vente</Link>, la <Link className="text-blue-700 underline" to="/confidentialite" target="_blank">politique de confidentialité</Link> et le <Link className="text-blue-700 underline" to="/dpa" target="_blank">DPA</Link>.</span></label>
         {consentError && <p role="alert" className="mt-2 text-sm text-red-700">Acceptez les conditions pour ouvrir le paiement.</p>}
       </div>}
-      <section className="mx-auto mt-12 max-w-3xl space-y-3">
+      <section className="mx-auto mt-12 max-w-4xl space-y-3">
         <h2 className="mb-4 text-2xl font-bold">Tout savoir avant de commencer</h2>
         {[
           ["Qu’est-ce qu’une mission ?", "Un événement ou une intervention, avec ses créneaux (montage, démontage…), ses intervenants et son suivi. Un nouvel événement correspond à une nouvelle mission ; plusieurs créneaux du même événement restent inclus."],

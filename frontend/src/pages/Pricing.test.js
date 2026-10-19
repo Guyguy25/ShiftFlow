@@ -72,7 +72,7 @@ test("annual choice displays full charge and sends yearly Stripe name without mo
   api.get.mockImplementation(url => Promise.resolve({ data: url === "/feedback/status" ? { promo_code: "AVIS-U" } : { plan: "free" } }));
   api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
   await act(async () => root.render(<Pricing/>));
-  await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === "Annuel · −25 %").click());
+  await act(async () => host.querySelector('button[aria-label="Annuel · −25 %"]').click());
   expect(host.textContent).toContain("59,25 €");
   expect(host.textContent).toContain("711 € payés en une fois pour 12 mois");
   expect(host.textContent).toContain("237 € économisés");
@@ -83,4 +83,20 @@ test("annual choice displays full charge and sends yearly Stripe name without mo
   await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === "Mensuel").click());
   await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
   expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_monthly", promo_code: "AVIS-U" }));
+});
+
+test("exhausted free missions have a disabled button without a navigation link", async () => {
+  await act(async () => root.render(<Pricing/>));
+  const cta = host.querySelector('[data-testid="pricing-free-cta"]');
+  expect(cta.tagName).toBe("BUTTON");
+  expect(cta.disabled).toBe(true);
+  expect(cta.hasAttribute("href")).toBe(false);
+});
+
+test("remaining free missions allow navigation to mission creation", async () => {
+  api.get.mockResolvedValue({ data: { plan: "free", free_missions_remaining: 1, can_create_mission: true } });
+  await act(async () => root.render(<Pricing/>));
+  const cta = host.querySelector('[data-testid="pricing-free-cta"]');
+  expect(cta.tagName).toBe("A");
+  expect(cta.getAttribute("href")).toBe("/app/missions/new");
 });
