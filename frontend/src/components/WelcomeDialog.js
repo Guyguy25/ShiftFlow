@@ -12,14 +12,14 @@ function MissionVisual() {
       <span className="text-xs font-semibold text-blue-100">Brouillon</span>
     </div>
     <div className="mt-4 rounded-2xl bg-white p-4 text-gray-950 shadow-sm">
-      <p className="text-base font-bold">Montage festival</p>
+      <p className="text-base font-bold">Montage de scène · équipe road</p>
       <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2">
-        <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-blue-600" /> Sam. 10 octobre · 08:00</span>
+        <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-blue-600" /> Vendredi · 08:00</span>
         <span className="flex items-center gap-2"><MapPin className="h-4 w-4 text-blue-600" /> Lille</span>
       </div>
       <div className="mt-3 flex items-center justify-between rounded-xl bg-blue-50 px-3 py-2">
         <span className="text-xs font-medium text-blue-900">Équipe nécessaire</span>
-        <span className="text-sm font-bold text-blue-700">3 personnes</span>
+        <span className="text-sm font-bold text-blue-700">15 roadies</span>
       </div>
     </div>
   </div>;
@@ -27,13 +27,13 @@ function MissionVisual() {
 
 function TeamVisual() {
   const people = [
-    ["LM", "Lucas Martin", "Régisseur"],
-    ["SC", "Sarah Colin", "Technicienne son"],
-    ["MB", "Mehdi Benali", "Montage"],
+    ["LM", "Lucas Martin", "Chef d’équipe road"],
+    ["SC", "Sarah Colin", "Road · montage"],
+    ["MB", "Mehdi Benali", "Road · montage"],
   ];
   return <div className="rounded-[22px] border border-gray-200 bg-gray-50 p-4 shadow-sm">
     <div className="mb-3 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white"><Users className="h-4 w-4" /></span><span className="text-sm font-bold">Votre équipe</span></div>
+      <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white"><Users className="h-4 w-4" /></span><span className="text-sm font-bold">Extrait de votre réseau</span></div>
       <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700"><MessageCircle className="h-3 w-3" /> WhatsApp</span>
     </div>
     <div className="space-y-2">
@@ -65,8 +65,8 @@ function CascadeVisual() {
       </div>)}
     </div>
     <div className="mt-3 flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs">
-      <span className="font-medium text-gray-600">Équipe confirmée</span>
-      <span className="flex items-center gap-1 font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> 1/3</span>
+      <span className="font-medium text-gray-600">Exemple : 12 déjà confirmés + Lucas</span>
+      <span className="flex items-center gap-1 font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> 13/15</span>
     </div>
   </div>;
 }
@@ -81,7 +81,7 @@ const slides = [
   {
     eyebrow: "2 · Choisissez",
     title: "Ajoutez votre équipe",
-    text: "Importez vos contacts depuis WhatsApp ou ajoutez-les manuellement, puis choisissez qui contacter en priorité.",
+    text: "Importez votre réseau de roadies et de techniciens depuis WhatsApp ou ajoutez-les manuellement, puis choisissez qui contacter en priorité.",
     visual: <TeamVisual />,
   },
   {

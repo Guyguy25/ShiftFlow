@@ -4,18 +4,18 @@ export const SITE_NAME = "ShiftFlow.io";
 // Only these public marketing pages belong in the sitemap and search results.
 export const PUBLIC_PAGES = {
   "/": {
-    title: "ShiftFlow.io | Gestion des équipes événementielles",
-    description: "Constituez vos équipes événementielles sans contacter chacun à la main. ShiftFlow envoie vos demandes WhatsApp et centralise les réponses. 3 missions offertes.",
+    title: "ShiftFlow.io | Gestion des équipes événementielles de road et montage",
+    description: "Constituez vos équipes de road, de montage et de renfort technique événementiel sans contacter chacun à la main. ShiftFlow envoie vos demandes WhatsApp et centralise les réponses. 3 missions offertes.",
     label: "Accueil",
   },
   "/pricing": {
     title: "Tarifs ShiftFlow.io | Logiciel pour l’événementiel",
-    description: "Découvrez les tarifs de ShiftFlow.io pour gérer vos équipes événementielles : 3 missions offertes, paiement à la mission ou abonnement Pro sans engagement.",
+    description: "Pour vos équipes de road et de montage : 3 missions offertes, puis 79 €/mois ou 711 €/an. Missions et intervenants illimités.",
     label: "Tarifs",
   },
   "/demo": {
     title: "Démo ShiftFlow.io | Organisation des équipes événementielles",
-    description: "Essayez ShiftFlow.io sans compte : simulez une mission événementielle et découvrez les demandes WhatsApp en cascade, sans contacter de vrais intervenants.",
+    description: "Complétez une équipe fictive de 15 roadies : testez les propositions WhatsApp et les confirmations en cascade, sans inscription ni envoi réel.",
     label: "Démonstration",
   },
 };
@@ -51,7 +51,7 @@ export function getStructuredData(pathname) {
       {
         "@type": "Organization", "@id": `${SITE_URL}/#organization`, name: SITE_NAME,
         url: `${SITE_URL}/`, logo: `${SITE_URL}/shiftflow-logo.svg`, email: "contact@shiftflow.io",
-        description: "Logiciel de gestion des missions et des équipes pour les agences et prestataires événementiels.",
+        description: "Logiciel de coordination des équipes pour les entreprises de road, de montage et de personnel technique événementiel.",
       },
       {
         "@type": "SoftwareApplication", "@id": `${SITE_URL}/#software`, name: SITE_NAME,

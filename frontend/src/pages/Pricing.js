@@ -65,7 +65,7 @@ export default function Pricing() {
     </div></header>
     <main className="mx-auto max-w-4xl px-5 py-10 sm:py-16">
       <div className="mx-auto max-w-3xl text-center">
-        <p className="text-sm font-semibold text-blue-700">Moins de relances. Une équipe prête pour chaque mission.</p>
+        <p className="text-sm font-semibold text-blue-700">Road, montage et renfort technique événementiel</p>
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
         <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans date limite ni carte bancaire. Ensuite, ShiftFlow en illimité : 79 €/mois ou 711 €/an, soit 25 % d’économie avec l’annuel.</p>
       </div>
@@ -76,7 +76,7 @@ export default function Pricing() {
         <section className="flex flex-col rounded-2xl border border-gray-200 bg-white p-6" data-testid="pricing-card-free">
           <p className="text-sm font-semibold text-emerald-700">Pour découvrir</p><h2 className="mt-2 text-xl font-bold">3 missions offertes</h2>
           <p className="mt-5 text-4xl font-bold">0 €</p><p className="mt-2 text-sm text-gray-500">Une seule fois par compte · valables à vie</p>
-          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Testez ShiftFlow sur vos vrais événements. Aucun passage automatique au payant.</p>
+          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Testez ShiftFlow sur vos montages et démontages, avec votre réseau. Aucun passage automatique au payant.</p>
           {user && (checking || !freeAvailable) ? <button type="button" disabled className={button + " border border-gray-200 bg-gray-100 text-gray-500"} data-testid="pricing-free-cta">
             {checking ? "Vérification des missions…" : quota ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Solde indisponible"}
           </button> : <Link to={user ? "/app/missions/new" : "/register"} className={button + " border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"} data-testid="pricing-free-cta">
@@ -84,7 +84,7 @@ export default function Pricing() {
           </Link>}
         </section>
         <section className="flex flex-col rounded-2xl border border-gray-900 bg-gray-900 p-6 text-white" data-testid="pricing-card-pro">
-          <p className="text-sm font-semibold text-blue-300">Pour une activité régulière</p><h2 className="mt-2 text-xl font-bold">ShiftFlow</h2>
+          <p className="text-sm font-semibold text-blue-300">Pour vos équipes de terrain</p><h2 className="mt-2 text-xl font-bold">ShiftFlow</h2>
           <div role="group" aria-label="Fréquence de facturation" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-800 p-1">
             <button aria-pressed={!annual} onClick={() => setAnnual(false)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (!annual ? "bg-white text-gray-900" : "text-gray-200")}>Mensuel</button>
             <button aria-label="Annuel · −25 %" aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"flex min-h-11 flex-wrap items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-white hover:bg-gray-700")}><span>Annuel</span><span className="rounded-full bg-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-950">−25 %</span></button>
@@ -92,7 +92,7 @@ export default function Pricing() {
           <p className="mt-5 text-4xl font-bold">{annual ? "59,25 €" : "79 €"}<span className="text-base font-normal text-gray-300"> / mois</span></p>
           <p className="mt-2 text-sm text-gray-300">{annual ? "711 € payés en une fois pour 12 mois, renouvelés chaque année." : "79 € facturés chaque mois. Sans engagement annuel."}</p>
           <p className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2.5 text-sm font-medium text-emerald-200"><Check size={18} className="mt-0.5 shrink-0"/><span><strong>237 € économisés par an</strong> avec l’annuel, soit 25 % par rapport à 12 mensualités.</span></p>
-          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Toutes vos missions, toute votre équipe, un budget fixe. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
+          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Montages, démontages et renforts : toutes vos missions et tous vos intervenants, un budget fixe. Sans supplément par personne. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
           <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? "Choisir ShiftFlow — 711 €/an" : feedbackCode ? "Activer Pro — 2 mois à 0 €" : "Choisir ShiftFlow — 79 €/mois"}</button>
         </section>
       </div>

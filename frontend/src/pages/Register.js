@@ -185,9 +185,9 @@ export default function Register() {
     </header>
     <main className="mx-auto grid max-w-5xl gap-12 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[0.8fr_1fr]" data-testid="register-page">
       <aside className="hidden lg:block pt-8">
-        <span className="text-xs font-bold uppercase tracking-widest text-blue-700">Moins de relances. Plus de sérénité.</span>
-        <h2 className="mt-5 font-display text-4xl font-bold leading-tight text-gray-900">Votre prochaine mission commence ici.</h2>
-        <p className="mt-5 text-gray-600 leading-relaxed">Créez votre espace, ajoutez votre équipe et envoyez vos demandes de disponibilité depuis WhatsApp.</p>
+        <span className="text-xs font-bold uppercase tracking-widest text-blue-700">Road · Montage · Personnel technique événementiel</span>
+        <h2 className="mt-5 font-display text-4xl font-bold leading-tight text-gray-900">Votre prochaine équipe commence ici.</h2>
+        <p className="mt-5 text-gray-600 leading-relaxed">Retrouvez votre réseau de roadies et de techniciens, préparez un montage ou un démontage et lancez vos propositions depuis WhatsApp.</p>
         <ul className="mt-8 space-y-4 text-sm text-gray-700">{["3 missions offertes sans date limite", "Tous vos intervenants, sans supplément", "Aucune carte bancaire requise"].map(text => <li key={text} className="flex items-center gap-3"><Check size={18} className="text-emerald-600" />{text}</li>)}</ul>
       </aside>
       <section className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
