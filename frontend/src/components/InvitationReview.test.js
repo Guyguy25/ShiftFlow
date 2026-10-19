@@ -6,7 +6,8 @@ import { renderInvitationPreview, validateMessage } from "./InvitationReview";
 import { api } from "../lib/api";
 
 jest.mock("../lib/api", () => ({ api: { get: jest.fn(), post: jest.fn() }, formatApiError: value => value }));
-jest.mock("../context/AuthContext", () => ({ useAuth: () => ({ user: { agency_name: "Équipe test" } }) }));
+let mockUser = { agency_name: "Équipe test" };
+jest.mock("../context/AuthContext", () => ({ useAuth: () => ({ user: mockUser }) }));
 jest.mock("react-router-dom", () => ({ useNavigate: () => jest.fn(), Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a> }), { virtual: true });
 jest.mock("./ContextGuide", () => () => null);
 jest.mock("./WhatsAppQrGuide", () => () => <p>QR de test</p>);
@@ -20,6 +21,7 @@ beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   window.matchMedia = () => ({ matches: false });
   jest.clearAllMocks();
+  mockUser = { agency_name: "Équipe test" };
   api.get.mockImplementation(url => Promise.resolve({ data: url.includes("message-template") ? { template: "Bonjour {prenom}, {agence} propose {mission} le {date} : {lien}" } : { connected: true } }));
   api.post.mockResolvedValue({ data: {} });
   host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
@@ -129,4 +131,17 @@ test("invalid edited text blocks sending", async () => {
 
 test("legacy hourly placeholder shows a fixed net cachet truthfully", () => {
   expect(renderInvitationPreview("{tarif}€/h", workers[0], { ...shift, pay_type: "fixed", fixed_amount: 180, pay_basis: "net" }, mission, {})).toBe("180 € net / cachet");
+});
+
+test("guest demo reveals signup after completion and resets without real sends", async () => {
+  mockUser = null;
+  await act(async () => root.render(<Demo />));
+  expect(host.querySelector('[data-testid="demo-success"]')).toBeNull();
+  await click("Simuler la première demande"); await click("Simuler le refus"); await click("Simuler la confirmation");
+  expect(host.querySelector('[data-testid="demo-success-cta"]').getAttribute("href")).toBe("/register");
+  expect(host.querySelector('[data-testid="demo-success"]').textContent).toContain("trois premières missions sont offertes");
+  await click("Recommencer");
+  expect(host.querySelector('[data-testid="demo-success"]')).toBeNull();
+  expect(api.get).not.toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
 });
