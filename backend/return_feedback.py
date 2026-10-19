@@ -55,7 +55,7 @@ def discount_options(stripe, user, lookup, code, product_id):
     feedback = user.get("return_feedback") or {}
     if not eligible(user) or not secrets.compare_digest(code, feedback.get("promo_code", "")):
         raise HTTPException(403, "Ce code personnel n’est pas disponible pour votre compte.")
-    if lookup != "shiftflow_pro_monthly":
+    if lookup != "shiftflow_monthly":
         raise HTTPException(400, "Les deux mois offerts s’appliquent uniquement à Pro mensuel.")
     coupon_id = "feedback-v1-" + code
     try:

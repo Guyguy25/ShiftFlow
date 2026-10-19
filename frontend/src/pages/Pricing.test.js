@@ -17,7 +17,7 @@ beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = jest.fn();
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
-test("displays only the monthly subscription and preserves discovery", async () => {
+test("defaults to monthly with an annual choice and preserves discovery", async () => {
   await act(async () => root.render(<Pricing/>));
   expect(host.textContent).toContain("79 €");
   expect(host.textContent).toContain("3 missions offertes");
@@ -39,7 +39,7 @@ test("monthly checkout requires explicit consent and current terms", async () =>
   await act(async () => host.querySelector('input[type="checkbox"]').click());
   await act(async () => button.click());
   expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({
-    lookup_key: "shiftflow_pro_monthly", quantity: 1,
+    lookup_key: "shiftflow_monthly", quantity: 1,
     legal_acceptance: expect.objectContaining({ version: "2026-10-19", scope: "pro_subscription" }),
   }));
   expect(host.textContent).toContain("Erreur de test");
@@ -52,7 +52,7 @@ test("feedback reward applies to monthly subscription at the new price", async (
   expect(host.textContent).toContain("puis 79 €/mois");
   await act(async () => host.querySelector('input[type="checkbox"]').click());
   await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
-  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_monthly", promo_code: "AVIS-U" }));
+  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_monthly", promo_code: "AVIS-U" }));
 });
 
 test("active subscribers cannot buy another subscription", async () => {
@@ -66,4 +66,21 @@ test("quota errors block checkout", async () => {
   await act(async () => root.render(<Pricing/>));
   expect(host.textContent).toContain("Impossible de vérifier votre offre");
   expect(host.querySelector('[data-testid="pricing-monthly-cta"]').disabled).toBe(true);
+});
+
+test("annual choice displays full charge and sends yearly Stripe name without monthly reward", async () => {
+  api.get.mockImplementation(url => Promise.resolve({ data: url === "/feedback/status" ? { promo_code: "AVIS-U" } : { plan: "free" } }));
+  api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
+  await act(async () => root.render(<Pricing/>));
+  await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === "Annuel · −25 %").click());
+  expect(host.textContent).toContain("59,25 €");
+  expect(host.textContent).toContain("711 € payés en une fois pour 12 mois");
+  expect(host.textContent).toContain("237 € économisés");
+  expect(host.querySelector('[data-testid="pricing-monthly-cta"]').textContent).toContain("711 €/an");
+  await act(async () => host.querySelector('input[type="checkbox"]').click());
+  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
+  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_yearly", quantity: 1, promo_code: "" }));
+  await act(async () => [...host.querySelectorAll('button')].find(b => b.textContent === "Mensuel").click());
+  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
+  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_monthly", promo_code: "AVIS-U" }));
 });

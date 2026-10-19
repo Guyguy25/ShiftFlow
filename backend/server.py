@@ -23,6 +23,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
 import mission_billing
+import subscription_billing
 import return_feedback
 from return_visits import record_visit, visit_summary, retention_summary
 
@@ -1830,7 +1831,8 @@ import stripe as stripe_lib
 stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 ALLOWED_STRIPE_PRICES = {
-    "shiftflow_pro_monthly": {"interval": "month", "amount": 7900},
+    "shiftflow_monthly": {"interval": "month", "amount": 7900},
+    "shiftflow_yearly": {"interval": "year", "amount": 71100},
 }
 FREE_MISSION_LIMIT = 3
 FREE_WORKER_LIMIT = None
@@ -1998,7 +2000,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     if current.get("plan") == "pro":
         raise HTTPException(409, "Votre abonnement Pro est déjà actif. Gérez-le depuis votre compte.")
     if payload.promo_code:
-        if payload.lookup_key != "shiftflow_pro_monthly":
+        if payload.lookup_key != "shiftflow_monthly":
             raise HTTPException(400, "Les deux mois offerts s’appliquent uniquement à Pro mensuel.")
         reward = current.get("return_feedback") or {}
         if not return_feedback.eligible(current) or not secrets.compare_digest(payload.promo_code, reward.get("promo_code", "")):
@@ -2012,14 +2014,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
         if previous.status == "open":
             return {"checkout_url": previous.url, "session_id": previous.id}
-    prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
-    if not prices:
-        raise HTTPException(503, "Cette offre est temporairement indisponible. Contactez le support.")
-    price = prices[0]
-    if (not price.recurring or price.recurring.interval != expected_interval
-            or price.recurring.interval_count != 1
-            or price.currency != "eur" or int(price.unit_amount or 0) != expected_amount):
-        raise HTTPException(503, "Le tarif de paiement doit être vérifié par le support.")
+    price = subscription_billing.resolve_price(stripe_lib, payload.lookup_key, expected_price)
     line_items = [{"price": price.id, "quantity": 1}]
 
     discount = {"allow_promotion_codes": True}

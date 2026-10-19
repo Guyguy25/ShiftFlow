@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import mission_billing as billing
+import subscription_billing
 import return_feedback
 import secrets
 
@@ -46,7 +47,7 @@ class BillingTests(IsolatedAsyncioTestCase):
             "return_feedback": {"promo_code": "AVIS-U"},
         }})
         self.raw.payment_transactions.insert_one({"session_id": "regular", "user_id": "u",
-            "lookup_key": "shiftflow_pro_monthly", "status": "initiated", "quantity": 1,
+            "lookup_key": "shiftflow_monthly", "status": "initiated", "quantity": 1,
             "offer_version": "2026-10-19", "created_at": "2026-10-14"})
         create = Mock(return_value=SimpleNamespace(id="discounted", url="https://checkout.stripe.com/test"))
         retrieve = Mock(return_value=SimpleNamespace(status="open", id="regular", url="https://checkout.stripe.com/regular"))
@@ -55,12 +56,12 @@ class BillingTests(IsolatedAsyncioTestCase):
             Coupon=SimpleNamespace(retrieve=Mock(return_value=coupon)),
             Price=SimpleNamespace(list=Mock(return_value=SimpleNamespace(data=[SimpleNamespace(
                 id="price_month", product="prod_pro", recurring=SimpleNamespace(interval="month", interval_count=1), currency="eur", unit_amount=7900)]))))
-        fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing,
+        fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing, subscription_billing=subscription_billing,
             return_feedback=return_feedback, secrets=secrets,
-            ALLOWED_STRIPE_PRICES={"shiftflow_pro_monthly": {"interval": "month", "amount": 7900}},
+            ALLOWED_STRIPE_PRICES={"shiftflow_monthly": {"interval": "month", "amount": 7900}},
             stripe_lib=stripe, FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id",
             request_client_ip=lambda _: None, now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
-        payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_pro_monthly", origin_url="https://www.shiftflow.io",
+        payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_monthly", origin_url="https://www.shiftflow.io",
             legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="AVIS-U")
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         retrieve.assert_not_called()
@@ -162,18 +163,18 @@ class BillingTests(IsolatedAsyncioTestCase):
     def checkout(self, price, allowed=None):
         create = Mock(return_value=SimpleNamespace(id="cs-new", url="https://checkout.stripe.com/test"))
         retrieve = Mock()
-        price_list = Mock(return_value=SimpleNamespace(data=[price] if price else []))
+        price_list = Mock(return_value=SimpleNamespace(data=[price] if price else [], auto_paging_iter=lambda: iter([])))
         # Load the real allowlist, so a removed offer cannot silently return.
         tree = ast.parse((Path(__file__).parents[1] / "server.py").read_text(encoding="utf-8"))
         assignment = next(n for n in tree.body if isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == "ALLOWED_STRIPE_PRICES" for t in n.targets))
         allowed = ast.literal_eval(assignment.value)
-        fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing,
+        fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing, subscription_billing=subscription_billing,
             ALLOWED_STRIPE_PRICES=allowed,
             stripe_lib=SimpleNamespace(checkout=SimpleNamespace(Session=SimpleNamespace(create=create, retrieve=retrieve)), Price=SimpleNamespace(list=price_list)),
             FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id", request_client_ip=lambda _: None,
             now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
-        payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_pro_monthly", origin_url="https://evil.test",
+        payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_monthly", origin_url="https://evil.test",
             legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="")
         return fn, payload, create, retrieve
 
@@ -184,7 +185,7 @@ class BillingTests(IsolatedAsyncioTestCase):
 
     async def test_checkout_uses_monthly_79_euro_price_and_ignores_old_sessions(self):
         self.raw.payment_transactions.insert_one({"session_id": "old-49", "user_id": "u",
-            "lookup_key": "shiftflow_pro_monthly", "status": "initiated", "quantity": 1,
+            "lookup_key": "shiftflow_monthly", "status": "initiated", "quantity": 1,
             "offer_version": "2026-10-01", "created_at": "2026-10-14"})
         fn, payload, create, retrieve = self.checkout(self.monthly_price())
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
@@ -196,7 +197,7 @@ class BillingTests(IsolatedAsyncioTestCase):
         self.assertEqual(self.raw.payment_transactions.find_one({"session_id": "cs-new"})["amount"], 7900)
 
     async def test_removed_offers_and_multiple_subscriptions_are_rejected(self):
-        for lookup, quantity in [("shiftflow_mission", 1), ("shiftflow_pro_yearly", 1), ("shiftflow_pro_monthly", 2)]:
+        for lookup, quantity in [("shiftflow_mission", 1), ("shiftflow_pro_yearly", 1), ("shiftflow_pro_monthly", 1), ("shiftflow_monthly", 2)]:
             fn, payload, create, _ = self.checkout(self.monthly_price())
             payload.lookup_key, payload.quantity = lookup, quantity
             with self.assertRaises(HTTPException) as error:
@@ -226,4 +227,22 @@ class BillingTests(IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException) as error:
             await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         self.assertEqual(error.exception.status_code, 409)
+        create.assert_not_called()
+
+    async def test_annual_checkout_uses_711_euros_and_yearly_interval(self):
+        fn, payload, create, _ = self.checkout(self.monthly_price(id="price_year", unit_amount=71100,
+            recurring=SimpleNamespace(interval="year", interval_count=1)))
+        payload.lookup_key = "shiftflow_yearly"
+        await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        self.assertEqual(create.call_args.kwargs["line_items"], [{"price": "price_year", "quantity": 1}])
+        record = self.raw.payment_transactions.find_one({"session_id": "cs-new"})
+        self.assertEqual(record["amount"], 71100)
+        self.assertEqual(record["billing_interval"], "year")
+
+    async def test_feedback_reward_cannot_apply_to_annual_checkout(self):
+        fn, payload, create, _ = self.checkout(self.monthly_price())
+        payload.lookup_key, payload.promo_code = "shiftflow_yearly", "AVIS-U"
+        with self.assertRaises(HTTPException) as error:
+            await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
+        self.assertEqual(error.exception.status_code, 400)
         create.assert_not_called()

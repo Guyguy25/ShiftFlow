@@ -42,7 +42,7 @@ class RulesTests(TestCase):
         user = {**USER, "return_feedback": {"promo_code": "AVIS-X"}}
         stripe = Mock()
         for lookup, code in (("shiftflow_pro_yearly", "AVIS-X"),
-                             ("shiftflow_mission", "AVIS-X"), ("shiftflow_pro_monthly", "AVIS-Y")):
+                             ("shiftflow_mission", "AVIS-X"), ("shiftflow_monthly", "AVIS-Y")):
             with self.assertRaises(HTTPException):
                 discount_options(stripe, user, lookup, code, "prod_pro")
         stripe.Coupon.create.assert_not_called()
@@ -56,7 +56,7 @@ class RulesTests(TestCase):
         stripe.Coupon.retrieve.side_effect = Missing()
         stripe.Coupon.create.return_value = coupon
         result = discount_options(stripe, {**USER, "return_feedback": {"promo_code": "AVIS-X"}},
-                                  "shiftflow_pro_monthly", "AVIS-X", "prod_pro")
+                                  "shiftflow_monthly", "AVIS-X", "prod_pro")
         self.assertEqual(result, {"discounts": [{"coupon": "coupon_u"}], "payment_method_collection": "always"})
         options = stripe.Coupon.create.call_args.kwargs
         self.assertEqual((options["percent_off"], options["duration"], options["duration_in_months"], options["max_redemptions"]), (100, "repeating", 2, 1))
@@ -65,7 +65,7 @@ class RulesTests(TestCase):
         stripe.Coupon.retrieve.side_effect = None
         stripe.Coupon.retrieve.return_value = type("Coupon", (dict,), {"id": "coupon_u"})({"valid": False})
         with self.assertRaises(HTTPException):
-            discount_options(stripe, {**USER, "return_feedback": {"promo_code": "AVIS-X"}}, "shiftflow_pro_monthly", "AVIS-X", "prod_pro")
+            discount_options(stripe, {**USER, "return_feedback": {"promo_code": "AVIS-X"}}, "shiftflow_monthly", "AVIS-X", "prod_pro")
 
 
 class SubmissionTests(IsolatedAsyncioTestCase):

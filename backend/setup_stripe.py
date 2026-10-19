@@ -26,7 +26,7 @@ product = stripe.Product.retrieve(PRODUCT_ID)
 print("Product:", product.id, "-", product.name)
 
 # 1) Look for or create the monthly 79 EUR recurring price
-LOOKUP_MONTHLY = "shiftflow_pro_monthly"
+LOOKUP_MONTHLY = "shiftflow_monthly"
 price_id_monthly = None
 prices = stripe.Price.list(product=PRODUCT_ID, active=True, limit=100).data
 for p in prices:
