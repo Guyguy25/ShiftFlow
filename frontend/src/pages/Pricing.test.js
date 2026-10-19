@@ -17,67 +17,53 @@ beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = jest.fn();
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
-test("feedback reward is visible and applies exclusively to monthly Pro", async () => {
-  api.get.mockImplementation(url => Promise.resolve({ data: url === "/feedback/status" ? { promo_code: "AVIS-U" } : { plan: "free", can_create_mission: false } }));
-  api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
+test("displays only the monthly subscription and preserves discovery", async () => {
   await act(async () => root.render(<Pricing/>));
-  expect(host.textContent).toContain("2 mois de Pro offerts");
-  await act(async () => host.querySelector('input[type="checkbox"]').click());
-  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
-  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_monthly", promo_code: "AVIS-U" }));
-  await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Annuel · −15 %").click());
-  await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
-  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_yearly", promo_code: "" }));
+  expect(host.textContent).toContain("79 €");
+  expect(host.textContent).toContain("3 missions offertes");
+  expect(host.querySelector('[data-testid="pricing-card-mission"]')).toBeNull();
+  expect(host.querySelector('select')).toBeNull();
+  expect(host.querySelector('input[type="range"]')).toBeNull();
+  expect(host.textContent).not.toContain("4,90");
+  expect(host.textContent).not.toContain("499,80");
+  expect(host.querySelectorAll("[data-testid^='pricing-card-']")).toHaveLength(2);
 });
-test("displays the complete offer without a trial deadline or annual default", async () => {
-  await act(async () => root.render(<Pricing/>));
-  expect(host.textContent).toContain("4,90 €");
-  expect(host.textContent).toContain("49 €");
-  expect(host.textContent).toContain("Valables à vie");
-  expect(host.textContent).not.toContain("30 jours");
-  expect(host.querySelectorAll("[data-testid^='pricing-card-']")).toHaveLength(3);
-  expect(host.textContent).toContain("24,50");
-});
-test("a remaining credit is visible while a pack can be purchased", async () => {
-  api.get.mockResolvedValue({ data: { plan: "free", free_missions_remaining: 0, mission_credits: 1, can_create_mission: true } });
-  await act(async () => root.render(<Pricing/>));
-  expect(host.querySelector('[data-testid="pricing-mission-cta"]')).not.toBeNull();
-  expect(host.textContent).toContain("Utiliser ma mission disponible");
-});
-test("checkout requires explicit consent and uses the one-time offer", async () => {
+
+test("monthly checkout requires explicit consent and current terms", async () => {
   api.post.mockRejectedValue({ response: { data: { detail: "Erreur de test" } } });
   await act(async () => root.render(<Pricing/>));
-  const button = host.querySelector('[data-testid="pricing-mission-cta"]');
+  const button = host.querySelector('[data-testid="pricing-monthly-cta"]');
   await act(async () => button.click());
   expect(api.post).not.toHaveBeenCalled();
   expect(host.textContent).toContain("Acceptez les conditions");
   await act(async () => host.querySelector('input[type="checkbox"]').click());
   await act(async () => button.click());
-  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_mission", quantity: 5, legal_acceptance: expect.objectContaining({ version: "2026-10-01", scope: "mission_purchase" }) }));
+  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({
+    lookup_key: "shiftflow_pro_monthly", quantity: 1,
+    legal_acceptance: expect.objectContaining({ version: "2026-10-19", scope: "pro_subscription" }),
+  }));
   expect(host.textContent).toContain("Erreur de test");
 });
 
-test("annual choice displays the full annual payment and sends the annual lookup", async () => {
+test("feedback reward applies to monthly subscription at the new price", async () => {
+  api.get.mockImplementation(url => Promise.resolve({ data: url === "/feedback/status" ? { promo_code: "AVIS-U" } : { plan: "free", can_create_mission: false } }));
   api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
   await act(async () => root.render(<Pricing/>));
-  const annual = [...host.querySelectorAll('button')].find(b => b.textContent === "Annuel · −15 %");
-  await act(async () => annual.click());
-  expect(host.textContent).toContain("499,80 € payés en une fois pour 12 mois");
-  expect(host.textContent).toContain("41,65 €");
+  expect(host.textContent).toContain("puis 79 €/mois");
   await act(async () => host.querySelector('input[type="checkbox"]').click());
   await act(async () => host.querySelector('[data-testid="pricing-monthly-cta"]').click());
-  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_yearly", quantity: 1 }));
+  expect(api.post).toHaveBeenLastCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_pro_monthly", promo_code: "AVIS-U" }));
 });
 
-test("ten purchased missions add two bonus credits in one checkout", async () => {
-  api.post.mockRejectedValue({ response: { data: { detail: "Test" } } });
+test("active subscribers cannot buy another subscription", async () => {
+  api.get.mockResolvedValue({ data: { plan: "pro", can_create_mission: true } });
   await act(async () => root.render(<Pricing/>));
-  await act(async () => {
-    const select = host.querySelector('#mission-quantity');
-    select.value = '10'; select.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  expect(host.textContent).toContain("12 missions pour");
-  await act(async () => host.querySelector('input[type="checkbox"]').click());
-  await act(async () => host.querySelector('[data-testid="pricing-mission-cta"]').click());
-  expect(api.post).toHaveBeenCalledWith("/payments/checkout", expect.objectContaining({ lookup_key: "shiftflow_mission", quantity: 10 }));
+  expect(host.querySelector('[data-testid="pricing-monthly-cta"]').disabled).toBe(true);
+});
+
+test("quota errors block checkout", async () => {
+  api.get.mockRejectedValue(new Error("offline"));
+  await act(async () => root.render(<Pricing/>));
+  expect(host.textContent).toContain("Impossible de vérifier votre offre");
+  expect(host.querySelector('[data-testid="pricing-monthly-cta"]').disabled).toBe(true);
 });

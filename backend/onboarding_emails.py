@@ -62,16 +62,16 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
         label, path = "Voir mon équipe", mission_path
     elif stage == "last_free_mission":
         subject = "Il vous reste une mission offerte sur ShiftFlow"
-        message = "Vous pouvez encore créer une mission gratuitement, quand vous le souhaitez. Ensuite, choisissez 4,90 € par nouvelle mission ou 49 €/mois en illimité. Vos missions existantes restent utilisables."
+        message = "Vous pouvez encore créer une mission gratuitement, quand vous le souhaitez. Ensuite, choisissez ShiftFlow à 79 €/mois, missions illimitées. Vos missions existantes restent utilisables."
         label, path = "Préparer ma prochaine mission", "/app/missions/new"
     elif stage == "free_missions_used":
-        subject = "Votre prochaine mission : à l’unité ou en illimité ?"
-        message = "Vos 3 missions offertes ont été utilisées. Pour la prochaine, choisissez un crédit à 4,90 €, sans abonnement, ou Pro à 49 €/mois. Vos équipes et vos missions existantes restent accessibles. Aucun paiement n’est automatique."
-        label, path = "Comparer les deux offres", "/pricing"
+        subject = "Continuez avec ShiftFlow à 79 €/mois"
+        message = "Vos 3 missions offertes ont été utilisées. Pour la prochaine, choisissez ShiftFlow à 79 €/mois, missions illimitées. Vos équipes et vos missions existantes restent accessibles. Aucun paiement n’est automatique."
+        label, path = "Découvrir l’abonnement", "/pricing"
     elif stage == "pro_relevant":
-        subject = "Plusieurs missions ce mois-ci ? Comparez avec Pro"
-        message = "Vous utilisez régulièrement vos missions. Comparez votre prochain besoin : 5 missions achetées + 1 offerte pour 24,50 €, ou Pro illimité à 49 €/mois. L’annuel revient à 41,65 €/mois, facturé 499,80 € en une fois. Vos crédits restants n’expirent pas ; les achats déjà effectués ne sont pas déduits de Pro. Le comparateur vous aide à choisir selon votre rythme."
-        label, path = "Comparer pour mes prochaines missions", "/pricing"
+        subject = "Vos missions illimitées avec ShiftFlow"
+        message = "Vous utilisez régulièrement vos missions. ShiftFlow à 79 €/mois vous permet de créer des missions illimitées pendant votre abonnement. Vos crédits déjà achetés restent utilisables sans expiration ; les achats passés ne sont pas déduits de l’abonnement."
+        label, path = "Découvrir ShiftFlow", "/pricing"
     else:
         raise ValueError("Unknown lifecycle stage")
     url = f"{base}{path}?utm_source=lifecycle_email&utm_medium=email&utm_campaign={stage}"

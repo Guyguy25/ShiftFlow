@@ -1,6 +1,6 @@
 """Idempotent Stripe setup for the user's own Stripe test account.
 Uses the pre-existing product prod_V6sLUSy2g9m7Ga.
-Creates a monthly 49 EUR recurring price if absent.
+Creates a monthly 79 EUR recurring price if absent.
 Registers a webhook endpoint pointing to the preview URL.
 Writes STRIPE_WEBHOOK_SECRET back to .env.
 """
@@ -25,13 +25,13 @@ print("Connected to Stripe account:", acct.id, "country:", acct.country)
 product = stripe.Product.retrieve(PRODUCT_ID)
 print("Product:", product.id, "-", product.name)
 
-# 1) Look for or create the monthly 49 EUR recurring price
+# 1) Look for or create the monthly 79 EUR recurring price
 LOOKUP_MONTHLY = "shiftflow_pro_monthly"
 price_id_monthly = None
 prices = stripe.Price.list(product=PRODUCT_ID, active=True, limit=100).data
 for p in prices:
     if (p.recurring and p.recurring.get("interval") == "month"
-            and p.currency == "eur" and p.unit_amount == 4900):
+            and p.currency == "eur" and p.unit_amount == 7900):
         price_id_monthly = p.id
         print("Reusing existing monthly price:", p.id)
         # Ensure lookup_key is set for consistent frontend calls
@@ -45,12 +45,12 @@ for p in prices:
 if not price_id_monthly:
     p = stripe.Price.create(
         product=PRODUCT_ID,
-        unit_amount=4900,
+        unit_amount=7900,
         currency="eur",
         lookup_key=LOOKUP_MONTHLY,
         transfer_lookup_key=True,
         recurring={"interval": "month"},
-        tax_behavior="inclusive",  # 49€ total, no tax added
+        tax_behavior="inclusive",  # 79€ total, no tax added
     )
     price_id_monthly = p.id
     print("Created monthly price:", p.id)

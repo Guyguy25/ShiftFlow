@@ -66,7 +66,7 @@ const KB = [
     label: "Tarifs & abonnement",
     keywords: ["tarif", "prix", "abonnement", "payer", "pro", "gratuit", "plan"],
     answer:
-      "Vos 3 premières missions sont offertes, valables à vie et sans carte bancaire. Ensuite : 4,90 € par nouvelle mission ou 49 €/mois pour des missions illimitées. Les intervenants sont illimités dans toutes les offres.",
+      "Vos 3 premières missions sont offertes, valables à vie et sans carte bancaire. Ensuite : ShiftFlow à 79 €/mois pour des missions et des intervenants illimités.",
   },
 ];
 

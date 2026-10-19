@@ -49,7 +49,7 @@ async def reserve(db, user_id):
         {"$inc": {"mission_credits": -1}})
     if result.modified_count:
         return "credit"
-    raise HTTPException(402, "Vos 3 missions offertes ont été utilisées. Continuez à 4,90 € la mission ou à 49 €/mois en illimité. Vos missions existantes restent accessibles.")
+    raise HTTPException(402, "Vos 3 missions offertes ont été utilisées. Continuez avec ShiftFlow à 79 €/mois, missions illimitées. Vos missions existantes restent accessibles.")
 
 
 async def release(db, user_id, source):

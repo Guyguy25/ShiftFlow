@@ -30,7 +30,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
             {title || "Continuez avec votre prochaine mission"}
           </h2>
           <p className="mt-2 text-blue-100 text-sm">
-            {message || "Vos missions existantes restent utilisables. Pour la prochaine : 4,90 € à l’unité ou 49 €/mois en illimité."}
+            {message || "Vos missions existantes restent utilisables. Continuez avec ShiftFlow à 79 €/mois, missions illimitées."}
           </p>
         </div>
         <div className="p-6">
@@ -59,7 +59,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
               data-testid="upgrade-modal-cta"
               className="w-full h-11 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center justify-center gap-2 transition-colors"
             >
-              <Crown className="w-4 h-4" /> Choisir : 4,90 € la mission ou Pro
+              <Crown className="w-4 h-4" /> Choisir ShiftFlow — 79 €/mois
             </Link>
             <button
               onClick={onClose}

@@ -25,7 +25,7 @@ test("only invites eligible returning users and avoids the welcome dialog", asyn
   localStorage.clear();
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(document.body.textContent).toContain("Votre avis nous intéresse");
-  expect(document.body.textContent).toContain("puis 49 €/mois automatiquement");
+  expect(document.body.textContent).toContain("puis 79 €/mois automatiquement");
 });
 test("later persists a snooze", async () => {
   await render(); await act(async () => button("Plus tard").click());

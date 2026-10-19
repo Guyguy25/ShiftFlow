@@ -91,7 +91,7 @@ export default function ReturnFeedbackDialog({ user }) {
           <Link to={`/pricing?feedback=${encodeURIComponent(code)}`} onClick={() => setOpen(false)} className="mt-5 flex min-h-12 items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white">Activer mes 2 mois gratuits</Link>
           <p className="mt-3 text-xs text-gray-500">Votre code reste disponible sur la page Tarifs.</p>
         </div>}
-        <p className="mt-5 text-xs leading-relaxed text-gray-500">Offre réservée aux comptes sans abonnement Pro, une fois par compte. Carte bancaire requise à l’activation. 0 € pendant deux mois, puis 49 €/mois automatiquement. Résiliable à tout moment depuis votre compte, avant la prochaine échéance pour éviter le prélèvement.</p>
+        <p className="mt-5 text-xs leading-relaxed text-gray-500">Offre réservée aux comptes sans abonnement Pro, une fois par compte. Carte bancaire requise à l’activation. 0 € pendant deux mois, puis 79 €/mois automatiquement. Résiliable à tout moment depuis votre compte, avant la prochaine échéance pour éviter le prélèvement.</p>
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>;

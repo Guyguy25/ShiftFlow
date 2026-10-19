@@ -1830,9 +1830,7 @@ import stripe as stripe_lib
 stripe_lib.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 ALLOWED_STRIPE_PRICES = {
-    mission_billing.MISSION_LOOKUP: {"interval": "one_time", "amount": mission_billing.MISSION_AMOUNT},
-    "shiftflow_pro_monthly": {"interval": "month", "amount": 4900},
-    "shiftflow_pro_yearly": {"interval": "year", "amount": 49980},
+    "shiftflow_pro_monthly": {"interval": "month", "amount": 7900},
 }
 FREE_MISSION_LIMIT = 3
 FREE_WORKER_LIMIT = None
@@ -1869,7 +1867,7 @@ async def check_quota_or_raise(user, kind: str):
     if kind == "mission":
         current = await mission_billing.account(db, user["id"])
         if not mission_billing.balance(current)["can_create_mission"]:
-            raise HTTPException(402, "Choisissez une mission à 4,90 € ou Pro à 49 €/mois. Vos missions existantes restent utilisables.")
+            raise HTTPException(402, "Choisissez ShiftFlow à 79 €/mois, missions illimitées. Vos missions existantes restent utilisables.")
 
 
 class OnboardingIn(BaseModel):
@@ -1985,7 +1983,7 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
-    if payload.legal_acceptance.get("version") != "2026-10-01":
+    if payload.legal_acceptance.get("version") != "2026-10-19":
         raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
     expected_price = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
     if not expected_price:
@@ -1993,11 +1991,8 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     expected_interval = expected_price["interval"]
     expected_amount = expected_price["amount"]
     quantity = payload.quantity
-    purchase = mission_billing.pack(quantity) if payload.lookup_key == mission_billing.MISSION_LOOKUP else None
-    if not purchase and quantity != 1:
+    if quantity != 1:
         raise HTTPException(400, "Un seul abonnement par compte.")
-    if purchase:
-        expected_amount = purchase["amount"]
 
     current = await mission_billing.account(db, user["id"])
     if current.get("plan") == "pro":
@@ -2010,26 +2005,22 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             raise HTTPException(403, "Ce code personnel n’est pas disponible pour votre compte.")
     pending = await db.payment_transactions.find_one({
         "user_id": user["id"], "lookup_key": payload.lookup_key, "status": "initiated",
-        "quantity": quantity, "offer_version": "2026-10-01",
+        "quantity": quantity, "offer_version": "2026-10-19",
         "feedback_promo_code": payload.promo_code or {"$in": [None, ""]},
     }, sort=[("created_at", -1)])
     if pending:
         previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
         if previous.status == "open":
             return {"checkout_url": previous.url, "session_id": previous.id}
-    if payload.lookup_key == mission_billing.MISSION_LOOKUP:
-        line_items = [{"price_data": {"currency": "eur", "unit_amount": expected_amount,
-            "product_data": {"name": f"ShiftFlow — {purchase['mission_credits']} mission{'s' if purchase['mission_credits'] > 1 else ''}",
-                             "description": f"{quantity} achetée{'s' if quantity > 1 else ''} + {purchase['bonus_missions']} offerte{'s' if purchase['bonus_missions'] > 1 else ''}. Crédits valables à vie. Paiement unique, sans abonnement."}}, "quantity": 1}]
-    else:
-        prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
-        if not prices:
-            raise HTTPException(503, "Cette offre est temporairement indisponible. Contactez le support.")
-        price = prices[0]
-        if (not price.recurring or price.recurring.interval != expected_interval
-                or price.currency != "eur" or int(price.unit_amount or 0) != expected_amount):
-            raise HTTPException(503, "Le tarif de paiement doit être vérifié par le support.")
-        line_items = [{"price": price.id, "quantity": 1}]
+    prices = stripe_lib.Price.list(lookup_keys=[payload.lookup_key], active=True, limit=1).data
+    if not prices:
+        raise HTTPException(503, "Cette offre est temporairement indisponible. Contactez le support.")
+    price = prices[0]
+    if (not price.recurring or price.recurring.interval != expected_interval
+            or price.recurring.interval_count != 1
+            or price.currency != "eur" or int(price.unit_amount or 0) != expected_amount):
+        raise HTTPException(503, "Le tarif de paiement doit être vérifié par le support.")
+    line_items = [{"price": price.id, "quantity": 1}]
 
     discount = {"allow_promotion_codes": True}
     if payload.promo_code:
@@ -2040,9 +2031,9 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     # French micro-entrepreneur franchise en base de TVA (art. 293 B du CGI): no VAT applied.
     session = stripe_lib.checkout.Session.create(
         line_items=line_items,
-        mode="payment" if expected_interval == "one_time" else "subscription",
+        mode="subscription",
         payment_method_types=["card"],
-        idempotency_key=f"checkout-v2-{user['id']}-{payload.lookup_key}-{quantity}-{payload.promo_code}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
+        idempotency_key=f"checkout-v3-{user['id']}-{payload.lookup_key}-{quantity}-{payload.promo_code}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
         success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
         cancel_url=f"{origin}/payment/cancel",
         **({"customer": current["stripe_customer_id"]} if current.get("stripe_customer_id") else {"customer_email": user.get("email")}),
@@ -2051,10 +2042,10 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             "user_id": user["id"],
             "lookup_key": payload.lookup_key,
             "billing_interval": expected_interval,
-            "mission_credits": str(purchase["mission_credits"] if purchase else 0),
+            "mission_credits": "0",
         },
         custom_text={
-            "submit": {"message": "2 mois à 0 €, puis 49 €/mois. Carte requise. Résiliation à tout moment avant la prochaine échéance." if payload.promo_code else "TVA non applicable, art. 293 B du CGI"},
+            "submit": {"message": "2 mois à 0 €, puis 79 €/mois. Carte requise. Résiliation à tout moment avant la prochaine échéance." if payload.promo_code else "TVA non applicable, art. 293 B du CGI"},
         },
     )
     await db.payment_transactions.update_one({"_id": session.id}, {"$setOnInsert": {
@@ -2062,8 +2053,8 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         "lookup_key": payload.lookup_key, "billing_interval": expected_interval,
         "amount": 0 if payload.promo_code else expected_amount,
         "feedback_promo_code": payload.promo_code,
-        "quantity": quantity, "bonus_missions": purchase["bonus_missions"] if purchase else 0,
-        "mission_credits": purchase["mission_credits"] if purchase else 0, "offer_version": "2026-10-01",
+        "quantity": quantity, "bonus_missions": 0,
+        "mission_credits": 0, "offer_version": "2026-10-19",
         "currency": "eur", "status": "initiated", "payment_status": "pending",
         "origin_url": origin,
         "legal_acceptance": payload.legal_acceptance,
