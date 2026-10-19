@@ -178,12 +178,12 @@ export default function Register() {
   const inputCls = "mt-2 block w-full min-h-12 rounded-xl border border-gray-300 bg-white px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500";
   const titles = ["Préparez votre première mission", "Comment vous joindre ?", "Votre espace est presque prêt."];
   const input = (key, label, props = {}) => <label className="block text-sm font-medium text-gray-800" key={key}>{label}<input className={inputCls} value={form[key]} onChange={setF(key)} name={key} required maxLength={key === "password" ? 128 : 254} data-testid={`register-${key === "agency_name" ? "agency" : key}-input`} {...props} /></label>;
-  return <div className="min-h-screen bg-[#F7F9FC] pb-16">
+  return <div className="flex-1 bg-[#F7F9FC]">
     <header className="border-b border-gray-200 bg-white px-5 py-4 flex items-center justify-between gap-4">
       <Link to="/" className="flex items-center gap-2 font-display font-bold"><span className="rounded-lg bg-blue-600 p-2"><Zap size={18} className="text-white" /></span>ShiftFlow</Link>
       <Link to="/login" className="text-sm font-medium text-blue-700">Se connecter</Link>
     </header>
-    <main className="mx-auto grid max-w-5xl gap-12 px-5 py-8 sm:px-8 sm:py-14 lg:grid-cols-[0.8fr_1fr]" data-testid="register-page">
+    <main className="mx-auto grid max-w-5xl gap-12 px-5 py-8 sm:px-8 lg:grid-cols-[0.8fr_1fr]" data-testid="register-page">
       <aside className="hidden lg:block pt-8">
         <span className="text-xs font-bold uppercase tracking-widest text-blue-700">Road · Montage · Personnel technique événementiel</span>
         <h2 className="mt-5 font-display text-4xl font-bold leading-tight text-gray-900">Votre prochaine équipe commence ici.</h2>

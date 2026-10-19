@@ -80,14 +80,21 @@ function PublicLegalGate() {
   return <PublicLegalBar />;
 }
 
+function PageContent() {
+  const { pathname } = useLocation();
+  return <div className={pathname === "/register" ? "flex min-h-dvh flex-col" : "contents"}>
+    <AppRoutes />
+    <PublicLegalGate />
+  </div>;
+}
+
 function App() {
   return (
     <div className="App">
       <BrowserRouter>
         <Seo />
         <AuthProvider>
-          <AppRoutes />
-          <PublicLegalGate />
+          <PageContent />
           <MetaPixel />
           <Toaster position="top-right" richColors />
         </AuthProvider>
