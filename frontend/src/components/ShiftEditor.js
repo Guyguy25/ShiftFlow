@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import ShiftFields from "./ShiftFields";
 
 export default function ShiftEditor({ missionId, shift, onSaved, onCancel }) {
-  const [form, setForm] = useState(() => ({ date: shift?.date || "", start_time: shift?.start_time || "09:00", end_time: shift?.end_time || "18:00", people_needed: shift?.people_needed || 1, rate_hourly: shift?.rate_hourly ?? 0, fixed_amount: shift?.fixed_amount ?? 0, pay_type: shift?.pay_type || "hourly", pay_basis: shift?.pay_basis || "unspecified", mission_type: shift?.mission_type || "montage", description: shift?.description || "", skill_required: shift?.skill_required || "" }));
+  const [form, setForm] = useState(() => ({ date: shift?.date || "", end_date: shift?.end_date || null, break_minutes: shift?.break_minutes || 0, start_time: shift?.start_time || "09:00", end_time: shift?.end_time || "18:00", people_needed: shift?.people_needed || 1, rate_hourly: shift?.rate_hourly ?? 0, fixed_amount: shift?.fixed_amount ?? 0, pay_type: shift?.pay_type || "hourly", pay_basis: shift?.pay_basis || "unspecified", mission_type: shift?.mission_type || "montage", description: shift?.description || "", skill_required: shift?.skill_required || "" }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const change = (name, value) => setForm(prev => ({ ...prev, [name]: value }));

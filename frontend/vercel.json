@@ -4,5 +4,12 @@
     { "source": "/pricing", "destination": "/seo/pricing.html" },
     { "source": "/demo", "destination": "/seo/demo.html" },
     { "source": "/((?!api(?:/|$)).*)", "destination": "/app-shell.html" }
+  ],
+  "headers": [
+    { "source": "/hours", "headers": [
+      { "key": "Referrer-Policy", "value": "no-referrer" },
+      { "key": "Cache-Control", "value": "no-store" },
+      { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+    ] }
   ]
 }

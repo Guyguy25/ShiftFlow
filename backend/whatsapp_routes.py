@@ -149,7 +149,7 @@ def render_invite_template(template: str, worker: dict, shift: dict, mission: di
         "{mission}": str(mission.get("name") or ""),
         "{date}": str(shift.get("date") or ""),
         "{heure_debut}": str(shift.get("start_time") or ""),
-        "{heure_fin}": str(shift.get("end_time") or ""),
+        "{heure_fin}": ((shift["end_date"] + " ") if shift.get("end_date") and shift["end_date"] != shift.get("date") else "") + str(shift.get("end_time") or ""),
         "{lieu}": str(mission.get("location") or ""),
         "{tarif}": str(shift.get("fixed_amount", 0) if shift.get("pay_type") == "fixed" else shift.get("rate_hourly", 0)),
         "{agence}": str(agency.get("agency_name") or "Votre agence"),

@@ -1,3 +1,5 @@
+import Hours from "./pages/Hours";
+import PublicHours from "./pages/PublicHours";
 import React from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -46,6 +48,7 @@ function AppRoutes() {
       <Route path="/dpa" element={<DPA />} />
       <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
       <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
+      <Route path="/hours" element={<PublicHours />} />
       <Route path="/m/:token" element={<PublicConfirm />} />
       <Route path="/onboarding" element={<ProtectedRoute><Onboarding/></ProtectedRoute>} />
       <Route path="/payment/success" element={<PaymentSuccess />} />
@@ -59,6 +62,7 @@ function AppRoutes() {
         <Route path="missions/:id" element={<MissionDetail />} />
         <Route path="workers" element={<Workers />} />
         <Route path="calendar" element={<Calendar />} />
+        <Route path="hours" element={<Hours />} />
         <Route path="history" element={<History />} />
         <Route path="help" element={<Tutorial />} />
         <Route path="tutorial" element={<Navigate to="/app/help" replace />} />

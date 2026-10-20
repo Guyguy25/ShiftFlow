@@ -27,6 +27,12 @@ export function estimatedPay(shift) {
   if (![startHour, startMinute, endHour, endMinute].every(Number.isFinite)) return null;
   let duration = (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60;
   if (duration <= 0) duration += 24;
+  if (shift.end_date && shift.date) {
+    const days = (Date.parse(shift.end_date) - Date.parse(shift.date)) / 86400000;
+    duration = days * 24 + (endHour * 60 + endMinute - startHour * 60 - startMinute) / 60;
+  }
+  duration -= Number(shift.break_minutes || 0) / 60;
+  if (duration <= 0 || duration > 744) return null;
   return duration * amount * people;
 }
 
@@ -47,6 +53,14 @@ export default function ShiftFields({ value, onChange, idPrefix = "shift", minDa
   return <div className="space-y-4">
     <section className={cardClass} aria-label="Date et horaires">
       {groupLabel("Quand ?", CalendarDays)}
+      <div className="grid gap-3 sm:grid-cols-2 mb-3">
+        <label className="text-sm">Date de fin (facultative pour une nuit)
+          <input type="date" min={value.date || minDate} className={fieldClass} value={value.end_date || ""} onChange={e => onChange("end_date", e.target.value || null)} />
+        </label>
+        <label className="text-sm">Pause non rémunérée (minutes)
+          <input type="number" min="0" max="44639" step="1" className={fieldClass} value={value.break_minutes || 0} onChange={e => onChange("break_minutes", Number(e.target.value))} />
+        </label>
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block text-sm font-medium text-gray-700" htmlFor={idPrefix + "-date"}>Date <span className="text-blue-700">*</span>
           <input type="date" required min={minDate} id={idPrefix + "-date"} data-testid={idPrefix + "-date"} data-onboarding={!value.date || (minDate && value.date < minDate) ? "date" : undefined} className={fieldClass} value={value.date || ""} onChange={(event) => onChange("date", event.target.value)} />

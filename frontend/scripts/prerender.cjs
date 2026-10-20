@@ -69,7 +69,7 @@ fs.writeFileSync(path.join(buildDir, "sitemap.xml"), sitemap);
 
 // The same noindex application shell for fixed non-marketing entry points.
 // This also protects direct requests when a host prefers filesystem routing.
-for (const route of ["login", "register", "onboarding", "admin", "payment/success", "payment/cancel",
+for (const route of ["login", "register", "onboarding", "admin", "hours", "app/hours", "payment/success", "payment/cancel",
   "mentions-legales", "conditions", "confidentialite", "cookies", "dpa", "app", "app/dashboard",
   "app/missions", "app/missions/new", "app/workers", "app/calendar", "app/history", "app/help",
   "app/tutorial", "app/profile", "app/settings"]) {

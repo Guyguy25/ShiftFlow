@@ -483,6 +483,10 @@ export default function MissionDetail() {
         <p className="flex items-center gap-2"><MapPin size={16}/>{m.location}</p>
         {m.first_date && <p className="flex items-center gap-2"><CalendarClock size={16}/>{m.first_date.split("-").reverse().join("/")}{m.last_date && m.last_date !== m.first_date ? ` – ${m.last_date.split("-").reverse().join("/")}` : ""}</p>}
       </div>
+      <div className="rounded-xl border bg-white p-4 flex flex-wrap items-center justify-between gap-3">
+        <div><strong>Heures après mission</strong><p className="text-sm text-gray-600">Déclaration individuelle, vérification et export des heures.</p></div>
+        <button className="min-h-11 rounded-lg bg-blue-600 px-4 text-white" onClick={() => nav(`/app/hours?mission=${m.id}`)}>Gérer les heures</button>
+      </div>
       <MissionFollowUp mission={m} />
       <button disabled={missionBusy} className="mt-4 min-h-11 text-blue-700" onClick={async () => {
         setMissionBusy(true);
