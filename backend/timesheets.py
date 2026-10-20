@@ -242,7 +242,7 @@ async def send_timesheets(mission_id: str, payload: SendIn, user=Depends(get_cur
     return {"ok": True, **counts}
 
 
-async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, reminder=False):
+async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, reminder=False, correction=False):
     """Reserve a 3-minute lease before sending; retry failed messages only."""
     now = s.now_utc()
     slot_id = slot["id"]
@@ -256,7 +256,7 @@ async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, 
         if not reminder and state == "sent" and not resend:
             return "skipped"
         # A manual resend is rate-limited to one delivery per hour.
-        if resend and previous.get("sent_at"):
+        if resend and not correction and previous.get("sent_at"):
             try:
                 if datetime.fromisoformat(previous["sent_at"]) > now - timedelta(hours=1):
                     return "skipped"
@@ -316,7 +316,8 @@ async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, 
         await db.notifications.insert_one({
             "id": s.new_id(), "channel": "whatsapp", "sent_at": s.iso(now), "kind": "timesheet_reminder" if reminder else "timesheet_request",
             "mission_id": mission["id"], "shift_id": shift["id"], "slot_id": slot_id,
-            "worker_id": worker["id"], "to": to, "body": body, "url": url, "status": status,
+            "worker_id": worker["id"], "to": to, "body": body.replace(url, "[lien sécurisé]"),
+            "url": None, "status": status,
             "error": error, "provider_message_id": message_id,
         })
     return status if status == "sent" else "failed"
@@ -347,7 +348,7 @@ async def review_timesheet(mission_id: str, slot_id: str, payload: ReviewIn, use
         agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or user
         mission = await owned_mission(mission_id, user)
         if slot and shift and worker:
-            delivery = await deliver_timesheet(slot, shift, mission, agency, worker, resend=True)
+            delivery = await deliver_timesheet(slot, shift, mission, agency, worker, resend=True, correction=True)
     return {"ok": True, "status": status, "correction_message": delivery}
 
 
