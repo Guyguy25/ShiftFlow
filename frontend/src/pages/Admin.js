@@ -131,12 +131,16 @@ function StageDots({ activation }) {
 }
 
 export default function Admin() {
+  const [leads, setLeads] = useState([]);
+  const [leadsError, setLeadsError] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
 
   const load = () => {
+    setLeadsError(false);
+    api.get("/admin/accompanied-trial").then(({ data }) => setLeads(data)).catch(() => setLeadsError(true));
     setError("");
     api.get("/admin/dashboard").then(({ data }) => setData(data)).catch(err => {
       setError(err.response?.status === 403 ? "Vous n’avez pas accès à cet espace." : "Impossible de charger l’administration.");
@@ -178,6 +182,11 @@ export default function Admin() {
     </header>
 
     <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-6 lg:px-8">
+      <section className="mb-7 rounded-2xl border border-blue-200 bg-white p-5">
+        <h2 className="text-xl font-bold">Demandes de test accompagné</h2>
+        <p className="mt-2 text-sm text-gray-500">Formulaires reçus · La réservation effective est à vérifier dans Calendly.</p>
+        {leadsError ? <p role="alert" className="mt-4 text-sm text-red-700">Impossible de charger les demandes.</p> : leads.length === 0 ? <p className="mt-4 text-sm text-gray-500">Aucune demande pour le moment.</p> : <div className="mt-4 space-y-3">{leads.map(lead => <article key={lead.id} className="rounded-xl border border-gray-200 p-4"><p className="font-semibold">{lead.name} · {lead.company}</p><a href={`mailto:${lead.email}`} className="text-sm text-blue-700 underline">{lead.email}</a><p className="mt-2 whitespace-pre-wrap text-sm">{lead.need}</p><p className="mt-2 text-xs text-gray-500">{lead.mission} · {lead.whatsapp} · {fmtDateTime(lead.created_at)}</p></article>)}</div>}
+      </section>
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div><p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">Pilotage</p><h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">Vue d’ensemble</h1><p className="mt-1 text-sm text-gray-500">Activation, acquisition et usage de ShiftFlow en un coup d’œil.</p></div>
         <p className="text-xs text-gray-400">Mis à jour {fmtDateTime(data.generated_at)}</p>

@@ -4,6 +4,7 @@
       "root": "frontend",
       "framework": "create-react-app",
       "rewrites": [
+        { "source": "/test-accompagne", "destination": "/seo/test-accompagne.html" },
         { "source": "/", "destination": "/seo/home.html" },
         { "source": "/pricing", "destination": "/seo/pricing.html" },
         { "source": "/demo", "destination": "/seo/demo.html" },

@@ -11,6 +11,7 @@ import Layout from "./components/Layout";
 import PublicLegalBar from "./components/PublicLegalBar";
 import Demo from "./pages/Demo";
 import Landing from "./pages/Landing";
+import AccompaniedTrial from "./pages/AccompaniedTrial";
 import Pricing from "./pages/Pricing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -40,6 +41,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
       <Route path="/demo" element={<Demo />} />
+      <Route path="/test-accompagne" element={<AccompaniedTrial />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/mentions-legales" element={<LegalNotice />} />
       <Route path="/conditions" element={<Terms />} />
