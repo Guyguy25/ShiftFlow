@@ -8,11 +8,12 @@ from unittest import TestCase
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from test_mission_operations import Database
+from test_mission_operations import Database, Cursor
 
 
 class AccompaniedTrialTest(TestCase):
     def setUp(self):
+        Cursor.limit = lambda cursor, count: Cursor(cursor.cursor.limit(count))
         self.db = Database()
         async def owner(request: Request):
             if request.headers.get("x-test-owner") != "yes":
