@@ -177,8 +177,10 @@ async def submit_timesheet(token: str, payload: DeclarationIn, response: Respons
 async def mission_timesheets(mission_id: str, user=Depends(get_current_user)):
     mission = await owned_mission(mission_id, user)
     shifts = await db.shifts.find({"mission_id": mission_id, "deleted_at": {"$exists": False}}, {"_id": 0}).sort("date", 1).to_list(500)
-    slots = await db.mission_workers.find({"mission_id": mission_id, "status": "confirmed"}, {"_id": 0}).to_list(10000)
     docs = await db.timesheets.find({"mission_id": mission_id, "agency_id": user["id"]}, {"_id": 0, "token_hash": 0}).to_list(10000)
+    historical_slot_ids = [d["slot_id"] for d in docs]
+    slots = await db.mission_workers.find({"mission_id": mission_id,
+        "$or": [{"status": "confirmed"}, {"id": {"$in": historical_slot_ids}}]}, {"_id": 0}).to_list(10000)
     by_slot = {d["slot_id"]: d for d in docs}
     by_shift = {sh["id"]: sh for sh in shifts}
     worker_ids = list(set(slot["worker_id"] for slot in slots))
@@ -188,7 +190,7 @@ async def mission_timesheets(mission_id: str, user=Depends(get_current_user)):
     for slot in slots:
         shift = by_shift.get(slot["shift_id"])
         worker = by_worker.get(slot["worker_id"])
-        if not shift or not worker or shift.get("status") == "cancelled":
+        if not shift or not worker or (shift.get("status") == "cancelled" and not doc):
             continue
         doc = by_slot.get(slot["id"], {})
         start, end = shift_bounds(shift)
@@ -274,12 +276,16 @@ async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, 
             })
         except Exception:
             pass  # Concurrent send may have inserted it.
-    locked = await db.timesheets.update_one({
-        "slot_id": slot_id, "agency_id": agency["id"],
-        "$or": [{"send_lock_until": {"$exists": False}},
-                {"send_lock_until": {"$lte": s.iso(now)}}],
-        "status": {"$in": ["not_sent", "sent"] if reminder or not resend else ["not_sent", "sent", "needs_correction"]},
-    }, {"$set": {"send_lock_until": s.iso(now + timedelta(minutes=3))}})
+    allowed = ["sent"] if reminder else (["not_sent", "sent", "needs_correction"] if resend else ["not_sent"])
+    query = {"slot_id": slot_id, "agency_id": agency["id"], "status": {"$in": allowed},
+             "$or": [{"send_lock_until": {"$exists": False}},
+                     {"send_lock_until": {"$lte": s.iso(now)}}]}
+    if reminder:
+        query["reminder_sent_at"] = {"$exists": False}
+    if resend and not correction:
+        query["$and"] = [{"$or": [{"sent_at": {"$exists": False}},
+                                 {"sent_at": {"$lte": s.iso(now - timedelta(hours=1))}}]}]
+    locked = await db.timesheets.update_one(query, {"$set": {"send_lock_until": s.iso(now + timedelta(minutes=3))}})
     if not locked.modified_count:
         return "skipped"
     token = secrets.token_urlsafe(32)
