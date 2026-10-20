@@ -153,6 +153,11 @@ class TimesheetTests(TestCase):
         payload["break_minutes"] = 30
         self.assertEqual(self.client.post(f"/api/public/timesheets/{replacement}", json=payload).status_code, 200)
 
+    def test_public_token_expires(self):
+        token = self._send()
+        self.db.raw.timesheets.update_one({"slot_id": "sla"}, {"$set": {"token_expires_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()}})
+        self.assertEqual(self.client.get(f"/api/public/timesheets/{token}").status_code, 410)
+
     def test_no_send_before_end_or_to_nonconfirmed(self):
         self.db.raw.shifts.update_one({"id": "sha"}, {"$set": {"date": (datetime.now(self.ts.LOCAL_TZ) + timedelta(days=3)).date().isoformat()}})
         response = self.client.post("/api/missions/ma/timesheets/send", json={})
