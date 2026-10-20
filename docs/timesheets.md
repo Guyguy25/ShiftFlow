@@ -17,7 +17,7 @@
 ## Sécurité
 - Lien public indépendant du lien d'acceptation de mission, généré via `secrets.token_urlsafe(32)`.
 - Base MongoDB : empreinte SHA-256 du jeton ; aucun jeton en clair dans les documents timesheets ni dans le journal de notifications.
-- Un renvoi de lien réussi invalide l'ancien lien. Conserver le lien privé : c'est un identifiant d'accès personnel.
+- Les liens expirent après 90 jours. Un renvoi de lien réussi invalide l'ancien lien. Conserver le lien privé : c'est un identifiant d'accès personnel.
 - Pas d'accès public aux autres intervenants, aux taux de paie ni aux montants.
 - API organisateur sur session authentifiée, avec filtre `agency_id` et vérification de la propriété de la mission.
 - Validation et soumission conditionnelles par état et compteur de révision, avec journal d'événements. Index unique par affectation et index unique partiel/sparse par jeton.
