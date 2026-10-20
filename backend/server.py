@@ -2388,6 +2388,43 @@ async def admin_dashboard(owner=Depends(require_owner)):
     }
 
 
+class AccompaniedTrialLead(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    email: EmailStr
+    company: str = Field(min_length=1, max_length=150)
+    mission: Literal["Dans les 7 prochains jours", "Dans les 30 prochains jours", "Plus tard / date à définir"]
+    need: str = Field(min_length=1, max_length=800)
+    whatsapp: Literal["Je peux le connecter moi-même", "Je peux faire participer la personne responsable", "J’ai besoin d’en discuter avant"]
+
+    @field_validator("name", "company", "need")
+    @classmethod
+    def require_content(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Ce champ est requis")
+        return value
+
+
+@api.post("/public/accompanied-trial", status_code=201)
+async def create_accompanied_trial_lead(payload: AccompaniedTrialLead, request: Request):
+    import hashlib
+    now = now_utc()
+    # A keyed digest allows throttling without storing a raw IP address.
+    fingerprint = hashlib.sha256((JWT_SECRET + (request_client_ip(request) or "unknown")).encode()).hexdigest()
+    await db.accompanied_trial_leads.create_index("expires_at", expireAfterSeconds=0)
+    recent = await db.accompanied_trial_leads.count_documents({"fingerprint": fingerprint, "created_at": {"$gte": now - timedelta(hours=1)}})
+    if recent >= 5:
+        raise HTTPException(429, "Trop de demandes. Réessayez plus tard ou contactez-nous.")
+    lead_id = new_id()
+    await db.accompanied_trial_leads.insert_one({**payload.model_dump(), "id": lead_id, "fingerprint": fingerprint, "created_at": now, "expires_at": now + timedelta(days=90)})
+    return {"id": lead_id}
+
+
+@api.get("/admin/accompanied-trial")
+async def list_accompanied_trial_leads(owner=Depends(require_owner)):
+    return await db.accompanied_trial_leads.find({"expires_at": {"$gt": now_utc()}}, {"_id": 0, "fingerprint": 0, "expires_at": 0}).sort("created_at", -1).limit(200).to_list(200)
+
+
 # WhatsApp routes
 # Importées ici, après la définition de toutes les fonctions utilisées par
 # whatsapp_routes.py, afin d'éviter une importation circulaire.

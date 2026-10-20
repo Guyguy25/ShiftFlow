@@ -3,6 +3,11 @@ export const SITE_NAME = "ShiftFlow.io";
 
 // Only these public marketing pages belong in the sitemap and search results.
 export const PUBLIC_PAGES = {
+  "/test-accompagne": {
+    title: "Test accompagné ShiftFlow | Votre première mission ensemble",
+    description: "Préparez une vraie mission avec ShiftFlow : échange avec Tanguy, connexion WhatsApp accompagnée et 3 missions offertes pour votre équipe événementielle.",
+    label: "Test accompagné",
+  },
   "/": {
     title: "ShiftFlow.io | Gestion des équipes événementielles de road et montage",
     description: "Constituez vos équipes de road, de montage et de renfort technique événementiel sans contacter chacun à la main. ShiftFlow envoie vos demandes WhatsApp et centralise les réponses. 3 missions offertes.",

@@ -22,6 +22,7 @@ const { MemoryRouter } = require("react-router-dom");
 const { AuthProvider } = require("../src/context/AuthContext");
 const { PUBLIC_PAGES, SITE_NAME, SITE_URL, getPageSeo, getStructuredData } = require("../src/lib/seo");
 const pages = {
+  "/test-accompagne": require("../src/pages/AccompaniedTrial").default,
   "/": require("../src/pages/Landing").default,
   "/pricing": require("../src/pages/Pricing").default,
   "/demo": require("../src/pages/Demo").default,
