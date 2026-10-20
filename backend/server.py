@@ -1671,12 +1671,19 @@ async def cron_reminders(request: Request):
         return {"ok": True, "duplicate": True}
     await db.cron_runs.insert_one({"run_id": run_id, "kind": "reminders", "at": iso(now_utc())})
     sent = await _run_reminders()
+    # Auto timesheets are opt-in and sent only after the shift ends.
+    timesheets_result = {"sent": 0, "failed": 0, "skipped": 0}
+    try:
+        from timesheets import run_automatic_timesheets
+        timesheets_result = await run_automatic_timesheets()
+    except Exception:
+        logger.exception("Timesheet dispatch cron failed")
     emails_sent = 0
     try:
         emails_sent = await run_onboarding_emails(db, FRONTEND_URL, JWT_SECRET)
     except Exception:
         logger.exception("Onboarding email cron failed")
-    return {"ok": True, "sent": sent, "emails_sent": emails_sent}
+    return {"ok": True, "sent": sent, "timesheets": timesheets_result, "emails_sent": emails_sent}
 
 
 def _unsubscribe_user_id(token: str) -> str:
@@ -1811,6 +1818,9 @@ async def on_startup():
     await db.shifts.create_index("agency_id")
     await db.mission_workers.create_index("shift_id")
     await db.mission_workers.create_index("token", unique=True)
+    await db.timesheets.create_index("slot_id", unique=True)
+    await db.timesheets.create_index("token_hash", unique=True, sparse=True)
+    await db.timesheets.create_index("agency_id")
 
     await seed_admin_and_demo()
     logger.info(f"Twilio ready: {twilio_ready()} (from={TWILIO_FROM or 'unset'})")
@@ -2359,6 +2369,8 @@ from whatsapp_routes import router as whatsapp_router
 api.include_router(whatsapp_router)
 from mission_operations import router as operations_router
 api.include_router(operations_router)
+from timesheets import router as timesheets_router
+api.include_router(timesheets_router)
 
 app.include_router(api)
 
