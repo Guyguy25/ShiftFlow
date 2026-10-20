@@ -7,7 +7,7 @@ jest.mock("../lib/api", () => ({
   api: { get: jest.fn(), post: jest.fn() },
   formatApiError: value => value || "Lien invalide",
 }));
-jest.mock("react-router-dom", () => ({ useParams: () => ({ token: "example-token" }) }));
+jest.mock("react-router-dom", () => ({ useParams: () => ({ token: "example-token" }) }), { virtual: true });
 
 let host, root;
 const fixture = status => ({
