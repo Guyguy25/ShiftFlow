@@ -128,6 +128,11 @@ async def checked_public_token(token):
     doc = await db.timesheets.find_one({"token_hash": hash_token(token)}, {"_id": 0})
     if not doc or doc.get("status") not in PUBLIC_STATES:
         raise HTTPException(404, "Lien invalide ou expiré.")
+    try:
+        if datetime.fromisoformat(doc["token_expires_at"]).astimezone(timezone.utc) <= s.now_utc():
+            raise HTTPException(410, "Ce lien a expiré. Demandez un nouvel envoi à l’organisateur.")
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(410, "Ce lien a expiré. Demandez un nouvel envoi à l’organisateur.")
     mission = await db.missions.find_one({"id": doc["mission_id"], "agency_id": doc["agency_id"]}, {"_id": 0})
     shift = await db.shifts.find_one({"id": doc["shift_id"], "mission_id": doc["mission_id"]}, {"_id": 0})
     slot = await db.mission_workers.find_one({"id": doc["slot_id"], "shift_id": doc["shift_id"]}, {"_id": 0})
@@ -311,10 +316,12 @@ async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, 
         patch = {"send_lock_until": s.iso(now), "last_delivery_error": error}
         if status == "sent":
             if reminder:
-                patch.update({"reminder_sent_at": s.iso(now), "token_hash": hash_token(token)})
+                patch.update({"reminder_sent_at": s.iso(now), "token_hash": hash_token(token),
+                              "token_expires_at": s.iso(now + timedelta(days=90))})
             else:
                 correction = bool(previous and previous.get("status") == "needs_correction")
                 patch.update({"token_hash": hash_token(token),
+                              "token_expires_at": s.iso(now + timedelta(days=90)),
                               "status": "needs_correction" if correction else "sent",
                               "sent_at": s.iso(now)})
         await db.timesheets.update_one({"slot_id": slot_id, "agency_id": agency["id"]},
