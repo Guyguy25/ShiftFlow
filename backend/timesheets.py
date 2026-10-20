@@ -190,9 +190,9 @@ async def mission_timesheets(mission_id: str, user=Depends(get_current_user)):
     for slot in slots:
         shift = by_shift.get(slot["shift_id"])
         worker = by_worker.get(slot["worker_id"])
+        doc = by_slot.get(slot["id"], {})
         if not shift or not worker or (shift.get("status") == "cancelled" and not doc):
             continue
-        doc = by_slot.get(slot["id"], {})
         start, end = shift_bounds(shift)
         rows.append({
             "slot_id": slot["id"], "shift_id": shift["id"], "worker_id": worker["id"],
