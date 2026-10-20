@@ -14,6 +14,7 @@ const nav = [
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
   { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "nav-automations" },
+  { to: "/app/hours", label: "Heures", icon: CalendarClock, id: "nav-hours" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
 ];
 
@@ -28,6 +29,7 @@ const mobileMoreNav = [
   { to: "/app/profile", label: "Profil", icon: UserRound },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon },
   { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "mobile-nav-automations" },
+  { to: "/app/hours", label: "Heures", icon: CalendarClock },
   { to: "/app/history", label: "Historique", icon: History },
   { to: "/app/help", label: "Aide", icon: LifeBuoy },
   { to: "/app/settings", label: "Paramètres", icon: Settings },

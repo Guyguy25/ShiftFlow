@@ -71,6 +71,7 @@ export default function MetaPixel() {
   const pendingAttribution = useRef(null);
 
   useEffect(() => {
+    if (location.pathname === "/hours") return;
     const candidate = attributionFromLocation(location.search, location.pathname);
     if (candidate && !pendingAttribution.current) pendingAttribution.current = candidate;
 
@@ -88,7 +89,7 @@ export default function MetaPixel() {
     setConsent(value);
   };
 
-  if (consent) return null;
+  if (consent || location.pathname === "/hours") return null;
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-[100] p-4 sm:p-5" role="dialog" aria-label="Choix des cookies">

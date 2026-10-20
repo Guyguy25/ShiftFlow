@@ -100,7 +100,7 @@ export default function PublicConfirm() {
             <CalendarClock className="w-5 h-5 text-gray-400"/>
             <div>
               <div className="text-xs uppercase text-gray-500 tracking-widest">Date & horaires</div>
-              <div className="font-medium text-gray-900" data-testid="public-shift-date">{shift.date} · {shift.start_time} → {shift.end_time}</div>
+              <div className="font-medium text-gray-900" data-testid="public-shift-date">{shift.date} · {shift.start_time} → {shift.end_date && shift.end_date !== shift.date ? shift.end_date + " · " : ""}{shift.end_time}{shift.break_minutes > 0 ? ` · Pause ${shift.break_minutes} min` : ""}</div>
             </div>
           </div>
           <div className="flex items-start gap-3">

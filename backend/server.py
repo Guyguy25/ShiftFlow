@@ -55,6 +55,17 @@ client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
 app = FastAPI(title="ShiftFlow API")
+
+
+@app.middleware("http")
+async def hours_privacy_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -499,6 +510,8 @@ class ShiftIn(BaseModel):
     date: str  # YYYY-MM-DD
     start_time: str
     end_time: str
+    end_date: Optional[str] = None
+    break_minutes: int = Field(default=0, ge=0, le=44639)
     people_needed: int = Field(ge=1)
     rate_hourly: float = Field(default=0, ge=0, allow_inf_nan=False)
     pay_type: Literal["hourly", "fixed"] = "hourly"
@@ -512,6 +525,12 @@ class ShiftIn(BaseModel):
     def _fixed_basis(self):
         if self.pay_type == "fixed" and self.pay_basis == "unspecified":
             raise ValueError("Précisez brut ou net pour un cachet fixe.")
+        import os
+        from hours_domain import planned_entries
+        try:
+            planned_entries(self.model_dump(), os.environ.get("MISSION_TIMEZONE", "Europe/Paris"))
+        except (ValueError, KeyError):
+            raise ValueError("Vérifiez la date de fin et la pause du créneau (maximum 31 jours).")
         return self
 
     @field_validator("start_time", "end_time")
@@ -947,6 +966,10 @@ def compute_shift_estimate(shift: dict) -> float:
     try:
         if shift.get("pay_type") == "fixed":
             return round(float(shift.get("fixed_amount", 0)) * int(shift.get("people_needed", 0)), 2)
+        if shift.get("end_date") or shift.get("break_minutes"):
+            from hours_domain import planned_entries, amount_cents
+            minutes = sum(entry["minutes"] for entry in planned_entries(shift, os.environ.get("MISSION_TIMEZONE", "Europe/Paris")))
+            return amount_cents(minutes, shift) * int(shift.get("people_needed", 0)) / 100
         s = shift["start_time"].split(":")
         e = shift["end_time"].split(":")
         sh = int(s[0]) + int(s[1]) / 60
@@ -976,7 +999,7 @@ async def mission_with_shifts(mission: dict, include_slots: bool = False) -> dic
     # aggregate: earliest date, total people & confirmed
     if active:
         mission["first_date"] = min(sh["date"] for sh in active)
-        mission["last_date"] = max(sh["date"] for sh in active)
+        mission["last_date"] = max(sh.get("end_date") or sh["date"] for sh in active)
         mission["total_needed"] = sum(sh["people_needed"] for sh in active)
         mission["total_confirmed"] = sum(sh.get("confirmed_count", 0) for sh in active)
     else:
@@ -1281,6 +1304,7 @@ async def public_get(token: str):
         "slot": {"id": slot["id"], "status": slot["status"]},
         "shift": {
             "date": shift["date"], "start_time": shift["start_time"], "end_time": shift["end_time"],
+            "end_date": shift.get("end_date"), "break_minutes": shift.get("break_minutes", 0),
             "rate_hourly": shift["rate_hourly"], "mission_type": shift["mission_type"],
             "pay_type": shift.get("pay_type", "hourly"), "fixed_amount": shift.get("fixed_amount", 0),
             "pay_basis": shift.get("pay_basis", "unspecified"),
@@ -1434,6 +1458,8 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
             "date": new_date,
             "start_time": sh["start_time"],
             "end_time": sh["end_time"],
+            "end_date": (datetime.fromisoformat(sh["end_date"]) + timedelta(days=7)).date().isoformat() if sh.get("end_date") else None,
+            "break_minutes": sh.get("break_minutes", 0),
             "people_needed": sh["people_needed"],
             "rate_hourly": sh["rate_hourly"],
             "pay_type": sh.get("pay_type", "hourly"), "fixed_amount": sh.get("fixed_amount", 0),
@@ -1465,6 +1491,8 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
         "date": payload.new_date,
         "start_time": original["start_time"],
         "end_time": original["end_time"],
+        "end_date": (datetime.fromisoformat(payload.new_date) + (datetime.fromisoformat(original["end_date"]) - datetime.fromisoformat(original["date"]))).date().isoformat() if original.get("end_date") else None,
+        "break_minutes": original.get("break_minutes", 0),
         "people_needed": original["people_needed"],
         "rate_hourly": original["rate_hourly"],
         "pay_type": original.get("pay_type", "hourly"), "fixed_amount": original.get("fixed_amount", 0),
@@ -1676,7 +1704,13 @@ async def cron_reminders(request: Request):
         emails_sent = await run_onboarding_emails(db, FRONTEND_URL, JWT_SECRET)
     except Exception:
         logger.exception("Onboarding email cron failed")
-    return {"ok": True, "sent": sent, "emails_sent": emails_sent}
+    hours = None
+    try:
+        from timesheets import run_timesheets
+        hours = await run_timesheets()
+    except Exception:
+        logger.exception("Timesheet cron failed")
+    return {"ok": True, "sent": sent, "emails_sent": emails_sent, "hours": hours}
 
 
 def _unsubscribe_user_id(token: str) -> str:
@@ -1809,6 +1843,8 @@ async def on_startup():
     await db.missions.create_index("agency_id")
     await db.shifts.create_index("mission_id")
     await db.shifts.create_index("agency_id")
+    await db.timesheets.create_index([("agency_id", 1), ("updated_at", -1)])
+    await db.timesheets.create_index("mission_id")
     await db.mission_workers.create_index("shift_id")
     await db.mission_workers.create_index("token", unique=True)
 
@@ -2359,6 +2395,9 @@ from whatsapp_routes import router as whatsapp_router
 api.include_router(whatsapp_router)
 from mission_operations import router as operations_router
 api.include_router(operations_router)
+
+from timesheets import router as timesheets_router
+api.include_router(timesheets_router)
 
 app.include_router(api)
 
