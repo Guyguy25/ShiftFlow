@@ -3,7 +3,13 @@ import { useParams } from "react-router-dom";
 import { Clock3, CheckCircle2, AlertTriangle, Send, Zap } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 
-const localInput = value => value ? value.slice(0, 16) : "";
+const localInput = value => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const p = number => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}`;
+};
 const toUtc = value => {
   const time = new Date(value);
   if (!value || Number.isNaN(time.getTime())) throw new Error("Renseignez une date et une heure valides.");
