@@ -305,10 +305,12 @@ async def deliver_timesheet(slot, shift, mission, agency, worker, resend=False, 
         patch = {"send_lock_until": s.iso(now), "last_delivery_error": error}
         if status == "sent":
             if reminder:
-                patch["reminder_sent_at"] = s.iso(now)
+                patch.update({"reminder_sent_at": s.iso(now), "token_hash": hash_token(token)})
             else:
-                patch.update({"token_hash": hash_token(token), "status": "sent", "sent_at": s.iso(now),
-                              "review_note": ""})
+                correction = bool(previous and previous.get("status") == "needs_correction")
+                patch.update({"token_hash": hash_token(token),
+                              "status": "needs_correction" if correction else "sent",
+                              "sent_at": s.iso(now)})
         await db.timesheets.update_one({"slot_id": slot_id, "agency_id": agency["id"]},
                                        {"$set": patch})
         await db.notifications.insert_one({
@@ -337,7 +339,16 @@ async def review_timesheet(mission_id: str, slot_id: str, payload: ReviewIn, use
          "$push": {"events": {"at": now, "action": status, "by": user["id"], "note": payload.note.strip()}}})
     if not updated.modified_count:
         raise HTTPException(409, "Cette déclaration vient de changer.")
-    return {"ok": True, "status": status}
+    delivery = None
+    if status == "needs_correction":
+        slot = await db.mission_workers.find_one({"id": slot_id, "mission_id": mission_id}, {"_id": 0})
+        shift = await db.shifts.find_one({"id": doc["shift_id"], "mission_id": mission_id}, {"_id": 0})
+        worker = await db.workers.find_one({"id": doc["worker_id"], "agency_id": user["id"]}, {"_id": 0})
+        agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or user
+        mission = await owned_mission(mission_id, user)
+        if slot and shift and worker:
+            delivery = await deliver_timesheet(slot, shift, mission, agency, worker, resend=True)
+    return {"ok": True, "status": status, "correction_message": delivery}
 
 
 def csv_safe(value):
