@@ -53,14 +53,6 @@ export default function ShiftFields({ value, onChange, idPrefix = "shift", minDa
   return <div className="space-y-4">
     <section className={cardClass} aria-label="Date et horaires">
       {groupLabel("Quand ?", CalendarDays)}
-      <div className="grid gap-3 sm:grid-cols-2 mb-3">
-        <label className="text-sm">Date de fin (facultative pour une nuit)
-          <input type="date" min={value.date || minDate} className={fieldClass} value={value.end_date || ""} onChange={e => onChange("end_date", e.target.value || null)} />
-        </label>
-        <label className="text-sm">Pause non rémunérée (minutes)
-          <input type="number" min="0" max="44639" step="1" className={fieldClass} value={value.break_minutes || 0} onChange={e => onChange("break_minutes", Number(e.target.value))} />
-        </label>
-      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block text-sm font-medium text-gray-700" htmlFor={idPrefix + "-date"}>Date <span className="text-blue-700">*</span>
           <input type="date" required min={minDate} id={idPrefix + "-date"} data-testid={idPrefix + "-date"} data-onboarding={!value.date || (minDate && value.date < minDate) ? "date" : undefined} className={fieldClass} value={value.date || ""} onChange={(event) => onChange("date", event.target.value)} />
@@ -120,7 +112,15 @@ export default function ShiftFields({ value, onChange, idPrefix = "shift", minDa
     </section>
 
     <details className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
-      <summary className="cursor-pointer text-sm font-semibold text-blue-700">Compétences et consignes <span className="font-normal text-gray-500">(facultatif)</span></summary>
+      <summary className="cursor-pointer text-sm font-semibold text-blue-700">Options du créneau <span className="font-normal text-gray-500">(facultatif)</span></summary>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <label className="text-sm">Date de fin (si plusieurs jours)
+          <input type="date" min={value.date || minDate} className={fieldClass} value={value.end_date || ""} onChange={e => onChange("end_date", e.target.value || null)} />
+        </label>
+        <label className="text-sm">Pause prévue non rémunérée (minutes)
+          <input type="number" min="0" max="44639" step="1" className={fieldClass} value={value.break_minutes || 0} onChange={e => onChange("break_minutes", Number(e.target.value))} />
+        </label>
+      </div>
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="block text-sm font-medium text-gray-700" htmlFor={idPrefix + "-skill"}>Compétence requise
           <input id={idPrefix + "-skill"} data-testid={idPrefix + "-skill"} className={fieldClass} value={value.skill_required || ""} onChange={(event) => onChange("skill_required", event.target.value)} placeholder="Ex. : technique son" />
