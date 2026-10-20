@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, Clock3, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -14,6 +14,7 @@ const nav = [
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
   { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "nav-automations" },
+  { to: "/app/timesheets", label: "Suivi des heures", icon: Clock3, id: "nav-timesheets" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
 ];
 
@@ -28,6 +29,7 @@ const mobileMoreNav = [
   { to: "/app/profile", label: "Profil", icon: UserRound },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon },
   { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "mobile-nav-automations" },
+  { to: "/app/timesheets", label: "Suivi des heures", icon: Clock3, id: "mobile-nav-timesheets" },
   { to: "/app/history", label: "Historique", icon: History },
   { to: "/app/help", label: "Aide", icon: LifeBuoy },
   { to: "/app/settings", label: "Paramètres", icon: Settings },
