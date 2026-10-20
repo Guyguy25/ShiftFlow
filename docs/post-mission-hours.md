@@ -85,4 +85,4 @@ Recette obligatoire sur un environnement de test isolé avant toute mise en prod
 
 La collection `timesheets` est additive et utilise l'identifiant d'affectation comme `_id` unique. Les index supplémentaires sont créés au démarrage. Aucune migration destructive ni réécriture des confirmations existantes. Déployer l'API compatible avant l'interface lors d'une mise en production ultérieure autorisée ; conserver la collection et les nouveaux champs en cas de retour arrière, et désactiver d'abord les envois automatiques. Aucune politique automatique de suppression des historiques n'est introduite.
 
-Aucun déploiement ni message réel n'a été effectué pour cette livraison.
+Aucune commande de déploiement, aucune fusion et aucun message réel n'ont été effectués pour cette livraison. L'intégration Vercel existante déclenche automatiquement une prévisualisation de branche à l'ouverture de la PR ; ce contrôle ne remplace pas la recette réelle avant production.
