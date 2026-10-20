@@ -484,6 +484,7 @@ export default function MissionDetail() {
         {m.first_date && <p className="flex items-center gap-2"><CalendarClock size={16}/>{m.first_date.split("-").reverse().join("/")}{m.last_date && m.last_date !== m.first_date ? ` – ${m.last_date.split("-").reverse().join("/")}` : ""}</p>}
       </div>
       <MissionFollowUp mission={m} />
+      <button type="button" onClick={() => nav(`/app/timesheets?mission=${encodeURIComponent(id)}`)} className="mt-4 min-h-11 rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700">Suivi des heures de cette mission</button>
       <button disabled={missionBusy} className="mt-4 min-h-11 text-blue-700" onClick={async () => {
         setMissionBusy(true);
         try { const { data } = await api.post(`/missions/${id}/retry-notifications`); reportDelivery(data, "Notifications traitées"); await load(); }

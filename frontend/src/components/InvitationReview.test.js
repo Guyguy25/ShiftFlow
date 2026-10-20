@@ -95,7 +95,7 @@ test("demo completes and resets without API calls or real mission creation", asy
   await click("Continuer avec cette mission"); await click("Voir la demande WhatsApp"); await click("Simuler un refus"); await click("Simuler la confirmation");
   expect(host.textContent).toContain("L’équipe de l’exemple est complète");
   await click("Recommencer");
-  expect(host.querySelector("#demo-name").value).toBe("Montage de stand");
+  expect(host.querySelector("#demo-name").value).toBe("Montage de scène · équipe road");
   expect(api.get).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
 });
 
@@ -163,7 +163,7 @@ test("demo preserves edited mission and selected priority in simulated messages"
   await click("Simuler la confirmation");
   expect(host.querySelector('[data-testid="demo-success-cta"]').getAttribute("href")).toBe("/app/missions/new");
   await click("Recommencer");
-  expect(host.querySelector('#demo-name').value).toBe("Montage de stand");
+  expect(host.querySelector('#demo-name').value).toBe("Montage de scène · équipe road");
   expect(api.get).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled();
 });
 

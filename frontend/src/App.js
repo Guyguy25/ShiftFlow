@@ -24,6 +24,8 @@ import Automations from "./pages/Automations";
 import Calendar from "./pages/Calendar";
 import Tutorial from "./pages/Tutorial";
 import PublicConfirm from "./pages/PublicConfirm";
+import Timesheets from "./pages/Timesheets";
+import PublicTimesheet from "./pages/PublicTimesheet";
 import Onboarding from "./pages/Onboarding";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
@@ -47,6 +49,7 @@ function AppRoutes() {
       <Route path="/login" element={<PublicOnlyRoute><Login /></PublicOnlyRoute>} />
       <Route path="/register" element={<PublicOnlyRoute><Register /></PublicOnlyRoute>} />
       <Route path="/m/:token" element={<PublicConfirm />} />
+      <Route path="/h/:token" element={<PublicTimesheet />} />
       <Route path="/onboarding" element={<ProtectedRoute><Onboarding/></ProtectedRoute>} />
       <Route path="/payment/success" element={<PaymentSuccess />} />
       <Route path="/payment/cancel" element={<PaymentCancel />} />
@@ -65,6 +68,7 @@ function AppRoutes() {
         <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
         <Route path="automations" element={<Automations />} />
+        <Route path="timesheets" element={<Timesheets />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

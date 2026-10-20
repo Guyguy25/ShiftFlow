@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Save, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { toast } from "sonner";
+import TimesheetAutomationSettings from "../components/TimesheetAutomationSettings";
 
 const URL_LIKE_RE = /(?:https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/i;
 const PLACEHOLDER_RE = /\{[^{}]+\}/g;
@@ -211,6 +212,7 @@ export default function Automations() {
         </div>
 
         </details>
+        <TimesheetAutomationSettings />
         <div className="bg-white border border-gray-200 rounded-xl p-6" data-testid="automations-reminder-block">
           <h2 className="font-display font-bold text-lg">Rappels automatiques 24h</h2>
           <p className="mt-2 text-sm text-gray-600">Les rappels sont envoyés automatiquement par WhatsApp aux intervenants confirmés ~24h avant leur shift. Si WhatsApp est déconnecté au moment de l'envoi, l'échec est enregistré dans le journal.</p>
