@@ -1,3 +1,4 @@
+import { YEARLY } from "./billingConfig";
 export const SITE_URL = "https://www.shiftflow.io";
 export const SITE_NAME = "ShiftFlow.io";
 
@@ -15,7 +16,7 @@ export const PUBLIC_PAGES = {
   },
   "/pricing": {
     title: "Tarifs ShiftFlow.io | Logiciel pour l’événementiel",
-    description: "Pour vos équipes de road et de montage : 3 missions offertes, puis 79 €/mois ou 711 €/an. Missions et intervenants illimités.",
+    description: `Pour vos équipes de road et de montage : 3 missions offertes, puis 79 €/mois ou ${YEARLY.total} €/an. Missions et intervenants illimités.`,
     label: "Tarifs",
   },
   "/demo": {

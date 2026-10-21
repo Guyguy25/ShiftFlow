@@ -15,6 +15,8 @@ export default function PaymentSuccess() {
 
   useEffect(() => {
     if (!sessionId) { setStatus("error"); return undefined; }
+    const redirectStatus = new URLSearchParams(window.location.search).get("status");
+    if (redirectStatus === "failed" || redirectStatus === "canceled") { setStatus("error"); return undefined; }
 
     let cancelled = false;
     let attempts = 0;
@@ -32,7 +34,7 @@ export default function PaymentSuccess() {
           await refresh();
         } else if (data.payment_status === "expired" || data.status === "expired") {
           setStatus("expired");
-        } else if (attempts >= 20) {
+        } else if (attempts >= 60) {
           setStatus("timeout");
         } else {
           attempts += 1;
@@ -57,7 +59,7 @@ export default function PaymentSuccess() {
           <>
             <Loader2 className="w-16 h-16 text-blue-600 mx-auto animate-spin"/>
             <h1 className="mt-6 text-2xl font-display font-bold">Confirmation en cours…</h1>
-            <p className="mt-2 text-gray-600 text-sm">Nous vérifions votre paiement auprès de Stripe.</p>
+            <p className="mt-2 text-gray-600 text-sm">Nous attendons la confirmation sécurisée de votre paiement.</p>
           </>
         )}
         {status === "paid" && (

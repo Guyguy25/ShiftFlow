@@ -6,6 +6,9 @@ import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { LEGAL_VERSION } from "../constants/legal";
 
+import WhopCheckoutModal from "../components/WhopCheckoutModal";
+
+import { WHOP_ENABLED, YEARLY } from "../lib/billingConfig";
 const features = ["Intervenants illimités", "Demandes et rappels WhatsApp", "Cascade automatique", "Suivi des réponses et historique"];
 export default function Pricing() {
   const { user } = useAuth();
@@ -13,6 +16,8 @@ export default function Pricing() {
   const [checking, setChecking] = useState(!!user);
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
+  const [whopCheckout, setWhopCheckout] = useState(null);
+  const checkoutInFlight = useRef(false);
   const [accepted, setAccepted] = useState(false);
   const [consentError, setConsentError] = useState(false);
   const consentRef = useRef(null);
@@ -44,18 +49,23 @@ export default function Pricing() {
       consentRef.current?.querySelector("input")?.focus();
       return;
     }
-    if (loading) return;
+    if (checkoutInFlight.current || whopCheckout) return;
+    checkoutInFlight.current = true;
     setLoading(lookup); setError("");
     try {
-      const { data } = await api.post("/payments/checkout", {
+      const { data } = await api.post(WHOP_ENABLED ? "/payments/whop/checkout" : "/payments/checkout", {
         lookup_key: lookup, origin_url: window.location.origin,
         promo_code: lookup === "shiftflow_monthly" ? feedbackCode : "",
         quantity: 1,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: new Date().toISOString(), scope: "pro_subscription" },
         meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
       });
-      window.location.href = data.checkout_url;
+      if (data.provider === "whop") {
+        setWhopCheckout({ ...data, lookup_key: lookup });
+        setLoading(null);
+      } else { window.location.href = data.checkout_url; }
     } catch (err) { setError(formatApiError(err.response?.data?.detail) || "Le paiement n’a pas pu être ouvert."); setLoading(null); }
+    finally { checkoutInFlight.current = false; }
   };
   const button = "mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-center font-semibold disabled:opacity-50 disabled:cursor-not-allowed";
   return <div className="min-h-screen bg-[#F9FAFB]">
@@ -67,7 +77,7 @@ export default function Pricing() {
       <div className="mx-auto max-w-3xl text-center">
         <p className="text-sm font-semibold text-blue-700">Road, montage et renfort technique événementiel</p>
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
-        <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans date limite ni carte bancaire. Ensuite, ShiftFlow en illimité : 79 €/mois ou 711 €/an, soit 25 % d’économie avec l’annuel.</p>
+        <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans date limite ni carte bancaire. Ensuite, ShiftFlow en illimité : 79 €/mois ou {YEARLY.total} €/an, soit {YEARLY.discount} % d’économie avec l’annuel.</p>
       </div>
       {feedbackCode && !pro && <section className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5"><h2 className="font-bold text-blue-900">Merci pour votre avis : 2 mois de Pro offerts</h2><p className="mt-2 text-sm text-blue-900">Code personnel : <strong className="break-all">{feedbackCode}</strong>. Appliqué automatiquement à Pro mensuel : 0 € pendant deux mois, puis 79 €/mois. Carte requise. Résiliable à tout moment avant la prochaine échéance. Une utilisation par compte.</p></section>}
       {error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
@@ -87,13 +97,13 @@ export default function Pricing() {
           <p className="text-sm font-semibold text-blue-300">Pour vos équipes de terrain</p><h2 className="mt-2 text-xl font-bold">ShiftFlow</h2>
           <div role="group" aria-label="Fréquence de facturation" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-800 p-1">
             <button aria-pressed={!annual} onClick={() => setAnnual(false)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (!annual ? "bg-white text-gray-900" : "text-gray-200")}>Mensuel</button>
-            <button aria-label="Annuel · −25 %" aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"flex min-h-11 flex-wrap items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-white hover:bg-gray-700")}><span>Annuel</span><span className="rounded-full bg-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-950">−25 %</span></button>
+            <button aria-label={`Annuel · −${YEARLY.discount} %`} aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"flex min-h-11 flex-wrap items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-white hover:bg-gray-700")}><span>Annuel</span><span className="rounded-full bg-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-950">−{YEARLY.discount} %</span></button>
           </div>
-          <p className="mt-5 text-4xl font-bold">{annual ? "59,25 €" : "79 €"}<span className="text-base font-normal text-gray-300"> / mois</span></p>
-          <p className="mt-2 text-sm text-gray-300">{annual ? "711 € payés en une fois pour 12 mois, renouvelés chaque année." : "79 € facturés chaque mois. Sans engagement annuel."}</p>
-          <p className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2.5 text-sm font-medium text-emerald-200"><Check size={18} className="mt-0.5 shrink-0"/><span><strong>237 € économisés par an</strong> avec l’annuel, soit 25 % par rapport à 12 mensualités.</span></p>
+          <p className="mt-5 text-4xl font-bold">{annual ? `${YEARLY.monthly} €` : "79 €"}<span className="text-base font-normal text-gray-300"> / mois</span></p>
+          <p className="mt-2 text-sm text-gray-300">{annual ? `${YEARLY.total} € payés en une fois pour 12 mois, renouvelés chaque année.` : "79 € facturés chaque mois. Sans engagement annuel."}</p>
+          <p className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2.5 text-sm font-medium text-emerald-200"><Check size={18} className="mt-0.5 shrink-0"/><span><strong>{YEARLY.saving} € économisés par an</strong> avec l’annuel, soit {YEARLY.discount} % par rapport à 12 mensualités.</span></p>
           <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Montages, démontages et renforts : toutes vos missions et tous vos intervenants, un budget fixe. Sans supplément par personne. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
-          <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? "Choisir ShiftFlow — 711 €/an" : feedbackCode ? "Activer Pro — 2 mois à 0 €" : "Choisir ShiftFlow — 79 €/mois"}</button>
+          <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? `Choisir ShiftFlow — ${YEARLY.total} €/an` : feedbackCode ? "Activer Pro — 2 mois à 0 €" : "Choisir ShiftFlow — 79 €/mois"}</button>
         </section>
       </div>
       <section className="mt-7 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
@@ -110,11 +120,12 @@ export default function Pricing() {
           ["Qu’est-ce qu’une mission ?", "Un événement ou une intervention, avec ses créneaux (montage, démontage…), ses intervenants et son suivi. Un nouvel événement correspond à une nouvelle mission ; plusieurs créneaux du même événement restent inclus."],
           ["Quand une mission est-elle décomptée ?", "À sa création, y compris en cas de duplication. Modifier ses créneaux ou suivre les réponses ne consomme pas de nouvelle mission. Archiver ou annuler ne recrédite pas la mission. La simulation gratuite permet de découvrir le fonctionnement sans consommer de mission."],
           ["Les 3 missions offertes expirent-elles ?", "Non. Elles sont offertes une seule fois par compte, sans carte bancaire ni renouvellement mensuel. Les missions déjà créées sont prises en compte pour les comptes existants, sans facturation rétroactive."],
-          ["Que se passe-t-il après les 3 missions ?", "Vos missions existantes, leurs réponses et leurs rappels restent utilisables. Pour créer de nouvelles missions, abonnez-vous à ShiftFlow à 79 €/mois ou 711 €/an, avec des missions illimitées. Aucun passage automatique au payant. Les crédits achetés avant le changement d’offre restent utilisables sans expiration."],
+          ["Que se passe-t-il après les 3 missions ?", `Vos missions existantes, leurs réponses et leurs rappels restent utilisables. Pour créer de nouvelles missions, abonnez-vous à ShiftFlow à 79 €/mois ou ${YEARLY.total} €/an, avec des missions illimitées. Aucun passage automatique au payant. Les crédits achetés avant le changement d’offre restent utilisables sans expiration.`],
           ["Et si j’arrête mon abonnement ?", "Votre abonnement mensuel ou annuel reste actif jusqu’à la fin de la période payée. Ensuite, vos missions existantes restent utilisables. Pour en créer de nouvelles après épuisement de vos missions offertes et de vos éventuels anciens crédits, vous devez vous réabonner."],
         ].map(([question, answer]) => <details key={question} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer font-semibold">{question}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{answer}</p></details>)}
       </section>
-      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via Stripe. Aucun prélèvement sans votre choix.</p>
+      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via {WHOP_ENABLED ? "Whop" : "Stripe"}. Aucun prélèvement sans votre choix.</p>
     </main>
+    <WhopCheckoutModal checkout={whopCheckout} onClose={() => setWhopCheckout(null)} />
   </div>;
 }

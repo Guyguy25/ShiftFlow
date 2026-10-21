@@ -24,6 +24,7 @@ from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
 import mission_billing
 import subscription_billing
+import whop_billing
 import return_feedback
 from return_visits import record_visit, visit_summary, retention_summary
 
@@ -2063,6 +2064,40 @@ class CheckoutIn(BaseModel):
     legal_acceptance: dict = Field(default_factory=dict)
 
 
+@api.post("/payments/whop/checkout")
+async def create_whop_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
+    current = await mission_billing.account(db, user["id"])
+    try:
+        return await whop_billing.create_checkout(db, current, payload, {
+            "client_user_agent": request.headers.get("user-agent"),
+            "client_ip_address": request_client_ip(request),
+        }, FRONTEND_URL or "https://www.shiftflow.io")
+    except whop_billing.BillingError as exc:
+        raise HTTPException(exc.status, exc.message) from None
+
+
+@api.post("/whop/webhook")
+async def whop_webhook(request: Request):
+    body = await request.body()
+    if len(body) > 1024 * 1024:
+        raise HTTPException(413, "Événement trop volumineux")
+    try:
+        whop_billing.require_config()
+        event = whop_billing.verify_webhook(body, request.headers, os.environ["WHOP_WEBHOOK_SECRET"])
+        record = await whop_billing.process_event(db, event)
+    except whop_billing.BillingError as exc:
+        raise HTTPException(exc.status, exc.message) from None
+    if record and record.get("fulfilled"):
+        paid_user = await db.users.find_one({"id": record["user_id"]})
+        if paid_user and paid_user.get("plan") == "pro":
+            await record_activation_event(paid_user, "subscription_started", metadata={
+                "provider": "whop", "subscription_id": record.get("whop_membership_id"),
+                "session_id": record["session_id"],
+            })
+            await _send_subscribe_meta_if_needed(record["session_id"], record.get("whop_membership_id"))
+    return {"status": "ok"}
+
+
 async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optional[str] = None):
     record = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
     if not record or not record.get("meta_consent") or record.get("meta_subscribe_sent_at"):
@@ -2246,6 +2281,11 @@ async def payment_status_endpoint(session_id: str, user=Depends(get_current_user
     record = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["id"]}, {"_id": 0})
     if not record:
         raise HTTPException(404, "Transaction inconnue")
+    if record.get("provider") == "whop":
+        # The browser only reads its own transaction; signed webhooks grant access.
+        return {"session_id": session_id, "provider": "whop", "status": record["status"],
+                "payment_status": record["payment_status"], "lookup_key": record["lookup_key"],
+                "fulfilled": bool(record.get("fulfilled")), "mission_credits": 0}
     if not record.get("fulfilled"):
         try:
             session = stripe_lib.checkout.Session.retrieve(session_id)
@@ -2286,6 +2326,11 @@ async def stripe_webhook(request: Request):
 @api.post("/payments/portal")
 async def billing_portal(request: Request, user=Depends(get_current_user)):
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    if u and u.get("billing_provider") == "whop":
+        try:
+            return {"url": await whop_billing.portal_url(u)}
+        except whop_billing.BillingError as exc:
+            raise HTTPException(exc.status, exc.message) from None
     if not u or not u.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Aucun abonnement actif")
     origin = request.headers.get("origin", FRONTEND_URL)
