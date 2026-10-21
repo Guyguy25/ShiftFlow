@@ -1,0 +1,16 @@
+.sf-signup-celebration { position: relative; padding-top: 4px; }
+.sf-signup-sparkles { display: grid; place-items: center; width: 68px; height: 68px; margin: 0 auto; border-radius: 24px; color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 9px #f8faff; animation: sf-signup-pop .65s cubic-bezier(.2,.8,.3,1.2) both; }
+.sf-signup-confetti { position: absolute; inset: -24px -10px auto; height: 255px; overflow: hidden; pointer-events: none; }
+.sf-signup-confetti i { position: absolute; top: 0; left: var(--x); width: 7px; height: 11px; border-radius: 2px; background: var(--color); opacity: 0; animation: sf-signup-confetti 2.4s ease-out var(--delay) both; }
+.sf-signup-confetti i:nth-child(3n) { width: 6px; height: 6px; border-radius: 50%; }
+.sf-signup-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 24px 0 20px; text-align: center; }
+.sf-signup-stats > div { padding: 22px 6px; border-radius: 16px; background: #f5f8ff; }
+.sf-signup-stat { color: #1d4ed8; font-family: 'Bricolage Grotesque',sans-serif; font-size: clamp(26px,5vw,40px); font-weight: 700; line-height: 1.1; letter-spacing: -.045em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sf-signup-stat span { font-size: .7em; }
+.sf-signup-assumptions { text-align: center; font-size: 11px; line-height: 1.6; color: #6b7280; }
+.sf-signup-assumptions summary { cursor: pointer; padding: 8px 0; }
+.sf-signup-assumptions p { margin-top: 8px; text-align: left; }
+@keyframes sf-signup-pop { from { opacity: 0; transform: scale(.65) rotate(-12deg); } to { opacity: 1; transform: scale(1) rotate(0); } }
+@keyframes sf-signup-confetti { 0% { opacity: 0; transform: translate(0,-18px) rotate(0); } 12% { opacity: .95; } 75% { opacity: .85; } 100% { opacity: 0; transform: translate(var(--drift),240px) rotate(var(--turn)); } }
+@media (max-width: 380px) { .sf-signup-stat { font-size: 25px; } .sf-signup-stats { gap: 8px; } }
+@media (prefers-reduced-motion: reduce) { .sf-signup-sparkles { animation: none; } .sf-signup-confetti { display: none; } }

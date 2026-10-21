@@ -49,8 +49,8 @@ test("email flow has exactly two credentials, two sliders, and creates the accou
   await next();
   expect(register).not.toHaveBeenCalled();
   expect(host.querySelectorAll("input")).toHaveLength(0);
-  expect(host.textContent).toContain("30 h");
-  expect(host.textContent).toMatch(/900\s*€/);
+  expect(host.textContent).toContain("80 h");
+  expect(host.textContent).toMatch(/2[\s\u202f]*800\s*€/);
   expect(host.textContent).toContain("Estimation indicative");
   await next();
   expect(register).toHaveBeenCalledWith(expect.objectContaining({ email: "camille@example.com", password: "Secret123", onboarding_answers: { annual_events: 40, people_per_mission: 15 }, legal_acceptance: expect.objectContaining({ scope: "account" }) }));

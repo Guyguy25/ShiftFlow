@@ -6,11 +6,10 @@ import { useAuth } from "../context/AuthContext";
 import { API, api, markLoggedOut, formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
 import { DRAFT_KEY, readDraft, newDraftToken, draftSnapshot, sendDraft } from "../lib/registrationDraft";
+import SignupCelebration from "../components/SignupCelebration";
 import { registrationSavings } from "../lib/registrationSavings";
 
-const number = value => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value);
-const euros = value => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
-const titles = ["Créez votre compte", "Parlons de vos événements", "Du temps pour l’essentiel."];
+const titles = ["Créez votre compte", "Parlons de vos événements", "Bienvenue chez ShiftFlow !"];
 
 export default function Register() {
   const nav = useNavigate();
@@ -130,7 +129,7 @@ export default function Register() {
       <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-9">
         <div className="flex justify-between text-xs font-semibold text-gray-500"><span>{["Votre compte", "Votre activité", "Votre estimation"][step]}</span><span>Étape {step + 1} sur 3</span></div>
         <div className="mt-3 flex gap-2" role="progressbar" aria-label="Inscription" aria-valuemin={1} aria-valuemax={3} aria-valuenow={step + 1} data-testid="register-progress">{titles.map((_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-blue-600" : "bg-gray-100"}`} />)}</div>
-        <h1 ref={heading} tabIndex={-1} className="mt-8 font-display text-3xl font-bold tracking-tight outline-none">{titles[step]}</h1>
+        <h1 ref={heading} tabIndex={-1} className={`mt-8 font-display text-3xl font-bold tracking-tight outline-none ${step === 2 ? "text-center" : ""}`}>{titles[step]}</h1>
         {step === 0 && <>
           <p className="mt-3 text-sm leading-relaxed text-gray-500">3 missions offertes. Sans carte bancaire.</p>
           <GoogleAuthButton onCredential={googleSelected} />
@@ -147,20 +146,14 @@ export default function Register() {
             <Slider id="annual_events" label="Combien d’événements organisez-vous en moyenne par an ?" value={answers.annual_events} max={300} unit="événements / an" onChange={value => setAnswers({ ...answers, annual_events: value })} />
             <Slider id="people_per_mission" label="Combien de personnes mobilisez-vous en moyenne par mission ?" value={answers.people_per_mission} max={150} unit="personnes / mission" onChange={value => setAnswers({ ...answers, people_per_mission: value })} />
           </div>}
-          {step === 2 && <div className="space-y-6 leading-relaxed" data-testid="register-savings">
-            <p className="text-gray-600">Avec {number(savings.annualEvents)} événements par an et {number(savings.peoplePerMission)} personnes par mission, vous pourriez économiser environ :</p>
-            <p className="font-display text-5xl font-bold tracking-tight text-blue-700">{number(savings.hours)} h<span className="ml-2 font-sans text-base font-normal text-gray-500">par an</span></p>
-            <p className="text-gray-600">Soit <strong className="text-2xl text-gray-900">{euros(savings.value)}</strong> de temps de coordination libéré chaque année.</p>
-            <p className="text-sm text-gray-500">Moins de relances et de suivi manuel. Plus de temps pour vos événements.</p>
-            <p className="text-xs text-gray-400">Estimation indicative : 3 minutes gagnées par personne et par événement (4 minutes de coordination manuelle contre 1 minute avec l’outil), valorisées à 30 €/heure. Il s’agit de la valeur du temps libéré, hors coût de l’abonnement, et non d’une économie garantie.</p>
-          </div>}
+          {step === 2 && <SignupCelebration savings={savings} />}
           {error && <p className="mt-5 text-sm text-red-600" role="alert">{error}</p>}
           <button type="submit" disabled={loading} className="mt-7 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50" data-testid={step === 2 ? "register-submit-btn" : "register-next-btn"}>{loading ? "Création du compte…" : step === 2 ? "Commencer" : "Continuer"}<ArrowRight size={17} /></button>
           {step === 2 && <p className="mt-3 text-center text-xs leading-relaxed text-gray-500">En cliquant sur « Commencer », vous acceptez les <Link to="/conditions" target="_blank" className="underline">Conditions générales</Link> et reconnaissez avoir pris connaissance de la <Link to="/confidentialite" target="_blank" className="underline">Politique de confidentialité</Link>.</p>}
           {step > 0 && <button type="button" disabled={loading} onClick={() => { if (step === 1) setGoogleCredential(""); setError(""); setStep(step - 1); }} className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm text-gray-500"><ArrowLeft size={16} />Retour</button>}
         </form>
       </section>
-      <p className="mt-5 text-center text-xs leading-relaxed text-gray-500">Votre email et vos réponses peuvent être conservés 7 jours pour reprendre l’inscription. Le mot de passe et la connexion Google restent uniquement en mémoire pendant ce parcours.</p>
+      {step !== 2 && <p className="mt-5 text-center text-xs leading-relaxed text-gray-500">Votre email et vos réponses peuvent être conservés 7 jours pour reprendre l’inscription. Le mot de passe et la connexion Google restent uniquement en mémoire pendant ce parcours.</p>}
     </main>
   </div>;
 }
