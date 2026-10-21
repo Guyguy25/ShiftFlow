@@ -19,7 +19,7 @@ export function safeFields(form = {}) {
   return Object.fromEntries(["name", "agency_name", "email", "phone"].map(key => [key, typeof form[key] === "string" ? form[key].slice(0, 254) : ""]));
 }
 export function safeAnswers(answers = {}) {
-  return { team_size: String(answers.team_size || "").slice(0, 80), monthly_missions: String(answers.monthly_missions || "").slice(0, 80), current_tool: String(answers.current_tool || "").slice(0, 80), main_pain: Array.isArray(answers.main_pain) ? answers.main_pain.filter(x => typeof x === "string").slice(0, 7).map(x => x.slice(0, 120)) : [] };
+  return { annual_events: Math.max(1, Math.min(300, Math.round(Number(answers.annual_events) || 30))), people_per_mission: Math.max(1, Math.min(150, Math.round(Number(answers.people_per_mission) || 15))), team_size: String(answers.team_size || "").slice(0, 80), monthly_missions: String(answers.monthly_missions || "").slice(0, 80), current_tool: String(answers.current_tool || "").slice(0, 80), main_pain: Array.isArray(answers.main_pain) ? answers.main_pain.filter(x => typeof x === "string").slice(0, 7).map(x => x.slice(0, 120)) : [] };
 }
 export function newDraftToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2, "0")).join("");

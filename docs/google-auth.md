@@ -28,7 +28,7 @@ Si l'application Google est en mode Test, ajouter les comptes de test autorisés
 
 ## Vérification après déploiement
 
-1. Ouvrir `/register`, compléter nom, organisation, email et téléphone ; accepter les conditions à la dernière étape et choisir Google. Le mot de passe ShiftFlow n'est pas nécessaire pour ce bouton ; l'email du compte Google sélectionné remplace celui saisi.
+1. Ouvrir `/register` : choisir Google dès l'étape 1 (ou saisir email et mot de passe), régler les deux curseurs à l'étape 2, puis lire l'estimation à l'étape 3. Le compte est créé uniquement au clic sur « Commencer », qui vaut acceptation des conditions affichées. L'email provient du compte Google sélectionné ; aucun mot de passe ShiftFlow n'est demandé dans ce cas. Le nom, l'organisation et le téléphone ne sont plus requis à l'inscription.
 2. Vérifier le tableau de bord, les trois missions offertes et la déconnexion.
 3. Revenir sur `/login` et utiliser le même compte Google.
 4. Vérifier le refus/annulation de Google et la connexion classique par mot de passe.

@@ -404,9 +404,10 @@ async def send_owner_alert_sms(agency: dict, mission: dict, shift: dict, worker:
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
-    name: str
-    agency_name: str
-    phone: str = Field(min_length=1)
+    name: str = Field(default="", max_length=254)
+    agency_name: str = Field(default="Mon organisation", max_length=254)
+    phone: str = ""
+    legal_acceptance: Optional[dict] = None
     registration_token: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     onboarding_answers: Optional[dict] = None
     meta_consent: bool = False
@@ -427,7 +428,7 @@ class RegisterIn(BaseModel):
         import re
         v = (v or "").strip()
         if not v:
-            raise ValueError("Le numéro de téléphone est obligatoire.")
+            return ""
         digits = re.sub(r"[\s\.\-\(\)]", "", v)
         ok = False
         if digits.startswith("+33"):
@@ -652,6 +653,8 @@ class RegistrationFields(BaseModel):
 
 
 class RegistrationAnswers(BaseModel):
+    annual_events: int = Field(default=30, ge=1, le=300)
+    people_per_mission: int = Field(default=15, ge=1, le=150)
     team_size: str = Field(default="", max_length=80)
     monthly_missions: str = Field(default="", max_length=80)
     current_tool: str = Field(default="", max_length=80)
@@ -762,9 +765,9 @@ async def google_auth(payload: GoogleAuthIn, request: Request, response: Respons
                 raise HTTPException(400, "Pour créer un compte Google, complétez l'inscription et acceptez les conditions.")
             from pydantic import ValidationError
             try:
-                registration = RegisterIn(**{**payload.registration, "email": email, "password": secrets.token_urlsafe(40) + "A1"})
+                registration = RegisterIn(**{**payload.registration, "name": payload.registration.get("name") or identity.get("name", ""), "email": email, "password": secrets.token_urlsafe(40) + "A1"})
             except ValidationError:
-                raise HTTPException(400, "Vérifiez votre nom, votre organisation et votre numéro de téléphone.")
+                raise HTTPException(400, "Vérifiez les informations de votre inscription.")
             try:
                 result = await register(registration, request, response)
             except DuplicateKeyError:
@@ -790,6 +793,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     device_type = device_type_from_user_agent(request.headers.get("user-agent"))
     user = {"id": new_id(), "email": email, "password_hash": hash_password(payload.password),
             "name": payload.name, "agency_name": payload.agency_name, "phone": payload.phone,
+            "legal_acceptance": {**(payload.legal_acceptance or {}), "accepted_at": iso(created_at)} if payload.legal_acceptance else None,
             "role": "admin", "created_at": iso(created_at),
             "signup_device_type": device_type, "last_device_type": device_type,
             "last_seen_at": iso(created_at),

@@ -17,10 +17,10 @@ function loadGoogle() {
   return googleScript;
 }
 
-export default function GoogleAuthButton({ registration, acceptedTerms, legalVersion, onSuccess }) {
+export default function GoogleAuthButton({ registration, acceptedTerms, legalVersion, onSuccess, onCredential }) {
   const container = useRef(null);
-  const current = useRef({ registration, acceptedTerms, legalVersion, onSuccess });
-  current.current = { registration, acceptedTerms, legalVersion, onSuccess };
+  const current = useRef({ registration, acceptedTerms, legalVersion, onSuccess, onCredential });
+  current.current = { registration, acceptedTerms, legalVersion, onSuccess, onCredential };
   const { refresh } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState("");
@@ -39,6 +39,7 @@ export default function GoogleAuthButton({ registration, acceptedTerms, legalVer
           callback: async ({ credential }) => {
             if (inFlight.current || !active) return;
             const values = current.current;
+            if (values.onCredential) { values.onCredential(credential); return; }
             if (values.registration && !values.acceptedTerms) {
               setError("Acceptez les conditions pour vous inscrire avec Google.");
               return;
