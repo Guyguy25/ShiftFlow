@@ -1,3 +1,4 @@
+import GoogleAuthButton from "../components/GoogleAuthButton";
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Zap, Eye, EyeOff } from "lucide-react";
@@ -39,6 +40,7 @@ export default function Login() {
         <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
           <h1 className="text-2xl font-display font-bold">Connexion</h1>
           <p className="text-sm text-gray-500 mt-1">Accédez à votre tableau de bord.</p>
+          <GoogleAuthButton />
           <form onSubmit={submit} className="mt-6 space-y-4" autoComplete="on">
             <div>
               <label htmlFor="login-email" className="text-sm font-medium text-gray-700">Email</label>

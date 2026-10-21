@@ -705,6 +705,80 @@ async def save_registration_draft(payload: RegistrationDraftIn, request: Request
 
 
 # ---------------- Auth ----------------
+class GoogleAuthIn(BaseModel):
+    credential: str = Field(min_length=1, max_length=16000)
+    registration: Optional[dict] = None
+    legal_version: Optional[str] = None
+
+
+@api.get("/auth/google/config")
+async def google_config(response: Response):
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    response.headers["Cache-Control"] = "no-store"
+    if not client_id:
+        return {"enabled": False}
+    nonce = secrets.token_urlsafe(32)
+    proof = jwt.encode({"nonce": nonce, "type": "google_nonce", "exp": now_utc() + timedelta(minutes=10)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    response.set_cookie("google_nonce", proof, httponly=True, secure=True, samesite="none", max_age=600, path="/api/auth/google")
+    return {"enabled": True, "client_id": client_id, "nonce": nonce}
+
+
+@api.post("/auth/google")
+async def google_auth(payload: GoogleAuthIn, request: Request, response: Response):
+    from google_auth import verify_google_token
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    if not client_id:
+        raise HTTPException(503, "La connexion Google n'est pas encore configurée.")
+    try:
+        proof = jwt.decode(request.cookies.get("google_nonce", ""), JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if proof.get("type") != "google_nonce":
+            raise ValueError("Invalid nonce type")
+        identity = await verify_google_token(payload.credential, client_id, proof["nonce"])
+    except Exception:
+        raise HTTPException(401, "Connexion Google invalide ou expirée. Rechargez la page et réessayez.")
+    # Consume each challenge once, including concurrent requests across API instances.
+    from pymongo.errors import DuplicateKeyError
+    try:
+        await db.google_auth_nonces.insert_one({"_id": proof["nonce"], "expires_at": datetime.fromtimestamp(proof["exp"], timezone.utc)})
+    except DuplicateKeyError:
+        raise HTTPException(401, "Connexion Google déjà utilisée. Rechargez la page.")
+    response.delete_cookie("google_nonce", path="/api/auth/google", secure=True, httponly=True, samesite="none")
+    email = identity["email"].strip().lower()
+    user = await db.users.find_one({"google_sub": identity["sub"]})
+    if not user:
+        user = await db.users.find_one({"email": email})
+        if user:
+            # Google is authoritative only for Gmail and verified Workspace domains.
+            authoritative = email.endswith("@gmail.com") or bool(identity.get("hd"))
+            if user.get("google_sub") or not authoritative:
+                raise HTTPException(409, "Ce compte utilise déjà un autre mode de connexion. Connectez-vous avec votre mot de passe.")
+            linked = await db.users.update_one({"id": user["id"], "google_sub": {"$exists": False}}, {"$set": {"google_sub": identity["sub"]}})
+            if not linked.matched_count:
+                raise HTTPException(409, "Ce compte a changé. Rechargez la page pour réessayer.")
+        else:
+            if not payload.registration or payload.legal_version != "2026-10-19":
+                raise HTTPException(400, "Pour créer un compte Google, complétez l'inscription et acceptez les conditions.")
+            from pydantic import ValidationError
+            try:
+                registration = RegisterIn(**{**payload.registration, "email": email, "password": secrets.token_urlsafe(40) + "A1"})
+            except ValidationError:
+                raise HTTPException(400, "Vérifiez votre nom, votre organisation et votre numéro de téléphone.")
+            try:
+                result = await register(registration, request, response)
+            except DuplicateKeyError:
+                raise HTTPException(409, "Un compte existe déjà. Revenez à la page de connexion.")
+            await db.users.update_one({"id": result["user"]["id"]}, {"$set": {
+                "google_sub": identity["sub"],
+                "legal_acceptance": {"version": payload.legal_version, "accepted_at": iso(now_utc()), "scope": "account"},
+            }})
+            return result
+    await record_visit(db.users, user["id"], now_utc())
+    user = await ensure_trial_model(user)
+    access = create_access_token(user["id"], user["email"])
+    set_auth_cookies(response, access, create_refresh_token(user["id"]))
+    return {"user": public_user(user), "access_token": access}
+
+
 @api.post("/auth/register")
 async def register(payload: RegisterIn, request: Request, response: Response):
     email = payload.email.lower().strip()
@@ -1836,6 +1910,8 @@ async def seed_admin_and_demo():
 
 @app.on_event("startup")
 async def on_startup():
+    await db.google_auth_nonces.create_index("expires_at", expireAfterSeconds=0)
+    await db.users.create_index("google_sub", unique=True, sparse=True)
     await db.registration_drafts.create_index("expires_at", expireAfterSeconds=0)
     await db.registration_limits.create_index("expires_at", expireAfterSeconds=0)
     await db.users.create_index("email", unique=True)

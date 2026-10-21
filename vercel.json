@@ -4,11 +4,26 @@
       "root": "frontend",
       "framework": "create-react-app",
       "rewrites": [
-        { "source": "/test-accompagne", "destination": "/seo/test-accompagne.html" },
-        { "source": "/", "destination": "/seo/home.html" },
-        { "source": "/pricing", "destination": "/seo/pricing.html" },
-        { "source": "/demo", "destination": "/seo/demo.html" },
-        { "source": "/((?!api(?:/|$)).*)", "destination": "/app-shell.html" }
+        {
+          "source": "/test-accompagne",
+          "destination": "/seo/test-accompagne.html"
+        },
+        {
+          "source": "/",
+          "destination": "/seo/home.html"
+        },
+        {
+          "source": "/pricing",
+          "destination": "/seo/pricing.html"
+        },
+        {
+          "source": "/demo",
+          "destination": "/seo/demo.html"
+        },
+        {
+          "source": "/((?!api(?:/|$)).*)",
+          "destination": "/app-shell.html"
+        }
       ]
     },
     "backend": {
@@ -33,10 +48,31 @@
     }
   ],
   "headers": [
-    { "source": "/hours", "headers": [
-      { "key": "Referrer-Policy", "value": "no-referrer" },
-      { "key": "Cache-Control", "value": "no-store" },
-      { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
-    ] }
+    {
+      "source": "/hours",
+      "headers": [
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin-allow-popups"
+        }
+      ]
+    }
   ]
 }

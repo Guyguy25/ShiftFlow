@@ -1,3 +1,4 @@
+import GoogleAuthButton from "../components/GoogleAuthButton";
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Zap, ArrowRight, ArrowLeft, Check, ShieldCheck, Eye, EyeOff } from "lucide-react";
@@ -217,6 +218,8 @@ export default function Register() {
               <div className="flex flex-wrap gap-3 text-xs">{[["length", "8 caractères"], ["letter", "1 lettre"], ["digit", "1 chiffre"]].map(([key, label]) => <span key={key} className={passwordChecks(form.password)[key] ? "text-emerald-700" : "text-gray-500"}>{passwordChecks(form.password)[key] ? "✓" : "○"} {label}</span>)}</div>
               <p id="password-help" className={`text-xs ${passwordError ? "text-red-600" : "text-gray-500"}`}>{passwordError || "8 caractères minimum, dont une lettre et un chiffre."}</p>
               <label className="flex items-start gap-3 text-sm leading-relaxed text-gray-600"><input type="checkbox" required checked={acceptedTerms} onChange={e => setAcceptedTerms(e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-blue-600" /><span>J’accepte les <Link to="/conditions" target="_blank" className="text-blue-700 underline">Conditions générales</Link> et la <Link to="/confidentialite" target="_blank" className="text-blue-700 underline">Politique de confidentialité</Link>.</span></label>
+              <GoogleAuthButton registration={{ name: form.name, agency_name: form.agency_name, phone: form.phone, registration_token: token }} acceptedTerms={acceptedTerms} legalVersion={LEGAL_VERSION} onSuccess={() => { finished.current = true; try { localStorage.removeItem(DRAFT_KEY); } catch {} }} />
+              <p className="text-xs text-gray-500">Avec Google, aucun mot de passe ShiftFlow n'est nécessaire. L'adresse du compte Google choisi sera utilisée.</p>
             </>}
           </div>
           {error && <p className="mt-4 text-sm text-red-600" role="alert">{error}</p>}
