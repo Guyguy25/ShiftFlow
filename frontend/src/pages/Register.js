@@ -92,11 +92,12 @@ export default function Register() {
     event.preventDefault(); setError("");
     if (!validateCredentials()) { setStep(0); return; }
     if (step < 2) { setStep(step + 1); return; }
+    if (!form.agency_name.trim()) { setError("Indiquez le nom de votre organisation."); return; }
     if (loading) return;
     setLoading(true);
     const acceptedAt = new Date().toISOString();
     const payload = {
-      registration_token: token, onboarding_answers: answers,
+      registration_token: token, onboarding_answers: answers, agency_name: form.agency_name.trim(),
       legal_acceptance: { version: LEGAL_VERSION, accepted_at: acceptedAt, scope: "account" }, ...attribution(),
     };
     try {
@@ -113,7 +114,7 @@ export default function Register() {
         localStorage.removeItem(DRAFT_KEY);
         localStorage.setItem("shiftflow_legal_acceptance", JSON.stringify({ version: LEGAL_VERSION, acceptedAt, scope: "account" }));
       } catch {}
-      nav("/app/dashboard");
+      nav(sessionStorage.getItem("shiftflow_pending_invitation") ? "/invite" : "/app/dashboard");
     } catch (err) {
       const message = formatApiError(err.response?.data?.detail) || "Impossible de créer le compte. Réessayez.";
       if (googleCredential) { setGoogleCredential(""); setStep(0); }
@@ -146,7 +147,7 @@ export default function Register() {
             <Slider id="annual_events" label="Combien d’événements organisez-vous en moyenne par an ?" value={answers.annual_events} max={300} unit="événements / an" onChange={value => setAnswers({ ...answers, annual_events: value })} />
             <Slider id="people_per_mission" label="Combien de personnes mobilisez-vous en moyenne par mission ?" value={answers.people_per_mission} max={150} unit="personnes / mission" onChange={value => setAnswers({ ...answers, people_per_mission: value })} />
           </div>}
-          {step === 2 && <SignupCelebration savings={savings} />}
+          {step === 2 && <><SignupCelebration savings={savings} /><label className="mt-6 block text-sm font-semibold text-gray-800">Nom de votre organisation<input name="agency_name" autoComplete="organization" value={form.agency_name} onChange={event => setForm({ ...form, agency_name: event.target.value })} placeholder="Ex. AXE Events" required maxLength={120} className="mt-2 h-12 w-full rounded-xl border border-gray-300 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"/><span className="mt-2 block text-xs font-normal text-gray-500">Votre espace de travail sera créé à ce nom. Vous pourrez le modifier dans les paramètres.</span></label></>}
           {error && <p className="mt-5 text-sm text-red-600" role="alert">{error}</p>}
           <button type="submit" disabled={loading} className="mt-7 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50" data-testid={step === 2 ? "register-submit-btn" : "register-next-btn"}>{loading ? "Création du compte…" : step === 2 ? "Commencer" : "Continuer"}<ArrowRight size={17} /></button>
           {step === 2 && <p className="mt-3 text-center text-xs leading-relaxed text-gray-500">En cliquant sur « Commencer », vous acceptez les <Link to="/conditions" target="_blank" className="underline">Conditions générales</Link> et reconnaissez avoir pris connaissance de la <Link to="/confidentialite" target="_blank" className="underline">Politique de confidentialité</Link>.</p>}

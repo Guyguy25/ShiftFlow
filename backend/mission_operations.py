@@ -2,7 +2,7 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 import server as s
-from server import db, get_current_user, ShiftIn
+from server import db, get_workspace_user, ShiftIn
 import whatsapp_routes as wa
 
 router = APIRouter(tags=["Mission operations"])
@@ -91,7 +91,7 @@ async def cancel_owned_mission(mission_id, user):
 
 
 @router.post("/missions/{mission_id}/shifts")
-async def add_shift(mission_id: str, payload: ShiftIn, user=Depends(get_current_user)):
+async def add_shift(mission_id: str, payload: ShiftIn, user=Depends(get_workspace_user)):
     await s.ensure_trial_active_or_raise(user)
     await owned_mission(mission_id, user, editable=True)
     shift = {**payload.model_dump(), "id": s.new_id(), "mission_id": mission_id, "agency_id": user["id"],
@@ -103,7 +103,7 @@ async def add_shift(mission_id: str, payload: ShiftIn, user=Depends(get_current_
 
 
 @router.put("/shifts/{shift_id}")
-async def edit_shift(shift_id: str, payload: ShiftIn, user=Depends(get_current_user)):
+async def edit_shift(shift_id: str, payload: ShiftIn, user=Depends(get_workspace_user)):
     await s.ensure_trial_active_or_raise(user)
     shift, mission = await owned_shift(shift_id, user, editable=True)
     confirmed = await db.mission_workers.count_documents({"shift_id": shift_id, "status": "confirmed"})
@@ -123,7 +123,7 @@ async def edit_shift(shift_id: str, payload: ShiftIn, user=Depends(get_current_u
 
 
 @router.delete("/shifts/{shift_id}")
-async def delete_shift(shift_id: str, user=Depends(get_current_user)):
+async def delete_shift(shift_id: str, user=Depends(get_workspace_user)):
     shift, mission = await owned_shift(shift_id, user)
     await db.shifts.update_one({"id": shift_id, "agency_id": user["id"]}, {"$set": {"status": "cancelled", "deleted_at": s.iso(s.now_utc()), "confirmed_count": 0}})
     await cancel_slots({"shift_id": shift_id})
@@ -133,7 +133,7 @@ async def delete_shift(shift_id: str, user=Depends(get_current_user)):
 
 
 @router.post("/mission-workers/{slot_id}/followup")
-async def followup(slot_id: str, user=Depends(get_current_user)):
+async def followup(slot_id: str, user=Depends(get_workspace_user)):
     await s.ensure_trial_active_or_raise(user)
     slot = await db.mission_workers.find_one({"id": slot_id}, {"_id": 0})
     if not slot:
@@ -153,7 +153,7 @@ async def followup(slot_id: str, user=Depends(get_current_user)):
 
 
 @router.post("/mission-workers/{slot_id}/remove")
-async def remove_worker(slot_id: str, user=Depends(get_current_user)):
+async def remove_worker(slot_id: str, user=Depends(get_workspace_user)):
     slot = await db.mission_workers.find_one({"id": slot_id}, {"_id": 0})
     if not slot:
         raise HTTPException(404, "Invitation introuvable")
@@ -171,7 +171,7 @@ async def remove_worker(slot_id: str, user=Depends(get_current_user)):
 
 
 @router.post("/missions/{mission_id}/retry-notifications")
-async def retry_notices(mission_id: str, user=Depends(get_current_user)):
+async def retry_notices(mission_id: str, user=Depends(get_workspace_user)):
     mission = await owned_mission(mission_id, user)
     slots = await db.mission_workers.find({"mission_id": mission_id}, {"_id": 0}).to_list(None)
     counts = {"sent": 0, "failed": 0, "skipped": 0}

@@ -78,7 +78,7 @@ export default function StripeCheckoutModal({ checkout, onClose }) {
     <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-50 bg-black/65 backdrop-blur-sm" />
       <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[94dvh] w-[calc(100%_-_1.5rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl sm:p-6" onOpenAutoFocus={event => { event.preventDefault(); closeRef.current?.focus(); }}>
-        <Dialog.Title className="pr-8 text-xl font-bold text-gray-900">{status === "paid" ? "Votre abonnement est activé" : "Passer à ShiftFlow Pro"}</Dialog.Title>
+        <Dialog.Title className="pr-8 text-xl font-bold text-gray-900">{status === "paid" ? "Votre abonnement est activé" : (checkout.lookup_key?.startsWith("shiftflow_team_") ? "Passer à ShiftFlow Pro Team" : "Passer à ShiftFlow Pro")}</Dialog.Title>
         <Dialog.Description className="mt-1 text-sm text-gray-600">Paiement sécurisé par Stripe. Gérez votre abonnement depuis vos paramètres.</Dialog.Description>
         <Dialog.Close ref={closeRef} aria-label="Fermer le paiement" className="absolute right-3 top-3 rounded-lg p-2 text-gray-500 hover:bg-gray-100"><X size={20}/></Dialog.Close>
         {(loading || status === "confirming") && <p role="status" className="mt-5 flex items-center gap-2 text-sm text-gray-600"><Loader2 size={18} className="animate-spin"/>{status === "confirming" ? "Confirmation du paiement en cours…" : "Chargement du formulaire sécurisé…"}</p>}

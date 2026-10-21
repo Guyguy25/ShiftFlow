@@ -1,0 +1,231 @@
+"""Real ASGI requests against an in-memory MongoDB double; no production credentials."""
+import asyncio
+import importlib
+import os
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest import IsolatedAsyncioTestCase
+from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
+
+import httpx
+from mongomock_motor import AsyncMongoMockClient
+
+# Import production route definitions under isolated, non-production configuration.
+os.environ.setdefault('MONGO_URL', 'mongodb://127.0.0.1:27017')
+os.environ.setdefault('DB_NAME', 'shiftflow_organization_tests')
+os.environ.setdefault('JWT_SECRET', 'isolated-team-test-secret-at-least-32-bytes-only')
+import server as s
+import organizations
+import whatsapp_routes
+import mission_operations
+
+
+class OrganizationAPITests(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.db = AsyncMongoMockClient()['test']
+        self.patches = [patch.object(s, 'db', self.db), patch.object(whatsapp_routes, 'db', self.db),
+                        patch.object(mission_operations, 'db', self.db), patch.object(organizations, 'deliver_invite', AsyncMock(return_value=False))]
+        for p in self.patches: p.start()
+        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=s.app), base_url='https://testserver')
+        for uid in ('owner', 'member', 'other'):
+            await self.db.users.insert_one({'id': uid, 'email': uid+'@example.com', 'name': uid,
+                'agency_name': uid+' Events', 'plan': 'pro' if uid=='owner' else 'free',
+                'subscription_tier': 'team' if uid=='owner' else 'pro', 'role': 'admin',
+                'free_missions_used': 0, 'mission_credits': 0, 'onboarding_completed': True})
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+        for p in reversed(self.patches): p.stop()
+
+    def auth(self, uid):
+        return {'Authorization':'Bearer '+s.create_access_token(uid, uid+'@example.com')}
+
+    async def request(self, method, path, uid='owner', **kwargs):
+        return await self.client.request(method, '/api'+path, headers=self.auth(uid), **kwargs)
+
+    async def invite(self, uid='member'):
+        response = await self.request('POST','/organization/invitations',json={'email':uid+'@example.com'})
+        self.assertEqual(response.status_code,200,response.text)
+        return response.json(), parse_qs(urlparse(response.json()['url']).fragment)['token'][0]
+
+    async def join(self):
+        _, token = await self.invite()
+        result = await self.request('POST','/organization/accept-invitation',uid='member',json={'token':token})
+        self.assertEqual(result.status_code,200,result.text)
+        return token
+
+    async def test_existing_accounts_get_one_workspace_without_rekeying_data(self):
+        await self.db.missions.insert_one({'id':'legacy','agency_id':'owner','name':'Before Team'})
+        for _ in range(2):
+            response=await self.request('GET','/auth/me')
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(response.json()['organization']['id'],'owner')
+            self.assertEqual(response.json()['organization']['name'],'owner Events')
+        self.assertEqual(await self.db.organizations.count_documents({'owner_id':'owner'}),1)
+        self.assertEqual((await self.db.missions.find_one({'id':'legacy'}))['agency_id'],'owner')
+
+    async def test_register_stores_organization_name_and_own_identity(self):
+        response=await self.client.post('/api/auth/register',json={'email':'new@example.com','password':'Secret123',
+            'agency_name':'Régie & Lumière','name':'Camille','onboarding_answers':{'annual_events':30}})
+        self.assertEqual(response.status_code,200,response.text)
+        data=response.json()['user']
+        self.assertEqual(data['organization']['name'],'Régie & Lumière')
+        self.assertEqual(data['organization']['id'],data['id'])
+        self.assertEqual(data['organization']['role'],'owner')
+
+    async def test_invitation_is_hashed_bound_to_email_single_use_and_not_listed_as_plaintext(self):
+        result, token=await self.invite()
+        raw=await self.db.organizations.find_one({'_id':'owner'})
+        self.assertNotIn(token,str(raw)); self.assertEqual(raw['invitations'][0]['token_hash'],organizations.digest(token))
+        listed=await self.request('GET','/organization')
+        self.assertNotIn('token_hash',listed.text); self.assertNotIn(token,listed.text)
+        wrong=await self.request('POST','/organization/accept-invitation',uid='other',json={'token':token})
+        self.assertEqual(wrong.status_code,403)
+        accepted=await self.request('POST','/organization/accept-invitation',uid='member',json={'token':token})
+        self.assertEqual(accepted.status_code,200,accepted.text)
+        again=await self.request('POST','/organization/accept-invitation',uid='member',json={'token':token})
+        self.assertIn(again.status_code,(404,409))
+
+    async def test_member_reads_shared_data_without_inheriting_owner_identity_or_platform_role(self):
+        await self.join()
+        await self.db.workers.insert_many([{'id':'shared','agency_id':'owner','first_name':'Paul'}, {'id':'foreign','agency_id':'other','first_name':'Other'}])
+        response=await self.request('GET','/workers',uid='member')
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertIn('shared',response.text); self.assertNotIn('foreign',response.text)
+        profile=(await self.request('GET','/auth/me',uid='member')).json()
+        self.assertEqual(profile['id'],'member'); self.assertEqual(profile['email'],'member@example.com')
+        self.assertEqual(profile['organization']['id'],'owner'); self.assertEqual(profile['organization']['role'],'member')
+        self.assertEqual(profile['role'],'admin'); self.assertFalse(profile['can_manage_billing'])
+        self.assertEqual(profile['subscription_tier'],'team')
+
+    async def test_member_cannot_manage_billing_org_members_or_admin(self):
+        await self.join()
+        cases=[('PUT','/organization',{'name':'Hijack','avatar':''}),
+               ('POST','/organization/invitations',{'email':'other@example.com'}),
+               ('POST','/payments/portal',{}),('POST','/payments/catalog/sync',{}),
+               ('POST','/payments/checkout',{'lookup_key':'shiftflow_team_monthly','origin_url':'https://testserver'}),
+               ('DELETE','/organization/members/owner',None),('GET','/admin/dashboard',None)]
+        for method,path,body in cases:
+            with self.subTest(path=path):
+                response=await self.request(method,path,uid='member',**({'json':body} if body is not None else {}))
+                self.assertEqual(response.status_code,403,response.text)
+
+    async def test_switch_requires_membership_and_retains_personal_data(self):
+        await self.join()
+        await self.db.workers.insert_one({'id':'personal','agency_id':'member','first_name':'Personal'})
+        forbidden=await self.request('POST','/organization/switch',uid='member',json={'organization_id':'other'})
+        self.assertEqual(forbidden.status_code,403)
+        response=await self.request('POST','/organization/switch',uid='member',json={'organization_id':'member'})
+        self.assertEqual(response.status_code,200)
+        workers=await self.request('GET','/workers',uid='member')
+        self.assertIn('personal',workers.text)
+        spaces=(await self.request('GET','/organization',uid='member')).json()['spaces']
+        self.assertEqual({space['id'] for space in spaces},{'member','owner'})
+
+    async def test_member_removal_revokes_existing_session_on_next_request(self):
+        await self.join()
+        await self.db.missions.insert_one({'id':'shared-mission','agency_id':'owner'})
+        removed=await self.request('DELETE','/organization/members/member')
+        self.assertEqual(removed.status_code,200)
+        result=await self.request('GET','/missions/shared-mission',uid='member')
+        self.assertEqual(result.status_code,404,result.text)
+        profile=(await self.request('GET','/auth/me',uid='member')).json()
+        self.assertEqual(profile['organization']['id'],'member')
+        self.assertIsNotNone(await self.db.missions.find_one({'id':'shared-mission'}))
+
+    async def test_pro_does_not_allow_invites_and_team_loss_suspends_members_only(self):
+        await self.join()
+        await self.db.users.update_one({'id':'owner'},{'$set':{'subscription_tier':'pro'}})
+        result=await self.request('POST','/organization/invitations',json={'email':'other@example.com'})
+        self.assertEqual(result.status_code,403)
+        self.assertEqual((await self.request('GET','/workers',uid='member')).status_code,403)
+        self.assertEqual((await self.request('GET','/workers')).status_code,200)
+        self.assertTrue((await self.request('GET','/auth/me',uid='member')).json()['organization']['locked'])
+        self.assertEqual((await self.request('POST','/organization/switch',uid='member',json={'organization_id':'member'})).status_code,200)
+
+    async def test_concurrent_pending_invitations_reserve_exactly_five_seats(self):
+        results=await asyncio.gather(*[self.request('POST','/organization/invitations',json={'email':f'colleague{i}@example.com'}) for i in range(12)])
+        self.assertEqual(sum(r.status_code==200 for r in results),5,[r.text for r in results])
+        org=await self.db.organizations.find_one({'_id':'owner'})
+        self.assertEqual(len(org['members'])+len(org['invitations']),6)
+
+    async def test_expired_and_revoked_invitations_do_not_work(self):
+        info,token=await self.invite()
+        await self.request('DELETE','/organization/invitations/'+info['id'])
+        result=await self.request('POST','/organization/accept-invitation',uid='member',json={'token':token})
+        self.assertEqual(result.status_code,404)
+        _,token=await self.invite()
+        await self.db.organizations.update_one({'_id':'owner'},{'$set':{'invitations.0.expires_at':(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()}})
+        result=await self.request('POST','/organization/accept-invitation',uid='member',json={'token':token})
+        self.assertEqual(result.status_code,404)
+
+    async def test_organization_name_is_shared_and_members_cannot_change_it_via_profile(self):
+        await self.join()
+        updated=await self.request('PUT','/organization',json={'name':'Nouvelle équipe','avatar':''})
+        self.assertEqual(updated.status_code,200,updated.text)
+        await self.request('PUT','/auth/me',uid='member',json={'name':'Member','agency_name':'Hijack','phone':'','avatar':''})
+        self.assertEqual((await self.request('GET','/auth/me',uid='member')).json()['organization']['name'],'Nouvelle équipe')
+        owner=await self.db.users.find_one({'id':'owner'})
+        self.assertEqual(owner['agency_name'],'Nouvelle équipe')
+
+    async def test_member_creates_shared_mission_without_consuming_personal_free_balance(self):
+        await self.join()
+        result=await self.request('POST','/missions',uid='member',json={'name':'Événement partagé','location':'Lille','shifts':[{'date':'2099-01-01','start_time':'08:00','end_time':'12:00','people_needed':1}]})
+        self.assertEqual(result.status_code,200,result.text)
+        mission=await self.db.missions.find_one({'id':result.json()['id']})
+        self.assertEqual(mission['agency_id'],'owner'); self.assertEqual(mission['created_by'],'member')
+        self.assertEqual(mission['billing_source'],'pro')
+        self.assertEqual((await self.db.users.find_one({'id':'member'}))['free_missions_used'],0)
+
+    async def test_owner_cannot_be_removed_and_unknown_organization_cannot_be_selected(self):
+        self.assertEqual((await self.request('DELETE','/organization/members/owner')).status_code,400)
+        self.assertEqual((await self.request('POST','/organization/switch',json={'organization_id':'nonexistent'})).status_code,403)
+
+    async def test_team_checkout_uses_exact_prices_embedded_mode_and_owner_identity(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from test_team_billing import TeamBillingTests, Obj
+        for lookup,amount in [('shiftflow_team_monthly',8900),('shiftflow_team_yearly',74760)]:
+            stripe=TeamBillingTests().provider()
+            stripe.checkout=SimpleNamespace(Session=SimpleNamespace(create=Mock(return_value=Obj(id='cs_'+lookup,client_secret='cs_secret',status='open'))))
+            with patch.object(s,'stripe_lib',stripe):
+                response=await self.request('POST','/payments/checkout',uid='other',json={
+                    'lookup_key':lookup,'ui_mode':'embedded','quantity':1,'origin_url':'https://untrusted.example','legal_acceptance':{'version':'2026-10-19'}})
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(response.json()['ui_mode'],'embedded')
+            args=stripe.checkout.Session.create.call_args.kwargs
+            self.assertEqual(args['line_items'],[{'price':'price_'+lookup,'quantity':1}])
+            self.assertEqual(args['metadata']['user_id'],'other')
+            self.assertEqual(args['ui_mode'],'embedded');self.assertNotIn('success_url',args)
+            record=await self.db.payment_transactions.find_one({'session_id':'cs_'+lookup})
+            self.assertEqual(record['amount'],amount)
+
+    async def test_webhook_updates_team_entitlement_from_current_paid_subscription_and_revokes_it(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from test_team_billing import TeamBillingTests, Obj
+        stripe=TeamBillingTests().provider()
+        subscription=Obj(id='sub_team',status='active',items={'data':[{'price':TeamBillingTests().price('shiftflow_team_yearly')}]},latest_invoice='in_paid')
+        stripe.Subscription=SimpleNamespace(retrieve=Mock(return_value=subscription))
+        stripe.Webhook=SimpleNamespace(construct_event=Mock(return_value={'type':'invoice.paid','data':{'object':{'parent':{'subscription_details':{'subscription':'sub_team'}}}}}))
+        await self.db.users.update_one({'id':'owner'},{'$set':{'stripe_subscription_id':'sub_team','subscription_tier':'pro'}})
+        with patch.object(s,'stripe_lib',stripe):
+            response=await self.client.post('/api/stripe/webhook',content=b'{}')
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual((await self.db.users.find_one({'id':'owner'}))['subscription_tier'],'team')
+            stripe.Subscription.retrieve.return_value=Obj(id='sub_team',status='canceled',items={'data':[]})
+            stripe.Webhook.construct_event.return_value={'type':'customer.subscription.deleted','data':{'object':{'id':'sub_team'}}}
+            response=await self.client.post('/api/stripe/webhook',content=b'{}')
+            self.assertEqual(response.status_code,200,response.text)
+        owner=await self.db.users.find_one({'id':'owner'})
+        self.assertEqual(owner['plan'],'free');self.assertEqual(owner['subscription_tier'],'pro')
+
+    async def test_member_onboarding_updates_their_own_account_only(self):
+        await self.join()
+        payload={'team_size':'2-5','monthly_missions':'5','current_tool':'Excel','main_pain':'Planning'}
+        result=await self.request('POST','/onboarding',uid='member',json=payload)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual((await self.db.users.find_one({'id':'member'}))['onboarding_answers'],payload)
+        self.assertNotIn('onboarding_answers',await self.db.users.find_one({'id':'owner'}))

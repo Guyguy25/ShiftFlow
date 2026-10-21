@@ -1,3 +1,4 @@
+import WorkspaceSelector from "./WorkspaceSelector";
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
@@ -62,15 +63,14 @@ export default function Layout({ children }) {
     navigate("/login");
   };
 
+  if (user?.organization?.locked) return <div className="min-h-screen bg-gray-50 p-6"><div className="mx-auto max-w-lg rounded-2xl border bg-white p-6"><WorkspaceSelector/><h1 className="mt-6 text-xl font-bold">L’accès à cette équipe est suspendu</h1><p className="mt-3 text-sm text-gray-600">Cette organisation doit disposer de Pro Team pour partager l’accès. Contactez son propriétaire ou sélectionnez votre espace personnel ci-dessus.</p></div></div>;
+
   return (
     <div className="min-h-screen bg-[#F9FAFB] flex">
       {/* Sidebar desktop */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-64 flex-col bg-white border-r border-gray-200">
         <div className="px-6 py-6 flex items-center gap-2 border-b border-gray-200 shrink-0">
-          <div className="w-8 h-8 rounded-md bg-blue-600 flex items-center justify-center">
-            <Zap className="w-4 h-4 text-white" aria-hidden="true" />
-          </div>
-          <span className="font-display font-bold text-lg tracking-tight">ShiftFlow</span>
+          <WorkspaceSelector />
         </div>
         <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
           {nav.map((n) => (
@@ -115,12 +115,7 @@ export default function Layout({ children }) {
       {/* Mobile top bar: identity only; navigation stays within thumb reach below. */}
       <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 h-14">
         <div className="h-full max-w-xl mx-auto px-4 flex items-center justify-between">
-          <Link to="/app/dashboard" className="flex items-center gap-2.5 min-w-0" onClick={() => setOpen(false)}>
-            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm">
-              <Zap className="w-4 h-4 text-white" aria-hidden="true" />
-            </div>
-            <span className="font-display font-bold text-[17px] tracking-tight">ShiftFlow</span>
-          </Link>
+          <WorkspaceSelector compact />
           <ProfileMenu user={user} quota={quota} onLogout={handleLogout} compact />
         </div>
       </div>

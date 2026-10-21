@@ -1,3 +1,4 @@
+import Invite from "./pages/Invite";
 import Hours from "./pages/Hours";
 import PublicHours from "./pages/PublicHours";
 import React from "react";
@@ -42,6 +43,7 @@ function AppRoutes() {
       <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
       <Route path="/demo" element={<Demo />} />
       <Route path="/test-accompagne" element={<AccompaniedTrial />} />
+      <Route path="/invite" element={<Invite />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/mentions-legales" element={<LegalNotice />} />
       <Route path="/conditions" element={<Terms />} />

@@ -26,7 +26,7 @@ test("defaults to monthly with an annual choice and preserves discovery", async 
   expect(host.querySelector('input[type="range"]')).toBeNull();
   expect(host.textContent).not.toContain("4,90");
   expect(host.textContent).not.toContain("499,80");
-  expect(host.querySelectorAll("[data-testid^='pricing-card-']")).toHaveLength(2);
+  expect(host.querySelectorAll("[data-testid^='pricing-card-']")).toHaveLength(3);
 });
 
 test("monthly checkout requires explicit consent and current terms", async () => {

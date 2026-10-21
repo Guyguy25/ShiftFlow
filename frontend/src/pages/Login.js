@@ -20,7 +20,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate("/app/dashboard");
+      navigate(sessionStorage.getItem("shiftflow_pending_invitation") ? "/invite" : "/app/dashboard");
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
     } finally {

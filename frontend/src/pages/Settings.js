@@ -1,3 +1,4 @@
+import OrganizationSettings from "../components/OrganizationSettings";
 import { counted } from "../lib/french";
 import React, { useEffect, useState } from "react";
 import { Crown, ExternalLink, UserRound, ArrowRight } from "lucide-react";
@@ -34,11 +35,12 @@ export default function Settings() {
       <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Paramètres</h1>
       <p className="mt-2 text-sm text-gray-500">Gérez votre abonnement, votre facturation et les informations de votre compte.</p>
       <div className="mt-8 grid gap-6 max-w-3xl">
+        <OrganizationSettings />
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
           <div className="flex items-center gap-2 font-semibold">
             <Crown className="w-5 h-5"/> Abonnement
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
-              {isPro ? "PRO ACTIF" : "À LA MISSION"}
+              {isPro ? (user?.subscription_tier === "team" ? "PRO TEAM ACTIF" : "PRO ACTIF") : "À LA MISSION"}
             </span>
           </div>
           {quota && (
@@ -52,9 +54,9 @@ export default function Settings() {
           )}
           <div className="mt-4 flex flex-wrap gap-2">
             {isPro ? (
-              <button onClick={openPortal} disabled={portalLoading} data-testid="settings-portal-btn"
+              <button onClick={openPortal} disabled={portalLoading || user?.can_manage_billing === false} data-testid="settings-portal-btn"
                 className="inline-flex items-center gap-2 bg-white text-blue-700 hover:bg-gray-100 px-4 py-2 rounded-md text-sm font-medium disabled:opacity-60">
-                <ExternalLink className="w-4 h-4"/>{portalLoading ? "Ouverture…" : "Gérer mon abonnement"}
+                <ExternalLink className="w-4 h-4"/>{portalLoading ? "Ouverture…" : (user?.can_manage_billing === false ? "Géré par le propriétaire" : "Gérer mon abonnement")}
               </button>
             ) : (
               <Link to="/pricing" data-testid="settings-upgrade-link"

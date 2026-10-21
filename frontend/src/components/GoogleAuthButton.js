@@ -57,7 +57,7 @@ export default function GoogleAuthButton({ registration, acceptedTerms, legalVer
               }
               values.onSuccess?.();
               await refresh();
-              navigate("/app/dashboard");
+              navigate(sessionStorage.getItem("shiftflow_pending_invitation") ? "/invite" : "/app/dashboard");
             } catch (err) {
               setError(formatApiError(err.response?.data?.detail) || "La connexion Google a échoué.");
               await setup();

@@ -38,7 +38,7 @@ class EmbeddedCheckoutTests(IsolatedAsyncioTestCase):
             Optional=Optional, Literal=Literal, BaseModel=BaseModel, Field=Field, secrets=secrets,
             db=self.db, stripe_lib=self.stripe,
             mission_billing=SimpleNamespace(account=self.account, MISSION_LOOKUP="shiftflow_mission"),
-            subscription_billing=SimpleNamespace(resolve_price=Mock(return_value=SimpleNamespace(id='price_month',product='prod_1'))),
+            subscription_billing=SimpleNamespace(TEAM_PRICES={}, tier_from_subscription=lambda stripe, subscription: "pro", resolve_price=Mock(return_value=SimpleNamespace(id='price_month',product='prod_1'))),
             return_feedback=SimpleNamespace(eligible=lambda _: True, discount_options=self.discounts),
             FRONTEND_URL='https://www.shiftflow.io', ALLOWED_STRIPE_PRICES={'shiftflow_monthly':{'interval':'month','amount':7900},'shiftflow_yearly':{'interval':'year','amount':71100}},
             now_utc=lambda:datetime.now(timezone.utc), iso=lambda dt:dt.isoformat(), new_id=lambda:'transaction',

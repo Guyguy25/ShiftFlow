@@ -58,11 +58,11 @@ class BillingTests(IsolatedAsyncioTestCase):
                 id="price_month", product="prod_pro", recurring=SimpleNamespace(interval="month", interval_count=1), currency="eur", unit_amount=7900)]))))
         fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing, subscription_billing=subscription_billing,
             return_feedback=return_feedback, secrets=secrets,
-            ALLOWED_STRIPE_PRICES={"shiftflow_monthly": {"interval": "month", "amount": 7900}},
+            stripe_checkout_response=function("stripe_checkout_response", HTTPException=HTTPException), ALLOWED_STRIPE_PRICES={"shiftflow_monthly": {"interval": "month", "amount": 7900}},
             stripe_lib=stripe, FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id",
             request_client_ip=lambda _: None, now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
         payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_monthly", origin_url="https://www.shiftflow.io",
-            legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="AVIS-U")
+            ui_mode="hosted", legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="AVIS-U")
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         retrieve.assert_not_called()
         args = create.call_args.kwargs
@@ -168,14 +168,14 @@ class BillingTests(IsolatedAsyncioTestCase):
         tree = ast.parse((Path(__file__).parents[1] / "server.py").read_text(encoding="utf-8"))
         assignment = next(n for n in tree.body if isinstance(n, ast.Assign)
             and any(isinstance(t, ast.Name) and t.id == "ALLOWED_STRIPE_PRICES" for t in n.targets))
-        allowed = ast.literal_eval(assignment.value)
+        allowed = eval(compile(ast.Expression(assignment.value), "allowlist", "eval"), {"subscription_billing": subscription_billing})
         fn = function("create_checkout", HTTPException=HTTPException, db=self.db, mission_billing=billing, subscription_billing=subscription_billing,
-            ALLOWED_STRIPE_PRICES=allowed,
+            stripe_checkout_response=function("stripe_checkout_response", HTTPException=HTTPException), ALLOWED_STRIPE_PRICES=allowed,
             stripe_lib=SimpleNamespace(checkout=SimpleNamespace(Session=SimpleNamespace(create=create, retrieve=retrieve)), Price=SimpleNamespace(list=price_list)),
             FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id", request_client_ip=lambda _: None,
             now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
         payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_monthly", origin_url="https://evil.test",
-            legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="")
+            ui_mode="hosted", legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="")
         return fn, payload, create, retrieve
 
     def monthly_price(self, **changes):

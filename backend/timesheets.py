@@ -111,7 +111,7 @@ async def ensure_sheet(slot_id, user):
                             [("pay_type", "hourly"), ("rate_hourly", 0), ("fixed_amount", 0), ("pay_basis", "unspecified")]},
            "entries": planned, "status": "pending", "version": 1, "note": "", "reason": "",
            "token_nonce": secrets.token_hex(16), "expires_at": s.iso(now + timedelta(days=settings["link_days"])),
-           "created_at": s.iso(now), "updated_at": s.iso(now), "history": [event("created", user["id"])],
+           "created_at": s.iso(now), "updated_at": s.iso(now), "history": [event("created", user.get("actor_id", user["id"]))],
            "delivery_count": 0, "delivery_status": "pending"}
     # Built-in _id uniqueness prevents concurrent creation, without a migration.
     await s.db.timesheets.update_one({"_id": slot_id}, {"$setOnInsert": row}, upsert=True)
@@ -170,12 +170,12 @@ async def submit(payload: Submission, response: Response):
 
 
 @router.get("/hours/settings")
-async def get_settings(user=Depends(s.get_current_user)):
+async def get_settings(user=Depends(s.get_workspace_user)):
     return {**DEFAULT_SETTINGS, **user.get("timesheet_settings", {})}
 
 
 @router.put("/hours/settings")
-async def save_settings(payload: Settings, user=Depends(s.get_current_user)):
+async def save_settings(payload: Settings, user=Depends(s.get_workspace_user)):
     await s.db.users.update_one({"id": user["id"]}, {"$set": {"timesheet_settings": payload.model_dump()}})
     return payload.model_dump()
 
@@ -194,7 +194,7 @@ async def list_rows(user, mission_id=None, status=None):
 
 
 @router.get("/hours")
-async def dashboard(mission_id: str = None, status: str = None, user=Depends(s.get_current_user)):
+async def dashboard(mission_id: str = None, status: str = None, user=Depends(s.get_workspace_user)):
     rows = await list_rows(user, mission_id, status)
     approved = [row for row in rows if row["status"] == "approved"]
     totals = {basis: sum(row.get("amount_cents", 0) for row in approved if row["compensation"]["pay_basis"] == basis)
@@ -211,7 +211,7 @@ def safe_cell(value):
 
 
 @router.get("/hours/export")
-async def export(mission_id: str = None, status: str = None, user=Depends(s.get_current_user)):
+async def export(mission_id: str = None, status: str = None, user=Depends(s.get_workspace_user)):
     rows = await list_rows(user, mission_id, status)
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter=";")
@@ -230,7 +230,7 @@ async def export(mission_id: str = None, status: str = None, user=Depends(s.get_
 
 
 @router.post("/hours/{sheet_id}/review")
-async def review(sheet_id: str, payload: Review, user=Depends(s.get_current_user)):
+async def review(sheet_id: str, payload: Review, user=Depends(s.get_workspace_user)):
     row = await s.db.timesheets.find_one({"_id": sheet_id, "agency_id": user["id"]}, {"_id": 0})
     if not row:
         raise HTTPException(404, "Déclaration introuvable")
@@ -245,7 +245,7 @@ async def review(sheet_id: str, payload: Review, user=Depends(s.get_current_user
                      delivery_count=0, delivery_status="pending")
     update = {
         "$set": patch, "$inc": {"version": 1},
-        "$push": {"history": event(payload.action, user["id"], reason=payload.reason.strip())},
+        "$push": {"history": event(payload.action, user.get("actor_id", user["id"]), reason=payload.reason.strip())},
     }
     if payload.action == "correction_requested":
         update["$unset"] = {"delivery_lock_until": ""}
@@ -309,7 +309,7 @@ async def deliver(row, user):
 
 
 @router.post("/missions/{mission_id}/hours/request")
-async def request_hours(mission_id: str, user=Depends(s.get_current_user)):
+async def request_hours(mission_id: str, user=Depends(s.get_workspace_user)):
     mission = await s.db.missions.find_one({"id": mission_id, "agency_id": user["id"]}, {"_id": 0})
     if not mission:
         raise HTTPException(404, "Mission introuvable")
@@ -325,7 +325,7 @@ async def request_hours(mission_id: str, user=Depends(s.get_current_user)):
 
 
 @router.post("/hours/{sheet_id}/renew")
-async def renew(sheet_id: str, user=Depends(s.get_current_user)):
+async def renew(sheet_id: str, user=Depends(s.get_workspace_user)):
     row = await s.db.timesheets.find_one({"_id": sheet_id, "agency_id": user["id"]}, {"_id": 0})
     if not row:
         raise HTTPException(404, "Déclaration introuvable")
@@ -337,7 +337,7 @@ async def renew(sheet_id: str, user=Depends(s.get_current_user)):
         "$set": {"token_nonce": secrets.token_hex(16), "expires_at": s.iso(s.now_utc() + timedelta(days=settings["link_days"])),
                  "delivery_count": 0, "delivery_status": "pending", "updated_at": s.iso(s.now_utc())},
         "$inc": {"version": 1}, "$unset": {"delivery_lock_until": ""},
-        "$push": {"history": event("link_renewed", user["id"])}})
+        "$push": {"history": event("link_renewed", user.get("actor_id", user["id"]))}})
     if not changed.modified_count:
         raise HTTPException(409, "Cette déclaration a changé. Rechargez la page.")
     row = await s.db.timesheets.find_one({"_id": sheet_id}, {"_id": 0})

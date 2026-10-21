@@ -8,7 +8,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 import server as server_module
-from server import get_current_user, db, new_id, iso, now_utc
+from server import get_workspace_user, db, new_id, iso, now_utc
 
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 
@@ -415,7 +415,7 @@ server_module.twilio_ready = lambda: False
 
 
 @router.get("/message-template")
-async def get_message_template(user=Depends(get_current_user)):
+async def get_message_template(user=Depends(get_workspace_user)):
     agency = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     stored = (agency or {}).get("whatsapp_invite_template")
     template = stored or DEFAULT_INVITE_TEMPLATE
@@ -447,7 +447,7 @@ async def get_message_template(user=Depends(get_current_user)):
 
 
 @router.put("/message-template")
-async def update_message_template(payload: dict, user=Depends(get_current_user)):
+async def update_message_template(payload: dict, user=Depends(get_workspace_user)):
 
     template = validate_invite_template(payload.get("template"))
     await db.users.update_one(
@@ -458,7 +458,7 @@ async def update_message_template(payload: dict, user=Depends(get_current_user))
 
 
 @router.delete("/message-template")
-async def reset_message_template(user=Depends(get_current_user)):
+async def reset_message_template(user=Depends(get_workspace_user)):
     await db.users.update_one(
         {"id": user["id"]},
         {"$unset": {"whatsapp_invite_template": "", "whatsapp_invite_template_updated_at": ""}},
@@ -467,7 +467,7 @@ async def reset_message_template(user=Depends(get_current_user)):
 
 
 @router.get("/status")
-async def whatsapp_status(request: Request, user=Depends(get_current_user)):
+async def whatsapp_status(request: Request, user=Depends(get_workspace_user)):
     status = await whatsapp_request("GET", "/status", user)
     if isinstance(status, dict) and status.get("connected"):
         await server_module.record_activation_event(
@@ -482,7 +482,7 @@ async def whatsapp_status(request: Request, user=Depends(get_current_user)):
 
 
 @router.get("/contacts")
-async def whatsapp_contacts(user=Depends(get_current_user)):
+async def whatsapp_contacts(user=Depends(get_workspace_user)):
     data = await whatsapp_request("GET", "/contacts", user)
     if not isinstance(data, list):
         raise HTTPException(status_code=503, detail="La synchronisation WhatsApp n’a pas abouti. Réessayez.")
@@ -490,16 +490,16 @@ async def whatsapp_contacts(user=Depends(get_current_user)):
 
 
 @router.post("/refresh")
-async def whatsapp_refresh(user=Depends(get_current_user)):
+async def whatsapp_refresh(user=Depends(get_workspace_user)):
     return await whatsapp_request("POST", "/refresh", user)
 
 
 @router.post("/session/start")
-async def whatsapp_start(user=Depends(get_current_user)):
+async def whatsapp_start(user=Depends(get_workspace_user)):
     return await whatsapp_request("POST", "/session/start", user)
 
 @router.post("/session/pair-code")
-async def whatsapp_pair_code(payload: dict, user=Depends(get_current_user)):
+async def whatsapp_pair_code(payload: dict, user=Depends(get_workspace_user)):
     phone = str(payload.get("phone") or "").strip()
     if not phone:
         raise HTTPException(status_code=400, detail="Renseignez le numéro WhatsApp à connecter.")
@@ -507,12 +507,12 @@ async def whatsapp_pair_code(payload: dict, user=Depends(get_current_user)):
 
 
 @router.post("/session/logout")
-async def whatsapp_logout(user=Depends(get_current_user)):
+async def whatsapp_logout(user=Depends(get_workspace_user)):
     return await whatsapp_request("POST", "/session/logout", user)
 
 
 @router.post("/send-test")
-async def whatsapp_send_test(payload: dict, user=Depends(get_current_user)):
+async def whatsapp_send_test(payload: dict, user=Depends(get_workspace_user)):
     await server_module.ensure_trial_active_or_raise(user)
     target = server_module.normalize_phone(payload.get("to") or user.get("phone", ""))
     if not target:
@@ -528,7 +528,7 @@ async def whatsapp_send_test(payload: dict, user=Depends(get_current_user)):
 
 
 @router.get("/stats")
-async def whatsapp_stats(user=Depends(get_current_user)):
+async def whatsapp_stats(user=Depends(get_workspace_user)):
     missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(5000)
     mids = [m["id"] for m in missions]
     if not mids:
@@ -548,13 +548,13 @@ async def whatsapp_stats(user=Depends(get_current_user)):
 
 
 @router.post("/cron/followups")
-async def whatsapp_followups_cron(user=Depends(get_current_user)):
+async def whatsapp_followups_cron(user=Depends(get_workspace_user)):
     count = await run_whatsapp_followups(user["id"])
     return {"ok": True, "sent": count}
 
 
 @router.post("/import")
-async def whatsapp_import(payload: dict, request: Request, user=Depends(get_current_user)):
+async def whatsapp_import(payload: dict, request: Request, user=Depends(get_workspace_user)):
     await server_module.ensure_trial_active_or_raise(user)
     selected_ids = payload.get("contacts", [])
     if not isinstance(selected_ids, list) or not selected_ids:
@@ -625,14 +625,14 @@ def active_template(agency, kind):
 
 
 @router.get("/automations")
-async def get_automations(user=Depends(get_current_user)):
+async def get_automations(user=Depends(get_workspace_user)):
     agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
     config = await get_message_template(user)
     return {**config, "templates": {kind: active_template(agency, kind) for kind in DEFAULT_TEMPLATES}, "defaults": DEFAULT_TEMPLATES}
 
 
 @router.put("/automations/{kind}")
-async def save_automation(kind: str, payload: dict, user=Depends(get_current_user)):
+async def save_automation(kind: str, payload: dict, user=Depends(get_workspace_user)):
     if kind not in DEFAULT_TEMPLATES:
         raise HTTPException(404, "Type de message inconnu")
     template = validate_invite_template(payload.get("template"))

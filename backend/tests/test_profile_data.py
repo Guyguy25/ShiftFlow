@@ -29,9 +29,9 @@ class ProfileUpdate(IsolatedAsyncioTestCase):
         fn.decorator_list = []
         fn.args.defaults = []
         users = SimpleNamespace(update_one=AsyncMock(), find_one=AsyncMock(return_value={"id": "owner"}))
-        namespace = {"db": SimpleNamespace(users=users), "UpdateProfileIn": object, "public_user": lambda u: u}
+        namespace = {"db": SimpleNamespace(users=users), "UpdateProfileIn": object, "public_account": AsyncMock(side_effect=lambda u: u)}
         exec(compile(ast.Module(body=[fn], type_ignores=[]), "server.py", "exec"), namespace)
         payload = SimpleNamespace(model_dump=Mock(return_value={"name": "Camille"}))
         await namespace["update_me"](payload, {"id": "owner"})
-        payload.model_dump.assert_called_once_with(exclude_unset=True)
+        payload.model_dump.assert_called_once_with(exclude_unset=True, exclude={"agency_name"})
         users.update_one.assert_awaited_once_with({"id": "owner"}, {"$set": {"name": "Camille"}})

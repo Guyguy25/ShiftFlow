@@ -48,12 +48,13 @@ test("email flow has exactly two credentials, two sliders, and creates the accou
   await input('#people_per_mission', "15", "change");
   await next();
   expect(register).not.toHaveBeenCalled();
-  expect(host.querySelectorAll("input")).toHaveLength(0);
+  expect(host.querySelectorAll("input")).toHaveLength(1);
+  await input('[name="agency_name"]', "Camille Events");
   expect(host.textContent).toContain("80 h");
   expect(host.textContent).toMatch(/2[\s\u202f]*800\s*€/);
   expect(host.textContent).toContain("Estimation indicative");
   await next();
-  expect(register).toHaveBeenCalledWith(expect.objectContaining({ email: "camille@example.com", password: "Secret123", onboarding_answers: { annual_events: 40, people_per_mission: 15 }, legal_acceptance: expect.objectContaining({ scope: "account" }) }));
+  expect(register).toHaveBeenCalledWith(expect.objectContaining({ email: "camille@example.com", password: "Secret123", agency_name: "Camille Events", onboarding_answers: { annual_events: 40, people_per_mission: 15 }, legal_acceptance: expect.objectContaining({ scope: "account" }) }));
   expect(mockNavigate).toHaveBeenCalledWith("/app/dashboard");
 });
 
@@ -70,7 +71,9 @@ test("Google follows the activity and savings steps without requesting a passwor
   await act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === "Continuer avec Google").click());
   expect(host.textContent).toContain("Compte Google sélectionné");
   expect(api.post).not.toHaveBeenCalled();
-  await next(); await next();
+  await next();
+  await input('[name="agency_name"]', "Google Events");
+  await next();
   expect(register).not.toHaveBeenCalled();
   expect(api.post).toHaveBeenCalledWith("/auth/google", expect.objectContaining({ credential: "google-test-credential", registration: expect.objectContaining({ onboarding_answers: { annual_events: 30, people_per_mission: 15 } }) }));
   expect(refresh).toHaveBeenCalled();

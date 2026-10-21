@@ -24,6 +24,7 @@ from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
 import mission_billing
 import subscription_billing
+import organizations
 import return_feedback
 from return_visits import record_visit, visit_summary, retention_summary
 
@@ -62,7 +63,7 @@ app = FastAPI(title="ShiftFlow API")
 @app.middleware("http")
 async def hours_privacy_headers(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments"):
+    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments") or request.url.path.startswith("/api/organization"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -256,6 +257,9 @@ def public_user(u: dict) -> dict:
             "onboarding_completed": bool(u.get("onboarding_completed")),
             "subscription_status": u.get("subscription_status"),
             "created_at": u.get("created_at"),
+            "subscription_tier": u.get("subscription_tier", "pro"),
+            "organization": u.get("organization"),
+            "can_manage_billing": u.get("can_manage_billing", True),
             **trial_info(u)}
 
 
@@ -281,6 +285,18 @@ async def get_current_user(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+async def public_account(user):
+    return public_user(await organizations.decorate(db, user))
+
+
+async def get_workspace_user(user=Depends(get_current_user)):
+    return await organizations.workspace(db, user)
+
+
+async def get_workspace_owner(user=Depends(get_current_user)):
+    return await organizations.workspace(db, user, owner_only=True)
 
 
 # ---------------- Twilio SMS ----------------
@@ -414,6 +430,14 @@ class RegisterIn(BaseModel):
     meta_attribution: Optional[dict] = None
     meta_fbp: Optional[str] = None
     meta_fbc: Optional[str] = None
+
+    @field_validator("agency_name")
+    @classmethod
+    def organization_name_valid(cls, value):
+        value = value.strip()
+        if not value or len(value) > 120:
+            raise ValueError("Indiquez un nom d’organisation de 1 à 120 caractères.")
+        return value
 
     @field_validator("password")
     @classmethod
@@ -781,7 +805,7 @@ async def google_auth(payload: GoogleAuthIn, request: Request, response: Respons
     user = await ensure_trial_model(user)
     access = create_access_token(user["id"], user["email"])
     set_auth_cookies(response, access, create_refresh_token(user["id"]))
-    return {"user": public_user(user), "access_token": access}
+    return {"user": await public_account(user), "access_token": access}
 
 
 @api.post("/auth/register")
@@ -806,6 +830,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
             "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
+    await organizations.ensure_personal(db, user)
     await record_visit(db.users, user["id"], created_at)
     if payload.registration_token:
         import hashlib
@@ -842,7 +867,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
-    return {"user": public_user(user), "access_token": access}
+    return {"user": await public_account(user), "access_token": access}
 
 
 @api.post("/auth/login")
@@ -864,7 +889,7 @@ async def login(payload: LoginIn, request: Request, response: Response):
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
-    return {"user": public_user(user), "access_token": access}
+    return {"user": await public_account(user), "access_token": access}
 
 
 @api.post("/auth/refresh")
@@ -896,7 +921,7 @@ async def refresh_session(request: Request, response: Response):
     # revient au moins une fois tous les 90 jours, il reste connecté indéfiniment.
     new_refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, new_refresh)
-    return {"user": public_user(user), "access_token": access}
+    return {"user": await public_account(user), "access_token": access}
 
 
 @api.post("/auth/logout")
@@ -913,12 +938,12 @@ async def me(request: Request, user=Depends(get_current_user)):
     await db.users.update_one({"id": user["id"]}, {"$set": updates})
     await record_visit(db.users, user["id"], now_utc())
     user.update(updates)
-    return public_user(user)
+    return await public_account(user)
 
 
 class UpdateProfileIn(BaseModel):
     name: str
-    agency_name: str
+    agency_name: str = ""
     phone: str = ""
     avatar: str = ""
 
@@ -930,9 +955,9 @@ class UpdateProfileIn(BaseModel):
 
 @api.put("/auth/me")
 async def update_me(payload: UpdateProfileIn, user=Depends(get_current_user)):
-    await db.users.update_one({"id": user["id"]}, {"$set": payload.model_dump(exclude_unset=True)})
+    await db.users.update_one({"id": user["id"]}, {"$set": payload.model_dump(exclude_unset=True, exclude={"agency_name"})})
     updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
-    return public_user(updated)
+    return await public_account(updated)
 
 
 @api.post("/auth/forgot-password")
@@ -952,7 +977,7 @@ async def reset(payload: ResetIn):
 
 # ---------------- Workers ----------------
 @api.get("/workers")
-async def list_workers(q: Optional[str] = None, skill: Optional[str] = None, user=Depends(get_current_user)):
+async def list_workers(q: Optional[str] = None, skill: Optional[str] = None, user=Depends(get_workspace_user)):
     query = {"agency_id": user["id"]}
     if skill:
         query["skills"] = skill
@@ -964,9 +989,9 @@ async def list_workers(q: Optional[str] = None, skill: Optional[str] = None, use
 
 
 @api.post("/workers")
-async def create_worker(payload: WorkerIn, request: Request, user=Depends(get_current_user)):
+async def create_worker(payload: WorkerIn, request: Request, user=Depends(get_workspace_user)):
     await check_quota_or_raise(user, "worker")  # noqa: F821 (defined later)
-    w = {"id": new_id(), "agency_id": user["id"], **payload.model_dump(), "created_at": iso(now_utc())}
+    w = {"id": new_id(), "agency_id": user["id"], "created_by": user.get("actor_id", user["id"]), **payload.model_dump(), "created_at": iso(now_utc())}
     await db.workers.insert_one(w)
     w.pop("_id", None)
     await record_activation_event(
@@ -985,7 +1010,7 @@ class BulkWorkersIn(BaseModel):
 
 
 @api.post("/workers/bulk")
-async def create_workers_bulk(payload: BulkWorkersIn, request: Request, user=Depends(get_current_user)):
+async def create_workers_bulk(payload: BulkWorkersIn, request: Request, user=Depends(get_workspace_user)):
     """Bulk import — respects freemium quota. Returns per-row result."""
     if not payload.workers:
         raise HTTPException(status_code=400, detail="Liste vide")
@@ -1024,7 +1049,7 @@ async def create_workers_bulk(payload: BulkWorkersIn, request: Request, user=Dep
 
 
 @api.put("/workers/{worker_id}")
-async def update_worker(worker_id: str, payload: WorkerIn, user=Depends(get_current_user)):
+async def update_worker(worker_id: str, payload: WorkerIn, user=Depends(get_workspace_user)):
     await ensure_trial_active_or_raise(user)
     res = await db.workers.update_one({"id": worker_id, "agency_id": user["id"]}, {"$set": payload.model_dump()})
     if res.matched_count == 0:
@@ -1033,7 +1058,7 @@ async def update_worker(worker_id: str, payload: WorkerIn, user=Depends(get_curr
 
 
 @api.delete("/workers/{worker_id}")
-async def delete_worker(worker_id: str, user=Depends(get_current_user)):
+async def delete_worker(worker_id: str, user=Depends(get_workspace_user)):
     res = await db.workers.delete_one({"id": worker_id, "agency_id": user["id"]})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Intervenant introuvable")
@@ -1092,7 +1117,7 @@ async def mission_with_shifts(mission: dict, include_slots: bool = False) -> dic
 
 
 @api.get("/missions")
-async def list_missions(archived: bool = False, user=Depends(get_current_user)):
+async def list_missions(archived: bool = False, user=Depends(get_workspace_user)):
     query = {"agency_id": user["id"], "archived": True if archived else {"$ne": True}}
     missions = await db.missions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for m in missions:
@@ -1101,13 +1126,14 @@ async def list_missions(archived: bool = False, user=Depends(get_current_user)):
 
 
 @api.post("/missions")
-async def create_mission(payload: MissionIn, request: Request, user=Depends(get_current_user)):
+async def create_mission(payload: MissionIn, request: Request, user=Depends(get_workspace_user)):
     await check_quota_or_raise(user, "mission")  # noqa: F821 (defined later)
     is_first_mission = await db.missions.count_documents({"agency_id": user["id"]}) == 0
     mission_created_at = now_utc()
     mission = {
         "id": new_id(),
         "agency_id": user["id"],
+        "created_by": user.get("actor_id", user["id"]),
         "name": payload.name,
         "location": payload.location,
         "address": payload.address,
@@ -1197,7 +1223,7 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
 
 
 @api.get("/missions/{mission_id}")
-async def get_mission(mission_id: str, user=Depends(get_current_user)):
+async def get_mission(mission_id: str, user=Depends(get_workspace_user)):
     mission = await db.missions.find_one({"id": mission_id, "agency_id": user["id"]}, {"_id": 0})
     if not mission:
         raise HTTPException(status_code=404, detail="Mission introuvable")
@@ -1205,7 +1231,7 @@ async def get_mission(mission_id: str, user=Depends(get_current_user)):
 
 
 @api.put("/missions/{mission_id}")
-async def update_mission(mission_id: str, payload: MissionUpdateIn, user=Depends(get_current_user)):
+async def update_mission(mission_id: str, payload: MissionUpdateIn, user=Depends(get_workspace_user)):
     await ensure_trial_active_or_raise(user)
     res = await db.missions.update_one({"id": mission_id, "agency_id": user["id"]}, {"$set": payload.model_dump()})
     if res.matched_count == 0:
@@ -1215,7 +1241,7 @@ async def update_mission(mission_id: str, payload: MissionUpdateIn, user=Depends
 
 
 @api.delete("/missions/{mission_id}")
-async def delete_mission(mission_id: str, user=Depends(get_current_user)):
+async def delete_mission(mission_id: str, user=Depends(get_workspace_user)):
     mission = await db.missions.find_one(
         {"id": mission_id, "agency_id": user["id"], "archived": {"$ne": True}},
         {"_id": 0},
@@ -1246,14 +1272,14 @@ async def delete_mission(mission_id: str, user=Depends(get_current_user)):
 
 
 @api.post("/missions/{mission_id}/cancel")
-async def cancel_mission(mission_id: str, user=Depends(get_current_user)):
+async def cancel_mission(mission_id: str, user=Depends(get_workspace_user)):
     from mission_operations import cancel_owned_mission
     return await cancel_owned_mission(mission_id, user)
 
 
 # ---- Shift-level actions ----
 @api.post("/shifts/{shift_id}/select-workers")
-async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, request: Request, user=Depends(get_current_user)):
+async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, request: Request, user=Depends(get_workspace_user)):
     await ensure_trial_active_or_raise(user)
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
@@ -1333,7 +1359,7 @@ async def select_workers_for_shift(shift_id: str, payload: SelectWorkersIn, requ
 
 
 @api.post("/shifts/{shift_id}/next-cascade")
-async def force_cascade(shift_id: str, request: Request, user=Depends(get_current_user)):
+async def force_cascade(shift_id: str, request: Request, user=Depends(get_workspace_user)):
     await ensure_trial_active_or_raise(user)
     shift = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not shift:
@@ -1352,7 +1378,7 @@ async def force_cascade(shift_id: str, request: Request, user=Depends(get_curren
 
 
 @api.post("/mission-workers/{slot_id}/mark-no-answer")
-async def mark_no_answer(slot_id: str, user=Depends(get_current_user)):
+async def mark_no_answer(slot_id: str, user=Depends(get_workspace_user)):
     await ensure_trial_active_or_raise(user)
     slot = await db.mission_workers.find_one({"id": slot_id}, {"_id": 0})
     if not slot:
@@ -1496,7 +1522,7 @@ class ShiftDuplicateIn(BaseModel):
 
 
 @api.post("/missions/{mission_id}/duplicate")
-async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
+async def duplicate_mission(mission_id: str, user=Depends(get_workspace_user)):
     await check_quota_or_raise(user, "mission")  # noqa: F821
     original = await db.missions.find_one({"id": mission_id, "agency_id": user["id"]}, {"_id": 0})
     if not original:
@@ -1556,7 +1582,7 @@ async def duplicate_mission(mission_id: str, user=Depends(get_current_user)):
 
 
 @api.post("/shifts/{shift_id}/duplicate")
-async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends(get_current_user)):
+async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends(get_workspace_user)):
     await ensure_trial_active_or_raise(user)
     original = await db.shifts.find_one({"id": shift_id, "agency_id": user["id"]}, {"_id": 0})
     if not original:
@@ -1591,7 +1617,7 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
 
 
 @api.get("/dashboard/summary")
-async def dashboard_summary(user=Depends(get_current_user)):
+async def dashboard_summary(user=Depends(get_workspace_user)):
     missions = await db.missions.find(
         {"agency_id": user["id"], "archived": {"$ne": True}},
         {"_id": 0},
@@ -1640,7 +1666,7 @@ async def dashboard_summary(user=Depends(get_current_user)):
 
 
 @api.get("/dashboard/sms-stats")
-async def sms_stats(user=Depends(get_current_user)):
+async def sms_stats(user=Depends(get_workspace_user)):
     # Restrict to this agency's notifications
     missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(5000)
     mids = [m["id"] for m in missions]
@@ -1676,7 +1702,7 @@ class TestSmsIn(BaseModel):
 
 
 @api.post("/notifications/test-sms")
-async def test_sms(payload: TestSmsIn, user=Depends(get_current_user)):
+async def test_sms(payload: TestSmsIn, user=Depends(get_workspace_user)):
     target = normalize_phone(payload.to or user.get("phone", ""))
     if not target:
         raise HTTPException(status_code=400, detail="Aucun numéro fourni ni renseigné sur votre profil")
@@ -1827,7 +1853,7 @@ async def unsubscribe(token: str = Form(...)):
 
 
 @api.get("/config")
-async def get_config(user=Depends(get_current_user)):
+async def get_config(user=Depends(get_workspace_user)):
     return {
         "twilio_ready": twilio_ready(),
         "twilio_from": TWILIO_FROM if twilio_ready() else None,
@@ -1836,7 +1862,7 @@ async def get_config(user=Depends(get_current_user)):
 
 
 @api.get("/notifications/recent")
-async def recent_notifications(user=Depends(get_current_user), limit: int = 30):
+async def recent_notifications(user=Depends(get_workspace_user), limit: int = 30):
     missions = await db.missions.find({"agency_id": user["id"]}, {"_id": 0}).to_list(500)
     mids = [m["id"] for m in missions]
     docs = await db.notifications.find({"mission_id": {"$in": mids}}, {"_id": 0}).sort("sent_at", -1).to_list(limit)
@@ -1951,6 +1977,7 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 ALLOWED_STRIPE_PRICES = {
     "shiftflow_monthly": {"interval": "month", "amount": 7900},
     "shiftflow_yearly": {"interval": "year", "amount": 71100},
+    **subscription_billing.TEAM_PRICES,
 }
 FREE_MISSION_LIMIT = 3
 FREE_WORKER_LIMIT = None
@@ -2013,7 +2040,7 @@ async def submit_onboarding(payload: OnboardingIn, user=Depends(get_current_user
 
 
 @api.get("/plan/quota")
-async def get_quota(user=Depends(get_current_user)):
+async def get_quota(user=Depends(get_workspace_user)):
     plan = await _get_plan(user["id"])
     missions = await _active_missions_count(user["id"])
     missions_used = await _missions_created_count(user["id"])
@@ -2029,6 +2056,8 @@ async def get_quota(user=Depends(get_current_user)):
         "workers": workers,
         "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
         "subscription_status": (u or {}).get("subscription_status"),
+        "subscription_tier": (u or {}).get("subscription_tier", "pro"),
+        "can_manage_billing": user.get("organization_role", "owner") == "owner",
         **info,
     }
 
@@ -2126,7 +2155,7 @@ def stripe_checkout_response(session, ui_mode):
 
 
 @api.post("/payments/checkout")
-async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
+async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_workspace_owner)):
     if payload.legal_acceptance.get("version") != "2026-10-19":
         raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
     expected_price = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
@@ -2166,6 +2195,8 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             current = await mission_billing.account(db, user["id"])
             if current.get("plan") == "pro":
                 raise HTTPException(409, "Votre paiement est déjà confirmé. Rechargez la page pour accéder à Pro.")
+    if payload.lookup_key in subscription_billing.TEAM_PRICES:
+        subscription_billing.ensure_team_prices(stripe_lib)
     price = subscription_billing.resolve_price(stripe_lib, payload.lookup_key, expected_price)
     line_items = [{"price": price.id, "quantity": 1}]
 
@@ -2179,6 +2210,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     session = stripe_lib.checkout.Session.create(
         line_items=line_items,
         mode="subscription",
+        subscription_data={"metadata": {"user_id": user["id"], "lookup_key": payload.lookup_key}},
         payment_method_types=["card"],
         idempotency_key=f"checkout-v4-{payload.ui_mode}-{user['id']}-{payload.lookup_key}-{quantity}-{payload.promo_code}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
         **({"ui_mode": "embedded", "redirect_on_completion": "never"} if payload.ui_mode == "embedded" else {
@@ -2266,6 +2298,7 @@ async def fulfill_checkout(obj):
             "plan": "pro" if active else "free", "subscription_status": subscription.status,
             "stripe_customer_id": obj.get("customer"), "stripe_subscription_id": obj["subscription"],
             "subscription_billing_interval": record.get("billing_interval"),
+            "subscription_tier": subscription_billing.tier_from_subscription(stripe_lib, subscription),
         }})
         if active:
             paid_user = await db.users.find_one({"id": uid})
@@ -2279,7 +2312,7 @@ async def fulfill_checkout(obj):
 
 
 @api.get("/payments/status/{session_id}")
-async def payment_status_endpoint(session_id: str, user=Depends(get_current_user)):
+async def payment_status_endpoint(session_id: str, user=Depends(get_workspace_owner)):
     record = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["id"]}, {"_id": 0})
     if not record:
         raise HTTPException(404, "Transaction inconnue")
@@ -2312,7 +2345,18 @@ async def stripe_webhook(request: Request):
         await db.users.update_one({"stripe_subscription_id": obj["id"]}, {"$set": {
             "plan": "pro" if status in ("active", "trialing") else "free",
             "subscription_status": status,
+            "subscription_tier": subscription_billing.tier_from_subscription(stripe_lib, subscription),
         }})
+    elif kind in ("invoice.paid", "invoice.payment_failed"):
+        parent = obj.get("parent") or {}
+        sub_id = obj.get("subscription") or (parent.get("subscription_details") or {}).get("subscription")
+        if sub_id:
+            subscription = stripe_lib.Subscription.retrieve(sub_id)
+            await db.users.update_one({"stripe_subscription_id": sub_id}, {"$set": {
+                "plan": "pro" if subscription.status in ("active", "trialing") else "free",
+                "subscription_status": subscription.status,
+                "subscription_tier": subscription_billing.tier_from_subscription(stripe_lib, subscription),
+            }})
     elif kind in ("checkout.session.expired", "checkout.session.async_payment_failed"):
         status = "expired" if kind.endswith("expired") else "failed"
         await db.payment_transactions.update_one({"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
@@ -2320,14 +2364,22 @@ async def stripe_webhook(request: Request):
     return {"status": "ok"}
 
 
+@api.post("/payments/catalog/sync")
+async def sync_team_catalog(user=Depends(get_workspace_owner)):
+    prices = subscription_billing.ensure_team_prices(stripe_lib)
+    return {"prices": {lookup: price.id for lookup, price in prices.items()}}
+
+
 @api.post("/payments/portal")
-async def billing_portal(request: Request, user=Depends(get_current_user)):
+async def billing_portal(request: Request, user=Depends(get_workspace_owner)):
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     if not u or not u.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Aucun abonnement actif")
-    origin = request.headers.get("origin", FRONTEND_URL)
+    origin = FRONTEND_URL or "https://www.shiftflow.io"
     try:
+        configuration = subscription_billing.team_portal_configuration(stripe_lib, ALLOWED_STRIPE_PRICES)
         session = stripe_lib.billing_portal.Session.create(
+            configuration=configuration.id,
             customer=u["stripe_customer_id"],
             return_url=f"{origin}/app/settings",
         )
@@ -2551,6 +2603,9 @@ from whatsapp_routes import router as whatsapp_router
 api.include_router(whatsapp_router)
 from mission_operations import router as operations_router
 api.include_router(operations_router)
+
+from organization_routes import router as organization_router
+api.include_router(organization_router)
 
 from timesheets import router as timesheets_router
 api.include_router(timesheets_router)
