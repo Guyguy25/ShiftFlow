@@ -22,7 +22,7 @@ Créer un client de type **Application Web**. Ajouter les origines JavaScript au
 
 Ce flux ne nécessite pas d'URI de redirection ni de client secret. Il utilise uniquement les autorisations `openid`, `email`, `profile` pour l'identité ; aucun accès à Gmail, Drive ou Agenda.
 
-Configurer `GOOGLE_CLIENT_ID` sur l'hébergement du backend avec l'identifiant se terminant par `.apps.googleusercontent.com`, puis redéployer le backend et le frontend. Sans cette variable, le bouton reste masqué. Ne jamais ajouter un secret dans le frontend.
+L'identifiant client public de production est configuré par défaut dans le backend : `864934647730-ao3eo3ebu3fe894a8qitikh2aher5mgs.apps.googleusercontent.com`. La variable serveur `GOOGLE_CLIENT_ID` permet de le remplacer (ou de désactiver Google avec une valeur vide). Aucun secret client n'est nécessaire ni stocké. Après un changement de configuration, redéployer le backend.
 
 Si l'application Google est en mode Test, ajouter les comptes de test autorisés. Passer en production pour une utilisation publique et suivre les éventuelles demandes de validation Google.
 

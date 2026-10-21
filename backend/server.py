@@ -50,6 +50,8 @@ TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM = os.environ.get("TWILIO_PHONE_NUMBER", "").strip()
 DEFAULT_CC = os.environ.get("DEFAULT_COUNTRY_CODE", "+33").strip()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+# Public OAuth client identifier; deployments may override or disable it via the environment.
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "864934647730-ao3eo3ebu3fe894a8qitikh2aher5mgs.apps.googleusercontent.com").strip()
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -713,7 +715,7 @@ class GoogleAuthIn(BaseModel):
 
 @api.get("/auth/google/config")
 async def google_config(response: Response):
-    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    client_id = GOOGLE_CLIENT_ID
     response.headers["Cache-Control"] = "no-store"
     if not client_id:
         return {"enabled": False}
@@ -726,7 +728,7 @@ async def google_config(response: Response):
 @api.post("/auth/google")
 async def google_auth(payload: GoogleAuthIn, request: Request, response: Response):
     from google_auth import verify_google_token
-    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    client_id = GOOGLE_CLIENT_ID
     if not client_id:
         raise HTTPException(503, "La connexion Google n'est pas encore configurée.")
     try:
