@@ -6,9 +6,9 @@ import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { LEGAL_VERSION } from "../constants/legal";
 
-import WhopCheckoutModal from "../components/WhopCheckoutModal";
+import StripeCheckoutModal from "../components/StripeCheckoutModal";
 
-import { WHOP_ENABLED, YEARLY } from "../lib/billingConfig";
+import { YEARLY } from "../lib/billingConfig";
 const features = ["Intervenants illimités", "Demandes et rappels WhatsApp", "Cascade automatique", "Suivi des réponses et historique"];
 export default function Pricing() {
   const { user } = useAuth();
@@ -16,7 +16,7 @@ export default function Pricing() {
   const [checking, setChecking] = useState(!!user);
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState("");
-  const [whopCheckout, setWhopCheckout] = useState(null);
+  const [embeddedCheckout, setEmbeddedCheckout] = useState(null);
   const checkoutInFlight = useRef(false);
   const [accepted, setAccepted] = useState(false);
   const [consentError, setConsentError] = useState(false);
@@ -49,19 +49,25 @@ export default function Pricing() {
       consentRef.current?.querySelector("input")?.focus();
       return;
     }
-    if (checkoutInFlight.current || whopCheckout) return;
+    if (checkoutInFlight.current || embeddedCheckout) return;
     checkoutInFlight.current = true;
     setLoading(lookup); setError("");
     try {
-      const { data } = await api.post(WHOP_ENABLED ? "/payments/whop/checkout" : "/payments/checkout", {
+      let publicKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || "";
+      if (!publicKey) {
+        const { data: config } = await api.get("/payments/config");
+        publicKey = config.publishable_key || "";
+      }
+      const { data } = await api.post("/payments/checkout", {
+        ui_mode: publicKey ? "embedded" : "hosted",
         lookup_key: lookup, origin_url: window.location.origin,
         promo_code: lookup === "shiftflow_monthly" ? feedbackCode : "",
         quantity: 1,
         legal_acceptance: { version: LEGAL_VERSION, accepted_at: new Date().toISOString(), scope: "pro_subscription" },
         meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
       });
-      if (data.provider === "whop") {
-        setWhopCheckout({ ...data, lookup_key: lookup });
+      if (data.ui_mode === "embedded") {
+        setEmbeddedCheckout({ ...data, publishable_key: publicKey, lookup_key: lookup });
         setLoading(null);
       } else { window.location.href = data.checkout_url; }
     } catch (err) { setError(formatApiError(err.response?.data?.detail) || "Le paiement n’a pas pu être ouvert."); setLoading(null); }
@@ -124,8 +130,8 @@ export default function Pricing() {
           ["Et si j’arrête mon abonnement ?", "Votre abonnement mensuel ou annuel reste actif jusqu’à la fin de la période payée. Ensuite, vos missions existantes restent utilisables. Pour en créer de nouvelles après épuisement de vos missions offertes et de vos éventuels anciens crédits, vous devez vous réabonner."],
         ].map(([question, answer]) => <details key={question} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer font-semibold">{question}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{answer}</p></details>)}
       </section>
-      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via {WHOP_ENABLED ? "Whop" : "Stripe"}. Aucun prélèvement sans votre choix.</p>
+      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via Stripe. Aucun prélèvement sans votre choix.</p>
     </main>
-    <WhopCheckoutModal checkout={whopCheckout} onClose={() => setWhopCheckout(null)} />
+    <StripeCheckoutModal checkout={embeddedCheckout} onClose={() => setEmbeddedCheckout(null)} />
   </div>;
 }

@@ -24,7 +24,6 @@ from meta_capi import send_meta_event
 from onboarding_emails import run_onboarding_emails
 import mission_billing
 import subscription_billing
-import whop_billing
 import return_feedback
 from return_visits import record_visit, visit_summary, retention_summary
 
@@ -63,7 +62,7 @@ app = FastAPI(title="ShiftFlow API")
 @app.middleware("http")
 async def hours_privacy_headers(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours"):
+    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -2058,44 +2057,11 @@ async def feedback_submit(payload: return_feedback.FeedbackIn, user=Depends(get_
 class CheckoutIn(BaseModel):
     promo_code: str = Field(default="", max_length=100)
     lookup_key: str
+    ui_mode: Literal["hosted", "embedded"] = "hosted"
     quantity: int = Field(default=1, ge=1, le=100, strict=True)
     origin_url: str
     meta_consent: bool = False
     legal_acceptance: dict = Field(default_factory=dict)
-
-
-@api.post("/payments/whop/checkout")
-async def create_whop_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
-    current = await mission_billing.account(db, user["id"])
-    try:
-        return await whop_billing.create_checkout(db, current, payload, {
-            "client_user_agent": request.headers.get("user-agent"),
-            "client_ip_address": request_client_ip(request),
-        }, FRONTEND_URL or "https://www.shiftflow.io")
-    except whop_billing.BillingError as exc:
-        raise HTTPException(exc.status, exc.message) from None
-
-
-@api.post("/whop/webhook")
-async def whop_webhook(request: Request):
-    body = await request.body()
-    if len(body) > 1024 * 1024:
-        raise HTTPException(413, "Événement trop volumineux")
-    try:
-        whop_billing.require_config()
-        event = whop_billing.verify_webhook(body, request.headers, os.environ["WHOP_WEBHOOK_SECRET"])
-        record = await whop_billing.process_event(db, event)
-    except whop_billing.BillingError as exc:
-        raise HTTPException(exc.status, exc.message) from None
-    if record and record.get("fulfilled"):
-        paid_user = await db.users.find_one({"id": record["user_id"]})
-        if paid_user and paid_user.get("plan") == "pro":
-            await record_activation_event(paid_user, "subscription_started", metadata={
-                "provider": "whop", "subscription_id": record.get("whop_membership_id"),
-                "session_id": record["session_id"],
-            })
-            await _send_subscribe_meta_if_needed(record["session_id"], record.get("whop_membership_id"))
-    return {"status": "ok"}
 
 
 async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optional[str] = None):
@@ -2136,6 +2102,29 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
         )
 
 
+def stripe_publishable_key() -> str:
+    # Public configuration only; never send STRIPE_SECRET_KEY to the browser.
+    key = (os.environ.get("STRIPE_PUBLISHABLE_KEY") or os.environ.get("STRIPE_PUBLIC_KEY")
+           or os.environ.get("REACT_APP_STRIPE_PUBLISHABLE_KEY") or "").strip()
+    return key if key.startswith(("pk_live_", "pk_test_")) else ""
+
+
+@api.get("/payments/config")
+async def payments_config(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return {"provider": "stripe", "publishable_key": stripe_publishable_key()}
+
+
+def stripe_checkout_response(session, ui_mode):
+    if ui_mode == "embedded":
+        secret = session.get("client_secret")
+        if not secret:
+            raise HTTPException(502, "Le formulaire Stripe est indisponible. Réessayez.")
+        return {"provider": "stripe", "ui_mode": "embedded", "client_secret": secret,
+                "session_id": session.id}
+    return {"checkout_url": session.url, "session_id": session.id}
+
+
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_current_user)):
     if payload.legal_acceptance.get("version") != "2026-10-19":
@@ -2161,12 +2150,22 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     pending = await db.payment_transactions.find_one({
         "user_id": user["id"], "lookup_key": payload.lookup_key, "status": "initiated",
         "quantity": quantity, "offer_version": "2026-10-19",
+        "provider": {"$ne": "whop"},
+        "ui_mode": "embedded" if payload.ui_mode == "embedded" else {"$in": [None, "hosted"]},
         "feedback_promo_code": payload.promo_code or {"$in": [None, ""]},
     }, sort=[("created_at", -1)])
     if pending:
-        previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
-        if previous.status == "open":
-            return {"checkout_url": previous.url, "session_id": previous.id}
+        try:
+            previous = stripe_lib.checkout.Session.retrieve(pending["session_id"])
+        except stripe_lib.error.InvalidRequestError:
+            previous = None
+        if previous and previous.status == "open":
+            return stripe_checkout_response(previous, payload.ui_mode)
+        if previous and previous.status == "complete":
+            await fulfill_checkout(previous)
+            current = await mission_billing.account(db, user["id"])
+            if current.get("plan") == "pro":
+                raise HTTPException(409, "Votre paiement est déjà confirmé. Rechargez la page pour accéder à Pro.")
     price = subscription_billing.resolve_price(stripe_lib, payload.lookup_key, expected_price)
     line_items = [{"price": price.id, "quantity": 1}]
 
@@ -2181,9 +2180,11 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         line_items=line_items,
         mode="subscription",
         payment_method_types=["card"],
-        idempotency_key=f"checkout-v3-{user['id']}-{payload.lookup_key}-{quantity}-{payload.promo_code}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
-        success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
-        cancel_url=f"{origin}/payment/cancel",
+        idempotency_key=f"checkout-v4-{payload.ui_mode}-{user['id']}-{payload.lookup_key}-{quantity}-{payload.promo_code}-{completed_purchases}-{int(now_utc().timestamp()) // 600}",
+        **({"ui_mode": "embedded", "redirect_on_completion": "never"} if payload.ui_mode == "embedded" else {
+            "success_url": f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": f"{origin}/payment/cancel",
+        }),
         **({"customer": current["stripe_customer_id"]} if current.get("stripe_customer_id") else {"customer_email": user.get("email")}),
         **discount,
         metadata={
@@ -2198,6 +2199,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
     )
     await db.payment_transactions.update_one({"_id": session.id}, {"$setOnInsert": {
         "id": new_id(), "session_id": session.id, "user_id": user["id"],
+        "provider": "stripe", "ui_mode": payload.ui_mode,
         "lookup_key": payload.lookup_key, "billing_interval": expected_interval,
         "amount": 0 if payload.promo_code else expected_amount,
         "feedback_promo_code": payload.promo_code,
@@ -2230,7 +2232,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             },
         )
 
-    return {"checkout_url": session.url, "session_id": session.id}
+    return stripe_checkout_response(session, payload.ui_mode)
 
 
 async def fulfill_checkout(obj):
@@ -2281,11 +2283,6 @@ async def payment_status_endpoint(session_id: str, user=Depends(get_current_user
     record = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["id"]}, {"_id": 0})
     if not record:
         raise HTTPException(404, "Transaction inconnue")
-    if record.get("provider") == "whop":
-        # The browser only reads its own transaction; signed webhooks grant access.
-        return {"session_id": session_id, "provider": "whop", "status": record["status"],
-                "payment_status": record["payment_status"], "lookup_key": record["lookup_key"],
-                "fulfilled": bool(record.get("fulfilled")), "mission_credits": 0}
     if not record.get("fulfilled"):
         try:
             session = stripe_lib.checkout.Session.retrieve(session_id)
@@ -2326,11 +2323,6 @@ async def stripe_webhook(request: Request):
 @api.post("/payments/portal")
 async def billing_portal(request: Request, user=Depends(get_current_user)):
     u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
-    if u and u.get("billing_provider") == "whop":
-        try:
-            return {"url": await whop_billing.portal_url(u)}
-        except whop_billing.BillingError as exc:
-            raise HTTPException(exc.status, exc.message) from None
     if not u or not u.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Aucun abonnement actif")
     origin = request.headers.get("origin", FRONTEND_URL)
