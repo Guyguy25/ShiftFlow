@@ -1,0 +1,20 @@
+import React,{act} from "react";
+import {createRoot} from "react-dom/client";
+import Calendar from "./Calendar";
+import {api} from "../lib/api";
+jest.mock("../lib/api",()=>({api:{get:jest.fn()}}));
+jest.mock("../context/AuthContext",()=>({useAuth:()=>({user:{organization:{id:"org"}}})}));
+jest.mock("react-router-dom",()=>({Link:({to,children,...props})=><a href={to} {...props}>{children}</a>}),{virtual:true});
+let host,root;
+const missions=[{id:"festival",name:"Festival de Lille",location:"Lille",status:"active",shifts:[{id:"s1",date:"2026-10-22",end_date:"2026-10-23",start_time:"08:00",end_time:"18:00",people_needed:5,confirmed_count:3}]},{id:"full",name:"Concert complet",location:"Douai",shifts:[{id:"s2",date:"2026-10-22",start_time:"20:00",end_time:"02:00",people_needed:2,confirmed_count:2}]}];
+beforeEach(()=>{global.IS_REACT_ACT_ENVIRONMENT=true;jest.useFakeTimers();jest.setSystemTime(new Date(2026,9,22,12));window.matchMedia=jest.fn(()=>({matches:false}));api.get.mockReset();api.get.mockResolvedValue({data:missions});host=document.createElement("div");document.body.appendChild(host);root=createRoot(host);});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();jest.useRealTimers();});
+const render=()=>act(async()=>root.render(<Calendar/>));
+const click=selector=>act(async()=>host.querySelector(selector).click());
+async function input(selector,value){await act(async()=>{const e=host.querySelector(selector);const proto=e.tagName==="SELECT"?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,"value").set.call(e,value);e.dispatchEvent(new Event(e.tagName==="SELECT"?"change":"input",{bubbles:true}));});}
+test("selected day shows full mission details and organization-scoped links",async()=>{await render();expect(host.textContent).toContain("2 manquant(s)");expect(host.textContent).toContain("lendemain");expect(host.querySelector('a[href="/app/organisations/org/missions/festival"]')).not.toBeNull();expect(host.querySelector('[aria-label="Résumé du mois"]').textContent).toContain("2missions");});
+test("clicking the following day includes multi-day shifts",async()=>{await render();await click('[data-day="2026-10-23"]');const panel=host.querySelector('aside');expect(panel.textContent).toContain("Festival de Lille");expect(panel.textContent).not.toContain("Concert complet");});
+test("filtering to incomplete teams and searching by location works",async()=>{await render();await input('select',"missing");expect(host.querySelector('aside').textContent).not.toContain("Concert complet");await input('input[type="search"]',"Douai");expect(host.querySelector('aside').textContent).toContain("Aucun créneau ne correspond");});
+test("mobile opens agenda by default with complete details",async()=>{window.matchMedia.mockReturnValue({matches:true});await render();expect([...host.querySelectorAll('button')].find(b=>b.textContent==="Agenda").getAttribute('aria-pressed')).toBe("true");expect(host.querySelector('aside')).toBeNull();expect(host.textContent).toContain("jeudi 22 octobre");expect(host.textContent).toContain("vendredi 23 octobre");});
+test("a failed load is not shown as an empty calendar and can be retried",async()=>{api.get.mockRejectedValueOnce(new Error("offline"));await render();expect(host.querySelector('[role="alert"]').textContent).toContain("Impossible de charger");await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent==="Réessayer").click());expect(host.querySelector('[role="alert"]')).toBeNull();expect(host.textContent).toContain("Festival de Lille");});
+test("month navigation crosses the year correctly and Today restores the selected date",async()=>{await render();await click('[data-testid="calendar-next"]');await click('[data-testid="calendar-next"]');await click('[data-testid="calendar-next"]');expect(host.querySelector('[data-testid="calendar-title"]').textContent).toBe("janvier 2027");await click('[data-testid="calendar-today"]');expect(host.querySelector('[data-day="2026-10-22"]').getAttribute('aria-pressed')).toBe("true");});
