@@ -1,0 +1,14 @@
+import React,{act} from "react";
+import {createRoot} from "react-dom/client";
+import CreateOrganization from "./CreateOrganization";
+import {api} from "../lib/api";
+let mockUser;
+jest.mock("../context/AuthContext",()=>({useAuth:()=>({user:mockUser,logout:jest.fn()})}));
+jest.mock("../lib/api",()=>({api:{post:jest.fn()},formatApiError:v=>v}));
+jest.mock("react-router-dom",()=>({Link:({to,children,...p})=><a href={to} {...p}>{children}</a>}),{virtual:true});
+let host,root;
+beforeEach(()=>{global.IS_REACT_ACT_ENVIRONMENT=true;mockUser={can_create_organization:true,organization:{id:"team",name:"AXE Events"}};api.post.mockReset();host=document.createElement("div");document.body.appendChild(host);root=createRoot(host);});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
+test("invitee can create one independent organization, with explicit separate billing and no quota reset",async()=>{await act(async()=>root.render(<CreateOrganization/>));expect(host.querySelector("form")).not.toBeNull();expect(host.textContent).toContain("ne réinitialise pas ce quota");expect(host.textContent).toContain("Une organisation créée par compte");expect(host.querySelector('a[href="/app/organisations/team/dashboard"]')).not.toBeNull();});
+test("existing owners cannot create another organization",async()=>{mockUser={can_create_organization:false,personal_organization_id:"personal"};await act(async()=>root.render(<CreateOrganization/>));expect(host.querySelector("form")).toBeNull();expect(host.textContent).toContain("déjà une organisation");expect(host.textContent).toContain("Ouvrir mon organisation");expect(api.post).not.toHaveBeenCalled();});
+test("concurrent or failed creation has an explicit error",async()=>{api.post.mockRejectedValue({response:{data:{detail:"Organisation déjà créée"}}});await act(async()=>root.render(<CreateOrganization/>));await act(async()=>{const input=host.querySelector("input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"Camille Events");input.dispatchEvent(new Event("input",{bubbles:true}));});await act(async()=>host.querySelector("form").dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));expect(api.post).toHaveBeenCalledWith("/organization",{name:"Camille Events",avatar:""});expect(host.querySelector('[role="alert"]').textContent).toContain("déjà créée");});

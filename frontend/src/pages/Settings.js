@@ -38,11 +38,12 @@ export default function Settings() {
         <OrganizationSettings />
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
           <div className="flex items-center gap-2 font-semibold">
-            <Crown className="w-5 h-5"/> Abonnement
+            <Crown className="w-5 h-5 shrink-0"/> Abonnement de l’organisation
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
               {isPro ? (user?.subscription_tier === "team" ? "PRO TEAM ACTIF" : "PRO ACTIF") : "À LA MISSION"}
             </span>
           </div>
+          <p className={`mt-3 text-xs ${isPro ? "text-blue-100" : "text-gray-500"}`}>Cette offre concerne uniquement {user?.organization?.name || "cette organisation"}. Les abonnements des autres équipes restent indépendants.</p>
           {quota && (
             <div className={`mt-3 text-sm ${isPro ? "text-blue-100" : "text-gray-700"}`}>
               {isPro ? (

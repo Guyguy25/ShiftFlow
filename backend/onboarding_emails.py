@@ -92,6 +92,8 @@ def _message(user, stage, mission, frontend_url, unsubscribe_url):
 
 async def _eligible_stages(db, user, now):
     """Return relevant messages in priority order; the caller removes stages already sent."""
+    if user.get("signup_origin") == "invitation" and not user.get("personal_organization_created"):
+        return []
     agency_id = user["id"]
     mission = await db.missions.find_one(
         {"agency_id": agency_id, "status": {"$ne": "cancelled"}, "archived": {"$ne": True}},
@@ -186,7 +188,7 @@ async def run_onboarding_emails(db, frontend_url, jwt_secret, now=None):
     cursor = db.users.find({"$or": [{"created_at": {"$gte": cutoff}}, {"last_mission_created_at": {"$gte": cutoff}}, {"last_mission_purchase_at": {"$gte": cutoff}}], "onboarding_email_opt_out": {"$ne": True}},
                            {"_id": 0, "id": 1, "name": 1, "email": 1, "created_at": 1,
                             "plan": 1, "free_missions_used": 1, "mission_credits": 1, "credited_checkout_sessions": 1,
-                            "onboarding_email_last_sent_at": 1})
+                            "onboarding_email_last_sent_at": 1, "signup_origin": 1, "personal_organization_created": 1})
     sent_count = 0
     async with httpx.AsyncClient(timeout=8) as client:
         async for user in cursor:

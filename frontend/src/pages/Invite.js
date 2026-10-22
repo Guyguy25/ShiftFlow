@@ -31,9 +31,10 @@ export default function Invite() {
   }
   return <main className="flex min-h-screen items-center justify-center bg-gray-50 px-5 py-12"><section className="w-full max-w-md rounded-2xl border bg-white p-7 shadow-sm">
     <Building2 className="h-9 w-9 text-blue-600"/><h1 className="mt-4 text-2xl font-bold">Rejoindre une organisation</h1>
-    {info && <><p className="mt-3 text-gray-700">Vous êtes invité dans <strong>{info.name}</strong>.</p><p className="mt-2 text-sm text-gray-500">Utilisez le compte correspondant à {info.email_hint}. Vos missions et votre espace personnel seront conservés.</p></>}
+    {info && <><p className="mt-3 text-gray-700">Vous êtes invité dans <strong>{info.name}</strong>.</p><p className="mt-2 text-sm text-gray-500">Utilisez le compte correspondant à {info.email_hint}. Vous gardez vos accès aux autres organisations.</p></>}
     {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {loading ? <p className="mt-5 text-sm text-gray-500">Vérification de votre compte…</p> : info && (user ? <><p className="mt-5 text-sm text-gray-600">Connecté : {user.email}</p><button disabled={busy} onClick={accept} className="mt-4 w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-50">{busy ? "Ouverture de l’espace…" : "Accepter l’invitation"}</button><button disabled={busy} onClick={async () => { await logout(); navigate("/login"); }} className="mt-4 text-sm text-blue-700 underline">Utiliser un autre compte</button></> : <div className="mt-6 grid gap-3"><Link to="/login" className="rounded-lg bg-blue-600 px-4 py-3 text-center font-semibold text-white">J’ai déjà un compte</Link><Link to="/register" className="rounded-lg border px-4 py-3 text-center font-semibold">Créer mon compte</Link></div>)}
+    <button type="button" disabled={busy} onClick={() => { try { sessionStorage.removeItem(INVITATION_KEY); } catch {} navigate(user ? (user.needs_organization ? "/organizations/new" : "/app/dashboard") : "/register"); }} className="mt-5 block w-full text-center text-xs text-gray-500 underline">Continuer sans cette invitation</button>
     <Link to="/" className="mt-6 block text-center text-xs text-gray-500 underline">ShiftFlow</Link>
   </section></main>;
 }

@@ -23,9 +23,11 @@ def is_team(owner):
     return owner.get('plan') == 'pro' and owner.get('subscription_tier') == 'team'
 
 
-async def ensure_personal(db, user):
+async def ensure_personal(db, user, force=False):
+    if user.get("signup_origin") == "invitation" and not force:
+        return None
     # One deterministic document per existing account: no bulk re-keying of mission data.
-    await db.organizations.update_one({'_id': user['id']}, {'$setOnInsert': {
+    return await db.organizations.update_one({'_id': user['id']}, {'$setOnInsert': {
         'id': user['id'], 'owner_id': user['id'],
         'name': ((user.get('agency_name') or '').strip() or 'Mon organisation'), 'avatar': '',
         'members': [{'user_id': user['id'], 'role': 'owner', 'joined_at': now()}],
@@ -38,9 +40,10 @@ async def context(db, user):
     org_id = user.get('active_organization_id') or user['id']
     org = await db.organizations.find_one({'_id': org_id, 'members.user_id': user['id']})
     if not org:
-        org_id = user['id']
-        org = await db.organizations.find_one({'_id': org_id})
-        await db.users.update_one({'id': user['id']}, {'$set': {'active_organization_id': org_id}})
+        org = await db.organizations.find_one({'members.user_id': user['id']})
+        if not org:
+            raise HTTPException(403, 'Rejoignez une équipe ou créez votre organisation pour continuer.')
+        await db.users.update_one({'id': user['id']}, {'$set': {'active_organization_id': org['id']}})
     owner = user if org['owner_id'] == user['id'] else await db.users.find_one({'id': org['owner_id']})
     if not owner:
         raise HTTPException(403, 'Cette organisation est indisponible.')
@@ -49,8 +52,13 @@ async def context(db, user):
 
 
 async def decorate(db, user):
+    await ensure_personal(db, user)
+    personal = await db.organizations.find_one({'_id': user['id'], 'owner_id': user['id']})
+    flags = {'can_create_organization': not bool(personal), 'personal_organization_id': personal['id'] if personal else None}
+    if not await db.organizations.find_one({'members.user_id': user['id']}):
+        return {**user, **flags, 'organization': None, 'needs_organization': True, 'can_manage_billing': False}
     org, owner, role = await context(db, user)
-    return {**user, 'plan': owner.get('plan', 'free'), 'agency_name': org['name'],
+    return {**user, **flags, 'needs_organization': False, 'plan': owner.get('plan', 'free'), 'agency_name': org['name'],
             'subscription_status': owner.get('subscription_status'),
             'subscription_tier': owner.get('subscription_tier', 'pro'),
             'organization': {'id': org['id'], 'name': org['name'], 'avatar': org.get('avatar', ''),
@@ -164,3 +172,22 @@ async def accept(db, user, token):
         raise HTTPException(409, 'Cette invitation a déjà été utilisée ou révoquée.')
     await db.users.update_one({'id': user['id']}, {'$set': {'active_organization_id': org['id']}})
     return {'id': org['id'], 'name': org['name']}
+
+
+async def create_personal(db, user, name):
+    if await db.organizations.find_one({'_id': user['id']}):
+        raise HTTPException(409, 'Vous possédez déjà une organisation. Retrouvez-la dans le menu des espaces.')
+    result = await ensure_personal(db, {**user, 'agency_name': name}, force=True)
+    if not result or not result.upserted_id:
+        raise HTTPException(409, 'Votre organisation a déjà été créée. Rechargez la page.')
+    await db.users.update_one({'id': user['id']}, {'$set': {'agency_name': name, 'active_organization_id': user['id'], 'onboarding_completed': True, 'personal_organization_created': True}})
+    return {'id': user['id'], 'name': name}
+
+async def validate_signup_invitation(db, token, email):
+    org, invitation = await invitation_info(db, token)
+    if email.strip().lower() != invitation['email']:
+        raise HTTPException(403, 'Utilisez l’adresse email à laquelle cette invitation est destinée.')
+    owner = await db.users.find_one({'id': org['owner_id']})
+    if not owner or not is_team(owner):
+        raise HTTPException(403, 'Cette organisation doit disposer de Pro Team pour accueillir des collaborateurs.')
+    return org

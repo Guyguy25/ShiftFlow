@@ -51,6 +51,11 @@ async def current(user=Depends(organization_user)):
     return await orgs.summary(s.db, user)
 
 
+@router.post('')
+async def create(payload: OrganizationIn, user=Depends(s.get_current_user)):
+    return await orgs.create_personal(s.db, user, payload.name)
+
+
 @router.put('')
 async def update(payload: OrganizationIn, user=Depends(organization_user)):
     org, _, role = await orgs.context(s.db, user)

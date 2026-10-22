@@ -1,3 +1,4 @@
+import CreateOrganization from "./pages/CreateOrganization";
 import Invite from "./pages/Invite";
 import Hours from "./pages/Hours";
 import PublicHours from "./pages/PublicHours";
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
       <Route path="/demo" element={<Demo />} />
       <Route path="/test-accompagne" element={<AccompaniedTrial />} />
+      <Route path="/organizations/new" element={<ProtectedRoute><CreateOrganization/></ProtectedRoute>} />
       <Route path="/invite" element={<Invite />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/mentions-legales" element={<LegalNotice />} />

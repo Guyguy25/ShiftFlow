@@ -193,8 +193,8 @@ export default function Layout({ children }) {
           <GettingStarted>{children}</GettingStarted>
         </div>
       </main>
-      <WelcomeDialog key={user.id} user={user} />
-      <ReturnFeedbackDialog key={`feedback-${user.id}`} user={user} />
+      {user?.organization?.role !== "member" && <WelcomeDialog key={user.id} user={user} />}
+      {user?.organization?.role !== "member" && <ReturnFeedbackDialog key={`feedback-${user.id}`} user={user} />}
     </div>
   );
 }

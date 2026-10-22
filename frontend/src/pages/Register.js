@@ -1,3 +1,5 @@
+import InviteRegister from "./InviteRegister";
+import { pendingInvitation } from "../lib/invitation";
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Zap, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
@@ -12,13 +14,17 @@ import { registrationSavings } from "../lib/registrationSavings";
 const titles = ["Créez votre compte", "Parlons de vos événements", "Bienvenue chez ShiftFlow !"];
 
 export default function Register() {
+  const [invitation] = useState(pendingInvitation);
+  return invitation ? <InviteRegister token={invitation}/> : <OrganizationRegister/>;
+}
+function OrganizationRegister() {
   const nav = useNavigate();
   const { register, refresh } = useAuth();
   const [initial] = useState(readDraft);
   const [token] = useState(() => initial?.token || newDraftToken());
   // Credentials are never restored from storage; a reload returns to step one.
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState({ email: initial?.form?.email || "", password: "" });
+  const [form, setForm] = useState({ email: initial?.form?.email || "", password: "", agency_name: "" });
   const [answers, setAnswers] = useState({ annual_events: initial?.answers?.annual_events || 30, people_per_mission: initial?.answers?.people_per_mission || 15 });
   const [googleCredential, setGoogleCredential] = useState("");
   const [showPassword, setShowPassword] = useState(false);

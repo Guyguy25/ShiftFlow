@@ -13,7 +13,7 @@ import { ActivationContext } from "../context/ActivationContext";
 export default function GettingStarted({ children }) {
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
-  const authenticated = !!userId && !authLoading;
+  const authenticated = !!userId && !authLoading && user?.organization?.role !== "member";
   const location = useLocation();
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);

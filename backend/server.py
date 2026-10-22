@@ -261,6 +261,9 @@ def public_user(u: dict) -> dict:
             "subscription_tier": u.get("subscription_tier", "pro"),
             "organization": u.get("organization"),
             "can_manage_billing": u.get("can_manage_billing", True),
+            "can_create_organization": u.get("can_create_organization", False),
+            "personal_organization_id": u.get("personal_organization_id"),
+            "needs_organization": bool(u.get("needs_organization")),
             **trial_info(u)}
 
 
@@ -433,6 +436,7 @@ class RegisterIn(BaseModel):
     agency_name: str = Field(default="Mon organisation", max_length=254)
     phone: str = ""
     legal_acceptance: Optional[dict] = None
+    invitation_token: Optional[str] = Field(default=None, min_length=32, max_length=100)
     registration_token: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     onboarding_answers: Optional[dict] = None
     meta_consent: bool = False
@@ -822,16 +826,19 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     email = payload.email.lower().strip()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Un compte existe déjà avec cet email")
+    if payload.invitation_token:
+        await organizations.validate_signup_invitation(db, payload.invitation_token, email)
     created_at = now_utc()
     device_type = device_type_from_user_agent(request.headers.get("user-agent"))
     user = {"id": new_id(), "email": email, "password_hash": hash_password(payload.password),
             "name": payload.name, "agency_name": payload.agency_name, "phone": payload.phone,
+            "signup_origin": "invitation" if payload.invitation_token else "registration",
             "legal_acceptance": {**(payload.legal_acceptance or {}), "accepted_at": iso(created_at)} if payload.legal_acceptance else None,
             "role": "admin", "created_at": iso(created_at),
             "signup_device_type": device_type, "last_device_type": device_type,
             "last_seen_at": iso(created_at),
             "trial_model_version": TRIAL_MODEL_VERSION,
-            "onboarding_completed": bool(payload.onboarding_answers),
+            "onboarding_completed": bool(payload.onboarding_answers) or bool(payload.invitation_token),
             "onboarding_answers": payload.onboarding_answers or None,
             "onboarding_completed_at": iso(now_utc()) if payload.onboarding_answers else None,
             "meta_consent": bool(payload.meta_consent),
@@ -839,7 +846,18 @@ async def register(payload: RegisterIn, request: Request, response: Response):
             "meta_fbp": payload.meta_fbp if payload.meta_consent else None,
             "meta_fbc": payload.meta_fbc if payload.meta_consent else None}
     await db.users.insert_one(user)
-    await organizations.ensure_personal(db, user)
+    invitation_accepted = False
+    if payload.invitation_token:
+        try:
+            joined = await organizations.accept(db, user, payload.invitation_token)
+            user['active_organization_id'] = joined['id']
+            invitation_accepted = True
+        except HTTPException:
+            # The account remains usable if an invitation expires/is revoked during signup.
+            # Keep the invitation in the browser so its real error can be shown and retried.
+            pass
+    else:
+        await organizations.ensure_personal(db, user)
     await record_visit(db.users, user["id"], created_at)
     if payload.registration_token:
         import hashlib
@@ -876,7 +894,7 @@ async def register(payload: RegisterIn, request: Request, response: Response):
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
-    return {"user": await public_account(user), "access_token": access}
+    return {"user": await public_account(user), "access_token": access, "invitation_accepted": invitation_accepted}
 
 
 @api.post("/auth/login")

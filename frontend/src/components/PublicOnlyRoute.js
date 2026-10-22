@@ -1,3 +1,4 @@
+import { pendingInvitation } from "../lib/invitation";
 import React from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -16,7 +17,7 @@ export default function PublicOnlyRoute({ children }) {
     return <ShiftFlowLoader fullScreen label="Ouverture de ShiftFlow…" />;
   }
   if (user) {
-    return <Navigate to="/app/dashboard" replace />;
+    return <Navigate to={pendingInvitation() ? "/invite" : user.needs_organization ? "/organizations/new" : "/app/dashboard"} replace />;
   }
   return children;
 }

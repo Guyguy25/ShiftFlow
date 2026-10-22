@@ -48,7 +48,7 @@ export function AuthProvider({ children }) {
   const register = async (payload) => {
     markLoggedOut(false);
     const { data } = await api.post("/auth/register", payload);
-    try { localStorage.setItem(`shiftflow-welcome-${data.user.id}`, "pending"); } catch {}
+    if (!payload.invitation_token) { try { localStorage.setItem(`shiftflow-welcome-${data.user.id}`, "pending"); } catch {} }
     setUser(data.user);
     return data;
   };

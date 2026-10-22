@@ -98,6 +98,13 @@ class OnboardingEmailTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await _stage(db, user, now, {"free_missions_used"}), (None, None))
 
 
+    async def test_invited_collaborators_are_not_sent_owner_setup_emails(self):
+        now = datetime(2026, 10, 22, tzinfo=timezone.utc)
+        db = SimpleNamespace(missions=SimpleNamespace(find_one=AsyncMock()))
+        result = await _eligible_stages(db, {'id':'invited','signup_origin':'invitation'}, now)
+        self.assertEqual(result, [])
+        db.missions.find_one.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
-

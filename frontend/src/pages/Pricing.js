@@ -94,6 +94,7 @@ export default function Pricing() {
         <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
         <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans date limite ni carte bancaire. Ensuite, ShiftFlow en illimité : 79 €/mois ou {YEARLY.total} €/an, soit {YEARLY.discount} % d’économie avec l’annuel.</p>
       </div>
+      {user?.organization && <p className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-900">Offre de <strong>{user.organization.name}</strong>. Chaque organisation conserve ses données et son abonnement.{!billingOwner && " L’abonnement est géré par le propriétaire de cette équipe."}</p>}
       {feedbackCode && !pro && <section className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5"><h2 className="font-bold text-blue-900">Merci pour votre avis : 2 mois de Pro offerts</h2><p className="mt-2 text-sm text-blue-900">Code personnel : <strong className="break-all">{feedbackCode}</strong>. Appliqué automatiquement à Pro mensuel : 0 € pendant deux mois, puis 79 €/mois. Carte requise. Résiliable à tout moment avant la prochaine échéance. Une utilisation par compte.</p></section>}
       {error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
       {pro && <p className="mt-6 text-center font-semibold text-emerald-700">Votre abonnement Pro est actif. Vos missions sont illimitées.</p>}
@@ -153,7 +154,7 @@ export default function Pricing() {
           ["Et si j’arrête mon abonnement ?", "Votre abonnement mensuel ou annuel reste actif jusqu’à la fin de la période payée. Ensuite, vos missions existantes restent utilisables. Pour en créer de nouvelles après épuisement de vos missions offertes et de vos éventuels anciens crédits, vous devez vous réabonner."],
         ].map(([question, answer]) => <details key={question} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer font-semibold">{question}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{answer}</p></details>)}
       </section>
-      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via Stripe. Pro : 1 compte. Pro Team : propriétaire + 5 collaborateurs. Aucun prélèvement sans votre choix.</p>
+      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via Stripe. Chaque abonnement couvre une seule organisation. Pro : propriétaire seul. Pro Team : propriétaire + 5 collaborateurs. Aucun prélèvement sans votre choix.</p>
     </main>
     <StripeCheckoutModal checkout={embeddedCheckout} onClose={() => setEmbeddedCheckout(null)} />
   </div>;

@@ -1,0 +1,20 @@
+import React,{act} from "react";
+import {createRoot} from "react-dom/client";
+import InviteRegister from "./InviteRegister";
+import {api} from "../lib/api";
+const mockRegister=jest.fn(),mockRefresh=jest.fn(),mockNavigate=jest.fn();
+jest.mock("../context/AuthContext",()=>({useAuth:()=>({register:mockRegister,refresh:mockRefresh})}));
+jest.mock("../lib/api",()=>({api:{post:jest.fn()},formatApiError:v=>v,markLoggedOut:jest.fn()}));
+jest.mock("react-router-dom",()=>({Link:({to,children,...p})=><a href={to} {...p}>{children}</a>,useNavigate:()=>mockNavigate}),{virtual:true});
+jest.mock("../components/GoogleAuthButton",()=>({__esModule:true,default:({onCredential})=><button onClick={()=>onCredential("google-credential")}>Google</button>}));
+let host,root;
+beforeEach(()=>{global.IS_REACT_ACT_ENVIRONMENT=true;jest.clearAllMocks();sessionStorage.setItem("shiftflow_pending_invitation","invite-token");api.post.mockResolvedValue({data:{name:"AXE Events",email_hint:"c…@test.fr"}});mockRegister.mockResolvedValue({invitation_accepted:true,user:{organization:{id:"org"}}});host=document.createElement("div");document.body.appendChild(host);root=createRoot(host);});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();sessionStorage.clear();});
+async function render(){await act(async()=>root.render(<InviteRegister token="invite-token"/>));}
+async function fill(name,value){await act(async()=>{const input=host.querySelector(`[name="${name}"]`);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));});}
+async function submit(){await act(async()=>host.querySelector("form").dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));}
+test("invitation registration has identity fields only, without activity questions or organization creation",async()=>{await render();expect(host.textContent).toContain("AXE Events");expect([...host.querySelectorAll("input")].map(e=>e.name)).toEqual(["name","email","password"]);expect(host.querySelector('input[type="range"]')).toBeNull();expect(host.textContent).not.toContain("Nom de votre organisation");});
+test("valid account joins directly, clears invitation and opens the organization",async()=>{await render();await fill("name","Camille");await fill("email","camille@test.fr");await fill("password","Secret123");await submit();expect(mockRegister).toHaveBeenCalledWith(expect.objectContaining({name:"Camille",email:"camille@test.fr",password:"Secret123",invitation_token:"invite-token"}));expect(mockNavigate).toHaveBeenCalledWith("/app/organisations/org/dashboard",{replace:true});expect(sessionStorage.getItem("shiftflow_pending_invitation")).toBeNull();});
+test("an invitation revoked during signup retains the account recovery path",async()=>{mockRegister.mockResolvedValue({invitation_accepted:false,user:{needs_organization:true}});await render();await fill("name","Camille");await fill("email","camille@test.fr");await fill("password","Secret123");await submit();expect(mockNavigate).toHaveBeenCalledWith("/invite",{replace:true});expect(sessionStorage.getItem("shiftflow_pending_invitation")).toBe("invite-token");});
+test("an expired invitation cannot create an account",async()=>{api.post.mockRejectedValue({response:{data:{detail:"Invitation expirée"}}});await render();expect(host.querySelector("form")).toBeNull();expect(host.textContent).toContain("Invitation expirée");expect(mockRegister).not.toHaveBeenCalled();});
+test("Google follows the same short invitation flow",async()=>{await render();await fill("name","Camille");await act(async()=>[...host.querySelectorAll("button")].find(e=>e.textContent==="Google").click());expect(host.querySelector('[name="password"]')).toBeNull();api.post.mockResolvedValue({data:{invitation_accepted:true,user:{organization:{id:"org"}}}});await submit();expect(api.post).toHaveBeenCalledWith("/auth/google",expect.objectContaining({credential:"google-credential",registration:expect.objectContaining({invitation_token:"invite-token",name:"Camille"})}));expect(mockRefresh).toHaveBeenCalled();});
