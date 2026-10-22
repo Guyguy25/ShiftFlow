@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, EmailStr, field_validator
 import server as s
 import organizations as orgs
@@ -37,13 +37,22 @@ class SwitchIn(BaseModel):
     organization_id: str = Field(min_length=1, max_length=100)
 
 
+async def organization_user(request: Request, user=Depends(s.get_current_user)):
+    expected = request.headers.get('X-Organization-ID')
+    if expected:
+        org, _, _ = await orgs.context(s.db, user)
+        if expected != org['id']:
+            raise HTTPException(409, 'Votre organisation active a changé. Rechargez la page avant de continuer.')
+    return user
+
+
 @router.get('')
-async def current(user=Depends(s.get_current_user)):
+async def current(user=Depends(organization_user)):
     return await orgs.summary(s.db, user)
 
 
 @router.put('')
-async def update(payload: OrganizationIn, user=Depends(s.get_current_user)):
+async def update(payload: OrganizationIn, user=Depends(organization_user)):
     org, _, role = await orgs.context(s.db, user)
     if role != 'owner':
         raise HTTPException(403, 'Seul le propriétaire peut modifier l’organisation.')
@@ -64,12 +73,12 @@ async def switch(payload: SwitchIn, user=Depends(s.get_current_user)):
 
 
 @router.post('/invitations')
-async def invite(payload: InviteIn, user=Depends(s.get_current_user)):
+async def invite(payload: InviteIn, user=Depends(organization_user)):
     return await orgs.invite(s.db, user, str(payload.email), s.FRONTEND_URL or 'https://www.shiftflow.io')
 
 
 @router.delete('/invitations/{invitation_id}')
-async def revoke(invitation_id: str, user=Depends(s.get_current_user)):
+async def revoke(invitation_id: str, user=Depends(organization_user)):
     org, _, role = await orgs.context(s.db, user)
     if role != 'owner':
         raise HTTPException(403, 'Seul le propriétaire peut révoquer une invitation.')
@@ -78,7 +87,7 @@ async def revoke(invitation_id: str, user=Depends(s.get_current_user)):
 
 
 @router.delete('/members/{member_id}')
-async def remove(member_id: str, user=Depends(s.get_current_user)):
+async def remove(member_id: str, user=Depends(organization_user)):
     org, _, role = await orgs.context(s.db, user)
     if role != 'owner':
         raise HTTPException(403, 'Seul le propriétaire peut retirer un membre.')

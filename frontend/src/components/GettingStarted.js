@@ -1,3 +1,4 @@
+import { unscopedPath } from "../lib/workspacePaths";
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import * as Popover from "@radix-ui/react-popover";
@@ -65,13 +66,13 @@ export default function GettingStarted({ children }) {
     invite: "Choisissez les intervenants et leur ordre de priorité. Vérifiez le message, puis confirmez le lancement.",
   };
   const task = tasks.find(t => t.id === selected);
-  const creatingMission = location.pathname === "/app/missions/new";
+  const creatingMission = unscopedPath(location.pathname) === "/app/missions/new";
   const missionInProgress = creatingMission && tasks.some(t => t.id === "mission" && !t.done);
   const actionHref = task?.href || next?.href || "/app/dashboard";
-  const alreadyOnAction = creatingMission && actionHref.split("?")[0] === location.pathname;
+  const alreadyOnAction = creatingMission && actionHref.split("?")[0] === unscopedPath(location.pathname);
   const finished = tasks.length > 0 && completed === tasks.length;
   const progressPercent = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
-  const onPageTask = tasks.find(t => !t.done && t.href?.split("?")[0] === location.pathname);
+  const onPageTask = tasks.find(t => !t.done && t.href?.split("?")[0] === unscopedPath(location.pathname));
   const nextTask = tasks.find(t => !t.done);
   return <ActivationContext.Provider value={context}>
     {children}

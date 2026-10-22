@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Building2, Camera, Copy, LockKeyhole, Send, Users } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 export default function OrganizationSettings() {
   const { user, refresh } = useAuth();
+  const { hash } = useLocation();
   const [org, setOrg] = useState(null);
   const [form, setForm] = useState({ name: "", avatar: "" });
   const [email, setEmail] = useState("");
@@ -19,6 +20,12 @@ export default function OrganizationSettings() {
     setOrg(data); setForm({ name: data.name, avatar: data.avatar || "" });
   };
   useEffect(() => { let live = true; api.get("/organization").then(({ data }) => { if (live) { setOrg(data); setForm({ name: data.name, avatar: data.avatar || "" }); } }).catch(() => { if (live) setError("Impossible de charger l’organisation. Rechargez la page."); }); return () => { live = false; }; }, [user?.organization?.id]);
+  useEffect(() => {
+    if (!org) return;
+    const scroll = () => { if (window.location.hash === "#collaborateurs") document.getElementById("collaborateurs")?.scrollIntoView?.({ block: "start" }); };
+    scroll(); window.addEventListener("hashchange", scroll);
+    return () => window.removeEventListener("hashchange", scroll);
+  }, [org, hash]);
   const owner = org?.role === "owner";
   const used = Math.max(0, (org?.members?.length || 1) - 1) + (org?.invitations?.length || 0);
   const canInvite = owner && org?.team_enabled && used < 5;
@@ -42,20 +49,20 @@ export default function OrganizationSettings() {
     } catch { setError("Cette photo n’a pas pu être ouverte."); }
     finally { URL.revokeObjectURL(url); setBusy(false); }
   }
-  return <section className="rounded-xl border border-gray-200 bg-white p-6" data-testid="organization-settings">
+  return <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6" data-testid="organization-settings">
     <h2 className="flex items-center gap-2 text-lg font-bold"><Building2 size={20} className="text-blue-600"/> Mon organisation</h2>
     <p className="mt-2 text-sm text-gray-500">Un espace commun pour vos missions, vos intervenants et votre équipe.</p>
     {error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {!org ? <p className="mt-4 text-sm text-gray-500">Chargement…</p> : <>
       <form onSubmit={event => { event.preventDefault(); action(async () => { await api.put("/organization", form); await load(); await refresh(); toast.success("Organisation enregistrée."); }); }} className="mt-5">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-50 text-blue-700">{form.avatar ? <img src={form.avatar} alt="Photo de l’organisation" className="h-full w-full object-cover"/> : <Building2 size={28}/>}</span>
           {owner && <><input ref={input} type="file" accept="image/jpeg,image/png,image/webp" onChange={photo} className="hidden"/><button type="button" disabled={busy} onClick={() => input.current?.click()} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Camera size={16}/>Changer la photo</button>{form.avatar && <button type="button" onClick={() => setForm({ ...form, avatar: "" })} className="text-xs text-gray-500">Retirer</button>}</>}
         </div>
         <label className="mt-4 block text-sm font-medium">Nom de l’organisation<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} required maxLength={120} disabled={!owner || busy} className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 disabled:bg-gray-50"/></label>
         {owner ? <button disabled={busy} className="mt-4 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Enregistrer l’organisation</button> : <p className="mt-3 text-xs text-gray-500">Le propriétaire gère les informations et les accès de l’organisation.</p>}
       </form>
-      <div className="mt-7 border-t border-gray-100 pt-5">
+      <div id="collaborateurs" className="mt-7 scroll-mt-28 border-t border-gray-100 pt-5" tabIndex={-1}>
         <h3 className="flex items-center gap-2 font-semibold"><Users size={18}/>Collaborateurs</h3>
         <p className="mt-2 text-sm text-gray-500">Pro Team : le propriétaire + 5 collaborateurs. Les invitations en attente réservent une place.</p>
         {!org.team_enabled && <div className="mt-4 rounded-lg bg-blue-50 p-4 text-sm text-blue-900"><p className="flex items-center gap-2 font-semibold"><LockKeyhole size={16}/>Invitations disponibles avec Pro Team</p><p className="mt-1">89 €/mois ou 747,60 €/an. Missions et intervenants illimités pour toute l’organisation.</p>{owner && <Link to="/pricing#team" className="mt-2 inline-block font-semibold underline">Découvrir Pro Team</Link>}</div>}

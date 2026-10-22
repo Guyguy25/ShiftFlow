@@ -9,6 +9,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import PublicOnlyRoute from "./components/PublicOnlyRoute";
 import OwnerRoute from "./components/OwnerRoute";
 import Layout from "./components/Layout";
+import WorkspaceRoute from "./components/WorkspaceRoute";
 import PublicLegalBar from "./components/PublicLegalBar";
 import Demo from "./pages/Demo";
 import Landing from "./pages/Landing";
@@ -58,8 +59,8 @@ function AppRoutes() {
       <Route path="/payment/success" element={<PaymentSuccess />} />
       <Route path="/payment/cancel" element={<PaymentCancel />} />
       <Route path="/admin" element={<OwnerRoute><Admin /></OwnerRoute>} />
-      <Route path="/app" element={<ProtectedRoute><Layout><Outlet/></Layout></ProtectedRoute>}>
-        <Route index element={<Navigate to="/app/dashboard" replace />} />
+      {["/app", "/app/organisations/:organizationId"].map(path => <Route key={path} path={path} element={<ProtectedRoute><WorkspaceRoute><Layout><Outlet/></Layout></WorkspaceRoute></ProtectedRoute>}>
+        <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="missions" element={<Missions />} />
         <Route path="missions/new" element={<MissionCreate />} />
@@ -69,11 +70,11 @@ function AppRoutes() {
         <Route path="hours" element={<Hours />} />
         <Route path="history" element={<History />} />
         <Route path="help" element={<Tutorial />} />
-        <Route path="tutorial" element={<Navigate to="/app/help" replace />} />
+        <Route path="tutorial" element={<Navigate to="../help" replace />} />
         <Route path="profile" element={<Profile />} />
         <Route path="settings" element={<Settings />} />
         <Route path="automations" element={<Automations />} />
-      </Route>
+      </Route>)}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

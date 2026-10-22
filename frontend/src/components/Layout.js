@@ -1,7 +1,9 @@
+import WorkspaceSearch from "./WorkspaceSearch";
+import { workspacePath, unscopedPath } from "../lib/workspacePaths";
 import WorkspaceSelector from "./WorkspaceSelector";
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, LogOut, MoreHorizontal, X, Zap, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, LogOut, MoreHorizontal, X, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -42,6 +44,9 @@ export default function Layout({ children }) {
   const [quota, setQuota] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const path = unscopedPath(location.pathname);
+  const scoped = to => workspacePath(user?.organization?.id, to);
+  const pageTitle = path === "/app/missions/new" ? "Nouvelle mission" : path.startsWith("/app/missions/") ? "Détail de la mission" : [...nav, ...mobileMoreNav].find(item => item.to === path)?.label || "Mon espace";
 
   useEffect(() => setOpen(false), [location.pathname]);
 
@@ -69,14 +74,14 @@ export default function Layout({ children }) {
     <div className="min-h-screen bg-[#F9FAFB] flex">
       {/* Sidebar desktop */}
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-30 w-64 flex-col bg-white border-r border-gray-200">
-        <div className="px-6 py-6 flex items-center gap-2 border-b border-gray-200 shrink-0">
+        <div className="px-3 py-3 flex min-h-20 items-center gap-2 border-b border-gray-100 shrink-0">
           <WorkspaceSelector />
         </div>
         <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-1">
           {nav.map((n) => (
             <NavLink
               key={n.to}
-              to={n.to}
+              to={scoped(n.to)}
               data-testid={n.id}
               className={({ isActive }) => {
                 if (n.highlight) {
@@ -108,21 +113,27 @@ export default function Layout({ children }) {
           </NavLink>}
         </nav>
         <div className="border-t border-gray-100 p-3 shrink-0 bg-white">
-          <ProfileMenu user={user} quota={quota} onLogout={handleLogout} />
+          <Link to={scoped("/app/settings")} className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><Settings size={17}/>Paramètres de l’organisation</Link>
+          <Link to={scoped("/app/help")} className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><LifeBuoy size={17}/>Aide et tutoriels</Link>
+          <p className="px-3 pt-3 text-[11px] font-semibold text-gray-400">ShiftFlow · Votre équipe, réunie.</p>
         </div>
       </aside>
 
-      {/* Mobile top bar: identity only; navigation stays within thumb reach below. */}
-      <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200 h-14">
-        <div className="h-full max-w-xl mx-auto px-4 flex items-center justify-between">
-          <WorkspaceSelector compact />
-          <ProfileMenu user={user} quota={quota} onLogout={handleLogout} compact />
+      <header className="fixed inset-x-0 top-0 z-40 h-16 border-b border-gray-200 bg-white/95 backdrop-blur lg:left-64 lg:h-20">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:px-10">
+          <div className="min-w-0 flex-1 lg:hidden"><WorkspaceSelector compact /></div>
+          <div className="hidden min-w-0 lg:block"><p className="text-[11px] font-medium text-gray-400">Espace de travail</p><p className="truncate text-sm font-semibold text-gray-900">{pageTitle}</p></div>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-4">
+            <WorkspaceSearch organizationId={user?.organization?.id}/>
+            <span className="hidden h-7 w-px bg-gray-200 sm:block" aria-hidden="true"/>
+            <ProfileMenu user={user} quota={quota} onLogout={handleLogout} compact />
+          </div>
         </div>
-      </div>
+      </header>
 
       {open && (
         <div className="lg:hidden fixed inset-0 z-40 bg-black/30" onClick={() => setOpen(false)}>
-          <nav aria-label="Navigation secondaire" className="absolute inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] rounded-2xl bg-white p-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <nav aria-label="Navigation secondaire" className="absolute inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] max-h-[calc(100dvh-10rem)] overflow-y-auto rounded-2xl bg-white p-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between px-2 py-1">
               <span className="font-semibold text-gray-900">Plus</span>
               <button type="button" onClick={() => setOpen(false)} aria-label="Fermer" className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-600"><X className="h-5 w-5" /></button>
@@ -130,7 +141,7 @@ export default function Layout({ children }) {
             {mobileMoreNav.map((n) => (
               <NavLink
                 key={n.to}
-                to={n.to}
+                to={scoped(n.to)}
                 data-testid={n.id}
                 onClick={() => setOpen(false)}
                 className={({ isActive }) => `flex min-h-12 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium ${isActive ? "bg-blue-50 text-blue-700" : "text-gray-700"}`}
@@ -163,21 +174,21 @@ export default function Layout({ children }) {
       <nav aria-label="Navigation principale" className="lg:hidden fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
         <div className="mx-auto grid h-16 max-w-xl grid-cols-5 px-1">
           {mobileNav.map((n) => (
-            <NavLink key={n.to} to={n.to} data-testid={n.id} className={({ isActive }) => `relative flex min-w-0 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${isActive ? "text-blue-700" : "text-gray-500"}`}>
+            <NavLink key={n.to} to={scoped(n.to)} data-testid={n.id} className={({ isActive }) => `relative flex min-w-0 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${isActive ? "text-blue-700" : "text-gray-500"}`}>
               <span className={n.primary ? "-mt-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200" : "flex h-7 items-center justify-center"}>
                 <n.icon className={n.primary ? "h-6 w-6" : "h-5 w-5"} />
               </span>
               <span>{n.label}</span>
             </NavLink>
           ))}
-          <button type="button" onClick={() => setOpen((value) => !value)} data-testid="mobile-nav-more" aria-expanded={open} className={`flex min-w-0 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${mobileMoreNav.some((item) => location.pathname.startsWith(item.to)) || open ? "text-blue-700" : "text-gray-500"}`}>
+          <button type="button" onClick={() => setOpen((value) => !value)} data-testid="mobile-nav-more" aria-expanded={open} className={`flex min-w-0 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${mobileMoreNav.some((item) => path.startsWith(item.to)) || open ? "text-blue-700" : "text-gray-500"}`}>
             <span className="flex h-7 items-center justify-center"><MoreHorizontal className="h-5 w-5" /></span>
             <span>Plus</span>
           </button>
         </div>
       </nav>
 
-      <main className="flex-1 min-w-0 pt-14 pb-20 lg:pb-0 lg:pt-0 lg:ml-64">
+      <main className="flex-1 min-w-0 pt-16 pb-20 lg:pb-0 lg:pt-20 lg:ml-64">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 pt-5 pb-24 sm:pt-8 sm:pb-28">
           <GettingStarted>{children}</GettingStarted>
         </div>

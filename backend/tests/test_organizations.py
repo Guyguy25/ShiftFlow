@@ -229,3 +229,53 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         self.assertEqual(result.status_code,200,result.text)
         self.assertEqual((await self.db.users.find_one({'id':'member'}))['onboarding_answers'],payload)
         self.assertNotIn('onboarding_answers',await self.db.users.find_one({'id':'owner'}))
+
+    async def test_search_is_workspace_scoped_for_members_and_owners(self):
+        await self.join()
+        for agency in ('owner', 'other'):
+            await self.db.missions.insert_one({'id': agency+'-mission', 'agency_id': agency, 'name': 'Festival Son', 'created_at': '2026'})
+            await self.db.workers.insert_one({'id': agency+'-worker', 'agency_id': agency, 'first_name': 'Paul', 'last_name': 'Son', 'email': 'private@example.com'})
+        for uid in ('owner', 'member'):
+            response = await self.request('GET', '/workspace/search?q=son', uid=uid)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual([m['id'] for m in response.json()['missions']], ['owner-mission'])
+            self.assertEqual([w['id'] for w in response.json()['workers']], ['owner-worker'])
+            self.assertNotIn('private@example.com', response.text)
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+
+    async def test_search_limits_results_and_treats_regex_as_literal(self):
+        for index in range(10):
+            await self.db.missions.insert_one({'id': str(index), 'agency_id': 'owner', 'name': 'Festival', 'created_at': str(index)})
+        response = await self.request('GET', '/workspace/search?q=festival')
+        self.assertEqual(len(response.json()['missions']), 6)
+        response = await self.request('GET', '/workspace/search', params={'q': '.*'})
+        self.assertEqual(response.json()['missions'], [])
+        response = await self.request('GET', '/workspace/search?q=f')
+        self.assertEqual(response.json(), {'missions': [], 'workers': []})
+        response = await self.request('GET', '/workspace/search', params={'q': 'x'*121})
+        self.assertEqual(response.status_code, 422)
+
+    async def test_search_requires_auth_and_rejects_revoked_members(self):
+        self.assertEqual((await self.client.get('/api/workspace/search?q=test')).status_code, 401)
+        await self.join()
+        await self.request('DELETE', '/organization/members/member')
+        response = await self.request('GET', '/workspace/search?q=festival', uid='member')
+        self.assertNotEqual(response.status_code, 500)
+        # Revoked accounts may fall back to their own organization; they cannot search the owner's data.
+        await self.db.missions.insert_one({'id': 'secret', 'agency_id': 'owner', 'name': 'Festival'})
+        response = await self.request('GET', '/workspace/search?q=festival', uid='member')
+        if response.status_code == 200: self.assertEqual(response.json()['missions'], [])
+        else: self.assertIn(response.status_code, (401, 403))
+
+    async def test_search_finds_full_worker_names(self):
+        await self.db.workers.insert_one({'id': 'paul', 'agency_id': 'owner', 'first_name': 'Paul', 'last_name': 'Martin'})
+        response = await self.request('GET', '/workspace/search', params={'q': 'Paul Martin'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([w['id'] for w in response.json()['workers']], ['paul'])
+
+    async def test_workspace_url_mismatch_blocks_reads_and_mutations(self):
+        headers = {**self.auth('owner'), 'X-Organization-ID': 'other'}
+        for method, path, body in [('GET', '/organization', None), ('PUT', '/organization', {'name': 'Wrong org', 'avatar': ''}), ('GET', '/workspace/search?q=festival', None), ('GET', '/missions', None), ('POST', '/workers', {'first_name': 'Paul', 'last_name': 'Martin', 'phone': '+33612345678'})]:
+            result = await self.client.request(method, '/api'+path, headers=headers, **({'json': body} if body else {}))
+            self.assertEqual(result.status_code, 409, result.text)
+        self.assertEqual(await self.db.workers.count_documents({}), 0)

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2 } from "lucide-react";
+import * as Menu from "@radix-ui/react-dropdown-menu";
+import { Building2, Check, ChevronDown, Settings, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api, formatApiError } from "../lib/api";
+import { workspacePath } from "../lib/workspacePaths";
 import { toast } from "sonner";
 
 export default function WorkspaceSelector({ compact = false }) {
@@ -10,26 +12,29 @@ export default function WorkspaceSelector({ compact = false }) {
   const [spaces, setSpaces] = useState([]);
   const [busy, setBusy] = useState(false);
   const org = user?.organization;
+  const settings = workspacePath(org?.id, "/app/settings");
   useEffect(() => {
     let live = true;
-    if (user) api.get("/organization").then(({ data }) => { if (live) setSpaces(data.spaces || []); }).catch(() => {});
+    setSpaces([]);
+    if (user?.id) api.get("/organization").then(({ data }) => { if (live) setSpaces(data.spaces || []); }).catch(() => {});
     return () => { live = false; };
   }, [user?.id, org?.id, org?.name]);
-  async function switchSpace(event) {
+  async function switchSpace(id) {
     setBusy(true);
     try {
-      await api.post("/organization/switch", { organization_id: event.target.value });
-      // Clear all workspace-scoped component state, caches and pending views together.
-      window.location.assign("/app/dashboard");
-    } catch (error) { toast.error(formatApiError(error.response?.data?.detail)); setBusy(false); }
+      await api.post("/organization/switch", { organization_id: id });
+      window.location.assign(workspacePath(id));
+    } catch (error) { toast.error(formatApiError(error.response?.data?.detail) || "Impossible de changer d’espace."); setBusy(false); }
   }
-  return <div className={"flex min-w-0 items-center gap-2 " + (compact ? "max-w-[220px]" : "w-full")} data-testid="workspace-selector">
-    <Link to="/app/settings" aria-label="Paramètres de l’organisation" className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-blue-50 text-blue-700">
-      {org?.avatar ? <img src={org.avatar} alt="" className="h-full w-full object-cover"/> : <Building2 size={18}/>}
-    </Link>
-    <div className="min-w-0 flex-1">
-      {!compact && <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Organisation</p>}
-      {spaces.length > 1 ? <select aria-label="Espace de travail" value={org?.id || ""} onChange={switchSpace} disabled={busy} className="w-full min-w-0 truncate bg-transparent py-1 text-sm font-semibold text-gray-900 outline-none focus:ring-2 focus:ring-blue-500">{spaces.map(space => <option key={space.id} value={space.id}>{space.name}</option>)}</select> : <Link to="/app/settings" className="block truncate py-1 text-sm font-semibold text-gray-900">{org?.name || user?.agency_name || "Mon organisation"}</Link>}
-    </div>
-  </div>;
+  const item = "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 text-sm text-gray-700 outline-none focus:bg-blue-50 focus:text-blue-700";
+  return <Menu.Root><Menu.Trigger asChild><button type="button" disabled={busy} aria-label={`Ouvrir le menu de l’organisation ${org?.name || user?.agency_name || "Mon organisation"}`} data-testid="workspace-selector" className={`group flex min-w-0 items-center gap-2 rounded-xl border border-transparent text-left transition-colors hover:border-gray-200 hover:bg-gray-50 data-[state=open]:border-blue-100 data-[state=open]:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${compact ? "w-full max-w-[min(55vw,260px)] p-1.5" : "w-full p-2"}`}>
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-blue-50 text-blue-700 ring-1 ring-blue-100">{org?.avatar ? <img src={org.avatar} alt="" className="h-full w-full object-cover"/> : <Building2 size={18}/>}</span>
+    <span className="min-w-0 flex-1">{!compact && <span className="block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Organisation</span>}<span className="block truncate text-sm font-semibold text-gray-900">{org?.name || user?.agency_name || "Mon organisation"}</span></span>
+    <ChevronDown size={16} className="shrink-0 text-gray-500 transition-transform group-data-[state=open]:rotate-180" aria-hidden="true"/>
+  </button></Menu.Trigger><Menu.Portal><Menu.Content align="start" sideOffset={8} className="z-[70] max-h-[var(--radix-dropdown-menu-content-available-height)] w-72 max-w-[calc(100vw-24px)] overflow-auto rounded-2xl border border-gray-200 bg-white p-2 shadow-xl">
+    <Menu.Label className="break-words px-3 py-2 text-xs text-gray-500">{org?.name || "Mon organisation"}</Menu.Label>
+    <Menu.Item asChild><Link to={settings} className={item}><Settings size={17}/>Paramètres de l’organisation</Link></Menu.Item>
+    <Menu.Item asChild><Link to={`${settings}#collaborateurs`} className={item}><Users size={17}/>Membres et invitations</Link></Menu.Item>
+    {spaces.length > 1 && <><Menu.Separator className="my-2 h-px bg-gray-100"/><Menu.Label className="px-3 py-2 text-xs text-gray-500">Mes espaces</Menu.Label>{spaces.map(space => <Menu.Item key={space.id} disabled={busy} onSelect={() => { if (space.id !== org?.id) switchSpace(space.id); }} className={item}><Building2 size={16} className="shrink-0"/><span className="min-w-0 flex-1 truncate">{space.name}</span>{space.id === org?.id && <Check size={16} className="shrink-0 text-blue-600"/>}</Menu.Item>)}</>}
+  </Menu.Content></Menu.Portal></Menu.Root>;
 }

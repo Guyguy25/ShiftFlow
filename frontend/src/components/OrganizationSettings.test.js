@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 jest.mock("../lib/api", () => ({ api: { get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() }, formatApiError: value => value }));
 jest.mock("../context/AuthContext", () => ({ useAuth: jest.fn() }));
-jest.mock("react-router-dom", () => ({ Link: ({ to, children, ...rest }) => <a href={to} {...rest}>{children}</a> }), { virtual: true });
+jest.mock("react-router-dom", () => ({ useLocation: () => ({ hash: "" }), Link: ({ to, children, ...rest }) => <a href={to} {...rest}>{children}</a> }), { virtual: true });
 let host, root, data;
 beforeEach(() => {
  global.IS_REACT_ACT_ENVIRONMENT=true;

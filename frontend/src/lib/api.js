@@ -50,6 +50,12 @@ function scheduleWhatsAppRefreshUnlock() {
 }
 
 api.interceptors.request.use((config) => {
+  // Bind workspace requests to the URL if another tab switches organizations.
+  const match = typeof window !== "undefined" && window.location.pathname.match(/^\/app\/organisations\/([^/]+)/);
+  if (match) {
+    config.headers = config.headers || {};
+    config.headers["X-Organization-ID"] = decodeURIComponent(match[1]);
+  }
   const url = String(config?.url || "");
   if (!url.includes("/whatsapp/refresh")) return config;
 

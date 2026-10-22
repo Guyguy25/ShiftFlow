@@ -31,9 +31,9 @@ export default function Settings() {
 
   return (
     <div data-testid="settings-page">
-      <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Mon compte</div>
+      <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Organisation</div>
       <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Paramètres</h1>
-      <p className="mt-2 text-sm text-gray-500">Gérez votre abonnement, votre facturation et les informations de votre compte.</p>
+      <p className="mt-2 text-sm text-gray-500">Gérez votre organisation, ses membres et son abonnement.</p>
       <div className="mt-8 grid gap-6 max-w-3xl">
         <OrganizationSettings />
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
@@ -73,7 +73,7 @@ export default function Settings() {
             <UserRound className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <h2 className="font-display text-lg font-bold text-gray-900">Informations du compte</h2>
-              <p className="mt-1 text-sm text-gray-600">Modifiez vos coordonnées, votre agence et votre photo de profil.</p>
+              <p className="mt-1 text-sm text-gray-600">Modifiez vos coordonnées et votre photo de profil personnelle.</p>
               {user?.email && <p className="mt-2 break-all text-sm text-gray-500">{user.email}</p>}
               <Link to="/app/profile" className="mt-4 inline-flex items-center gap-2 rounded-md border border-gray-200 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50">
                 Modifier mon profil <ArrowRight className="h-4 w-4" aria-hidden="true" />

@@ -13,7 +13,7 @@ from typing import List, Optional, Literal
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Form
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Form, Query
 from fastapi.responses import HTMLResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -25,6 +25,7 @@ from onboarding_emails import run_onboarding_emails
 import mission_billing
 import subscription_billing
 import organizations
+import workspace_search
 import return_feedback
 from return_visits import record_visit, visit_summary, retention_summary
 
@@ -291,12 +292,20 @@ async def public_account(user):
     return public_user(await organizations.decorate(db, user))
 
 
-async def get_workspace_user(user=Depends(get_current_user)):
-    return await organizations.workspace(db, user)
+async def get_workspace_user(request: Request, user=Depends(get_current_user)):
+    workspace = await organizations.workspace(db, user)
+    expected = request.headers.get("X-Organization-ID")
+    if expected and expected != workspace.get("organization_id"):
+        raise HTTPException(status_code=409, detail="Votre organisation active a changé. Rechargez la page avant de continuer.")
+    return workspace
 
 
-async def get_workspace_owner(user=Depends(get_current_user)):
-    return await organizations.workspace(db, user, owner_only=True)
+async def get_workspace_owner(request: Request, user=Depends(get_current_user)):
+    workspace = await organizations.workspace(db, user, owner_only=True)
+    expected = request.headers.get("X-Organization-ID")
+    if expected and expected != workspace.get("organization_id"):
+        raise HTTPException(status_code=409, detail="Votre organisation active a changé. Rechargez la page avant de continuer.")
+    return workspace
 
 
 # ---------------- Twilio SMS ----------------
@@ -973,6 +982,13 @@ async def reset(payload: ResetIn):
     # Disable previously issued tokens as well; their secrecy cannot be
     # guaranteed because the old endpoint returned them to its caller.
     raise HTTPException(status_code=503, detail="Réinitialisation temporairement indisponible")
+
+
+# Search is scoped through the same membership checks as missions and workers.
+@api.get("/workspace/search")
+async def search_workspace(response: Response, q: str = Query(default="", max_length=120), user=Depends(get_workspace_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return await workspace_search.search(db, user["id"], q)
 
 
 # ---------------- Workers ----------------
