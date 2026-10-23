@@ -97,7 +97,7 @@ export default function Dashboard() {
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]" data-testid="dashboard-overview">
       <section className={tile} data-testid="dashboard-actions">
         <div className="flex items-start justify-between gap-2">
-          <div><h2 className="font-display text-lg font-bold text-gray-950">À traiter</h2><p className="mt-1 text-xs text-gray-500">Équipes à compléter dans les 14 prochains jours.</p></div>
+          <div><h2 className="font-display text-lg font-bold text-gray-950">À traiter</h2><p className="mt-1 text-xs text-gray-500">Actions immédiates et équipes à compléter sous 14 jours.</p></div>
           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${priority.length ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-800"}`}>{priority.length ? `${priority.length} action${priority.length > 1 ? "s" : ""}` : "À jour"}</span>
         </div>
         {priority.length ? <ul className="mt-4 divide-y divide-gray-100">
