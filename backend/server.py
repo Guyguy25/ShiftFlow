@@ -28,6 +28,7 @@ import subscription_billing
 import organizations
 import workspace_search
 import return_feedback
+from activation_diagnostics import InteractionIn, ReasonIn, REASON_LABELS, safe_detail
 from return_visits import record_visit, visit_summary, retention_summary
 
 # Twilio (optional — fallback to demo if not configured)
@@ -2001,6 +2002,8 @@ async def on_startup():
     await db.timesheets.create_index("mission_id")
     await db.mission_workers.create_index("shift_id")
     await db.mission_workers.create_index("token", unique=True)
+    await db.activation_interactions.create_index("created_at", expireAfterSeconds=90 * 86400)
+    await db.activation_interactions.create_index([("user_id", 1), ("created_at", -1)])
 
     await seed_admin_and_demo()
     logger.info(f"Twilio ready: {twilio_ready()} (from={TWILIO_FROM or 'unset'})")
@@ -2106,6 +2109,62 @@ async def get_quota(user=Depends(get_workspace_user)):
         "can_manage_billing": user.get("organization_role", "owner") == "owner",
         **info,
     }
+
+
+# ---------------- Minimal activation diagnostics ----------------
+@api.post("/activation/interaction", status_code=204)
+async def activation_interaction(payload: InteractionIn, user=Depends(get_current_user)):
+    # First-party troubleshooting events, never mirrored to Meta or third parties.
+    # Limit volume and purge after 90 days; sensitive inputs are never accepted.
+    if user.get("role") != "owner":
+        now = now_utc()
+        recent = await db.activation_interactions.count_documents({
+            "user_id": user["id"], "created_at": {"$gte": now - timedelta(days=1)}
+        })
+        if recent < 80:
+            await db.activation_interactions.insert_one({
+                "user_id": user["id"],
+                "event": payload.event,
+                "detail": safe_detail(payload.event, payload.detail),
+                "device": user.get("last_device_type", "unknown"),
+                "created_at": now,
+            })
+    return Response(status_code=204)
+
+
+@api.get("/activation/reason/status")
+async def activation_reason_status(user=Depends(get_current_user)):
+    created = _parse_account_datetime(user.get("created_at"))
+    snoozed = _parse_account_datetime(user.get("activation_reason_snoozed_until"))
+    eligible = (
+        user.get("role") != "owner"
+        and created is not None and created <= now_utc() - timedelta(hours=48)
+        and not user.get("activation_nonuse_reason")
+        and not (snoozed and snoozed > now_utc())
+    )
+    return {"show": bool(eligible)}
+
+
+@api.post("/activation/reason")
+async def activation_reason_submit(payload: ReasonIn, user=Depends(get_current_user)):
+    if user.get("role") == "owner":
+        raise HTTPException(403, "Unavailable")
+    await db.users.update_one(
+        {"id": user["id"], "activation_nonuse_reason": {"$exists": False}},
+        {"$set": {
+            "activation_nonuse_reason": payload.reason,
+            "activation_nonuse_reason_at": iso(now_utc()),
+        }},
+    )
+    return {"ok": True}
+
+
+@api.post("/activation/reason/snooze")
+async def activation_reason_snooze(user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {
+        "$set": {"activation_reason_snoozed_until": iso(now_utc() + timedelta(days=30))}
+    })
+    return {"ok": True}
 
 
 @api.get("/feedback/status")
@@ -2607,6 +2666,54 @@ async def admin_dashboard(owner=Depends(require_owner)):
         "devices": devices,
         "plans": plans,
         "users": rows,
+    }
+
+
+@api.get("/admin/activation-diagnostics")
+async def admin_activation_diagnostics(owner=Depends(require_owner)):
+    # Only the account owner can view these existing, identified user records.
+    users = await db.users.find(
+        {"role": {"$ne": "owner"}},
+        {"_id": 0, "id": 1, "name": 1, "agency_name": 1, "email": 1,
+         "created_at": 1, "activation_nonuse_reason": 1},
+    ).sort("created_at", -1).limit(200).to_list(200)
+    ids = [u["id"] for u in users]
+    events = await db.activation_interactions.find(
+        {"user_id": {"$in": ids}},
+        {"_id": 0, "user_id": 1, "event": 1, "detail": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(10000).to_list(10000)
+    by_user = {uid: {"counts": {}, "recent": []} for uid in ids}
+    for item in events:
+        bucket = by_user.get(item["user_id"])
+        if not bucket:
+            continue
+        bucket["counts"][item["event"]] = bucket["counts"].get(item["event"], 0) + 1
+        if len(bucket["recent"]) < 12:
+            bucket["recent"].append({
+                "event": item["event"],
+                "detail": item.get("detail"),
+                "at": iso(item["created_at"]),
+            })
+    reason_counts = {}
+    for u in users:
+        if u.get("activation_nonuse_reason"):
+            key = u["activation_nonuse_reason"]
+            reason_counts[key] = reason_counts.get(key, 0) + 1
+    return {
+        "tracking_started": "New instrumentation; historical steps are not reconstructed.",
+        "reasons": [
+            {"key": key, "label": label, "count": reason_counts.get(key, 0)}
+            for key, label in REASON_LABELS.items()
+        ],
+        "users": [{
+            "id": u["id"],
+            "name": u.get("name") or "",
+            "agency_name": u.get("agency_name") or "",
+            "email": u.get("email") or "",
+            "created_at": u.get("created_at"),
+            "reason": u.get("activation_nonuse_reason"),
+            **by_user[u["id"]],
+        } for u in users],
     }
 
 
