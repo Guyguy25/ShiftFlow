@@ -3,7 +3,7 @@ import { workspacePath, unscopedPath } from "../lib/workspacePaths";
 import WorkspaceSelector from "./WorkspaceSelector";
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, Workflow, LogOut, MoreHorizontal, X, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, MessageCircle, LogOut, MoreHorizontal, X, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -16,7 +16,7 @@ const nav = [
   { to: "/app/missions", label: "Missions", icon: CalendarClock, id: "nav-missions" },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon, id: "nav-calendar" },
   { to: "/app/workers", label: "Intervenants", icon: Users, id: "nav-workers" },
-  { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "nav-automations" },
+  { to: "/app/automations", label: "Messages & relances", icon: MessageCircle, id: "nav-automations" },
   { to: "/app/hours", label: "Heures", icon: CalendarClock, id: "nav-hours" },
   { to: "/app/history", label: "Historique", icon: History, id: "nav-history" },
 ];
@@ -31,7 +31,7 @@ const mobileNav = [
 const mobileMoreNav = [
   { to: "/app/profile", label: "Profil", icon: UserRound },
   { to: "/app/calendar", label: "Calendrier", icon: CalendarIcon },
-  { to: "/app/automations", label: "Automatisations", icon: Workflow, id: "mobile-nav-automations" },
+  { to: "/app/automations", label: "Messages & relances", icon: MessageCircle, id: "mobile-nav-automations" },
   { to: "/app/hours", label: "Heures", icon: CalendarClock },
   { to: "/app/history", label: "Historique", icon: History },
   { to: "/app/help", label: "Aide", icon: LifeBuoy },
