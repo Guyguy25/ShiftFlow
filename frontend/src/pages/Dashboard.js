@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus, Users, AlertTriangle, CalendarClock, CheckCircle2, Send, MessageSquare, TrendingUp, X } from "lucide-react";
+import { Plus, AlertTriangle, CalendarClock, CheckCircle2, Send, TrendingUp, X } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { MISSION_STATUS_LABEL } from "../lib/statusMap";
+import { missionTeamStatus } from "../lib/missionPresentation";
 
 import ActivationHome from "../components/ActivationHome";
 import JourneyEmpty from "../components/JourneyEmpty";
@@ -11,24 +11,25 @@ import { activationNext } from "../lib/activation";
 import ShiftFlowLoader from "../components/ShiftFlowLoader";
 
 function MissionCard({ m }) {
-  const filled = m.total_confirmed >= m.total_needed && m.total_needed > 0;
-  const missing = Math.max(0, m.total_needed - m.total_confirmed);
+  const team = missionTeamStatus(m);
+  const filled = team.needed > 0 && team.missing === 0;
+  const missing = team.missing;
   return (
     <Link to={`/app/missions/${m.id}`} data-testid={`dashboard-mission-card-${m.id}`} className="block bg-white rounded-xl border border-gray-200 p-5 hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-transform">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">
-            {m.first_date}{m.last_date && m.last_date !== m.first_date ? ` → ${m.last_date}` : ""} · {(m.shifts || []).length} shift{(m.shifts || []).length > 1 ? "s" : ""}
+            {m.first_date}{m.last_date && m.last_date !== m.first_date ? ` → ${m.last_date}` : ""} · {(m.shifts || []).length} créneau(x)
           </div>
           <div className="mt-1 font-display font-bold text-lg truncate">{m.name}</div>
           <div className="text-sm text-gray-500 truncate">{m.location}</div>
         </div>
         <span className={`text-xs px-2 py-1 rounded-md border font-medium shrink-0 ${filled ? "status-confirmed" : missing > 0 ? "status-waiting" : "status-contacted"}`}>
-          {m.total_confirmed}/{m.total_needed} confirmés
+          {team.confirmed}/{team.needed} confirmés
         </span>
       </div>
       <div className="mt-4 flex items-center justify-between text-sm">
-        <div className="text-gray-500">{MISSION_STATUS_LABEL[m.status] || m.status}</div>
+        <div className="font-medium text-blue-700">{missing > 0 && m.status !== "cancelled" ? "Voir et compléter l’équipe →" : "Voir la mission →"}</div>
         {!filled && missing > 0 && m.status !== "cancelled" ? (
           <div className="flex items-center gap-1 text-amber-700"><AlertTriangle className="w-4 h-4"/> {missing} manquant{missing > 1 ? "s" : ""}</div>
         ) : filled ? (
@@ -103,42 +104,33 @@ export default function Dashboard() {
         </Link>}
       </div>
 
-      {!next && <div className={`mt-5 rounded-xl border p-4 flex items-start sm:items-center gap-3 ${connected ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`} data-testid="whatsapp-status-banner">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${connected ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-          <Send className="w-4 h-4"/>
+      {!next && (connected ? (
+        <div className="mt-5 flex items-center gap-2 text-xs text-green-800" data-testid="whatsapp-status-banner">
+          <CheckCircle2 className="h-4 w-4"/> WhatsApp connecté · Invitations prêtes à être envoyées
         </div>
-        <div className="text-sm min-w-0 flex-1">
-          {connected ? (
-            <><strong className="text-green-900">WhatsApp connecté</strong><span className="hidden sm:inline"> — les invitations et rappels sont envoyés depuis votre session WhatsApp.</span><div className="sm:hidden text-xs text-green-800 mt-0.5">Prêt à envoyer vos missions et relances.</div></>
-          ) : (
-            <><strong className="text-amber-900">WhatsApp non connecté</strong><div className="text-xs sm:text-sm text-amber-800 mt-0.5">Connectez-le avant d’envoyer une mission.</div></>
-          )}
+      ) : (
+        <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm" data-testid="whatsapp-status-banner">
+          <Send className="h-5 w-5 text-amber-700"/><div className="flex-1 text-amber-900"><strong>WhatsApp non connecté.</strong> Connectez-le avant d'envoyer une mission.</div>
+          <Link to="/app/workers?add=1" className="rounded-lg border border-amber-200 bg-white px-3 py-2 font-semibold text-amber-900">Connecter</Link>
         </div>
-        {!connected && <Link to="/app/workers?add=1" className="text-xs font-semibold text-amber-900 bg-white/80 border border-amber-200 rounded-lg px-2.5 py-1.5 shrink-0">Connecter</Link>}
+      ))}
+
+
+      {!next && <div className="mt-5 grid grid-cols-2 gap-3 sm:mt-6 lg:grid-cols-4 sm:gap-4">
+        {[
+          {label: "Missions à venir", value: data.upcoming.length, icon: CalendarClock, color: "text-blue-600", testid: "kpi-upcoming"},
+          {label: "Postes non confirmés", value: data.upcoming.filter(m => m.status !== "cancelled").reduce((n,m) => n + missionTeamStatus(m).missing, 0), icon: AlertTriangle, color: "text-amber-600", testid: "kpi-unfilled"},
+          {label: "Réponses en attente", value: data.pending_confirmations ?? "—", icon: Send, color: "text-amber-600", testid: "kpi-pending"},
+          {label: "Taux de réponse", value: whatsappStats ? `${whatsappStats.response_rate}%` : "—", icon: TrendingUp, color: "text-blue-600", testid: "kpi-response-rate"}
+        ].map(metric => <div key={metric.label} className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5" data-testid={metric.testid}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{metric.label}</div>
+          <div className="mt-2 flex items-center gap-2 text-2xl font-bold tabular-nums sm:text-3xl"><metric.icon className={`h-5 w-5 ${metric.color}`}/>{metric.value}</div>
+        </div>)}
       </div>}
 
-
-
-      {!next && <><div className="mt-5 sm:mt-6 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="kpi-missions-total"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Missions totales</div><div className="mt-2 text-3xl font-display font-bold">{data.missions_total}</div></div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="kpi-workers-count"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Intervenants</div><div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><Users className="w-6 h-6 text-blue-600"/> {data.workers_count}</div></div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="kpi-pending"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Confirmations en attente</div><div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><AlertTriangle className="w-6 h-6 text-amber-500"/> {data.pending_confirmations}</div></div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="kpi-upcoming"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Missions à venir</div><div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><CalendarClock className="w-6 h-6 text-blue-600"/> {data.upcoming.length}</div></div>
-      </div>
-
-      {whatsappStats && (
-        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="whatsapp-stats-block">
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="stat-sent-month"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">WhatsApp ce mois</div><div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><MessageSquare className="w-6 h-6 text-blue-600"/> {whatsappStats.sent_this_month}</div></div>
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="stat-whatsapp-total"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Messages envoyés</div><div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><Send className="w-6 h-6 text-green-600"/> {whatsappStats.whatsapp_total}</div></div>
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="stat-invites"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Invitations répondue</div><div className="mt-2 text-3xl font-display font-bold">{whatsappStats.invites_responded}/{whatsappStats.invites_sent}</div></div>
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5" data-testid="stat-response-rate"><div className="text-xs uppercase tracking-widest text-gray-500 font-semibold">Taux de réponse</div><div className="mt-2 text-3xl font-display font-bold flex items-center gap-2"><TrendingUp className="w-6 h-6 text-blue-600"/> {whatsappStats.response_rate}%</div></div>
-        </div>
-      )}
-
-      </>}
       <section className="mt-8 sm:mt-10">
-        <div className="flex items-center justify-between mb-3 sm:mb-4"><h2 className="font-display font-bold text-lg sm:text-xl">Missions à venir</h2><Link to="/app/missions" className="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="dashboard-see-all">Voir tout →</Link></div>
-        {data.upcoming.length === 0 ? <JourneyEmpty /> : <div className={`grid md:grid-cols-2 ${next ? "" : "xl:grid-cols-3"} gap-4`}>{data.upcoming.map((m) => <MissionCard key={m.id} m={m}/>)}</div>}
+        <div className="flex items-center justify-between mb-3 sm:mb-4"><h2 className="font-display font-bold text-lg sm:text-xl">Missions à suivre</h2><Link to="/app/missions" className="text-sm font-medium text-blue-600 hover:text-blue-700" data-testid="dashboard-see-all">Voir tout →</Link></div>
+        {data.upcoming.length === 0 ? <JourneyEmpty /> : <div className={`grid md:grid-cols-2 ${next ? "" : "xl:grid-cols-3"} gap-4`}>{[...data.upcoming].filter(m => m.status !== "cancelled").sort((a,b) => (missionTeamStatus(b).missing > 0 ? 1 : 0) - (missionTeamStatus(a).missing > 0 ? 1 : 0) || (a.first_date || "").localeCompare(b.first_date || "")).map((m) => <MissionCard key={m.id} m={m}/>)}</div>}
       </section>
 
       {data.ongoing.length > 0 && <section className="mt-10"><h2 className="font-display font-bold text-xl mb-4">Missions en cours</h2><div className={`grid md:grid-cols-2 ${next ? "" : "xl:grid-cols-3"} gap-4`}>{data.ongoing.map((m) => <MissionCard key={m.id} m={m}/>)}</div></section>}

@@ -42,3 +42,14 @@ test("invalid automation message disables saving", async () => {
   expect(host.querySelector('[data-testid="automations-whatsapp-template-save"]').disabled).toBe(true);
   expect(api.put).not.toHaveBeenCalled();
 });
+
+
+test("WhatsApp preview replaces tokens without sending anything", async () => {
+  await act(async () => root.render(<Automations />));
+  const preview = host.querySelector('[data-testid="automations-whatsapp-preview"]');
+  expect(preview).toBeTruthy();
+  expect(preview.textContent).toContain("Camille");
+  expect(preview.textContent).toContain("[lien sécurisé ShiftFlow]");
+  expect(preview.textContent).toContain("Aucun message");
+  expect(api.put).not.toHaveBeenCalled();
+});

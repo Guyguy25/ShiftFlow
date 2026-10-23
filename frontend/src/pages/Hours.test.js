@@ -101,3 +101,12 @@ test("reminder settings are saved as agency configuration", async () => {
   await act(async () => host.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
   expect(api.put).toHaveBeenCalledWith("/hours/settings", expect.objectContaining({ delay_hours: 4, reminder_hours: 48, max_reminders: 2, enabled: false }));
 });
+
+
+test("organizer sees a guided empty state and cannot export an empty list", async () => {
+  mockOwner([]);
+  await mount(<Hours />);
+  expect(host.querySelector('[data-testid="hours-steps"]').textContent).toContain("Demander");
+  expect(host.querySelector('[data-testid="hours-empty"]').textContent).toContain("Aucune déclaration");
+  expect(findButton("Exporter CSV").disabled).toBe(true);
+});

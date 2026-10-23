@@ -1,7 +1,7 @@
 import { useAuth } from "../context/AuthContext";
 import { canManageOperations } from "../lib/permissions";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Save, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Save, RotateCcw, MessageCircle, Info, CheckCircle2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { toast } from "sonner";
 
@@ -55,6 +55,18 @@ export default function Automations() {
 
     return { errors, lines, valid: errors.length === 0 };
   }, [allowedTokens, maxChars, maxLines, messageTemplate, requiredTokens]);
+
+  // Illustrative local preview only: never sends an invitation or generates a real link.
+  const preview = useMemo(() => {
+    const example = {
+      "{prenom}": "Camille", "{nom}": "Martin", "{mission}": "Montage Festival",
+      "{date}": "12 novembre 2026", "{heure_debut}": "08:00",
+      "{heure_fin}": "18:00", "{lieu}": "Lille",
+      "{remuneration}": "150 € net", "{tarif}": "150 € net",
+      "{agence}": "Votre organisation", "{lien}": "[lien sécurisé ShiftFlow]"
+    };
+    return (messageTemplate || "").replace(PLACEHOLDER_RE, token => example[token] || token);
+  }, [messageTemplate]);
 
   const insertToken = (token) => {
     const textarea = messageRef.current;
@@ -113,7 +125,7 @@ export default function Automations() {
                 <h2 className="font-display font-bold text-lg">Messages WhatsApp</h2>
 
               </div>
-              <p className="mt-1 text-sm text-gray-600">Modèles accessibles à tous. Les modifications s’appliquent aux prochains envois. Les messages déjà validés pour une sélection sont conservés.</p>
+              <p className="mt-1 text-sm text-gray-600">Modèles partagés avec les membres de votre organisation. Les modifications s’appliquent aux prochains envois ; les messages déjà validés ne changent pas.</p>
             </div>
           </div>
 
@@ -127,7 +139,7 @@ export default function Automations() {
           </label>
           <div className="mt-5">
             <div className="flex items-center justify-between gap-3 mb-2">
-              <label className="text-sm font-medium text-gray-900">Message envoyé</label>
+              <label className="text-sm font-medium text-gray-900">Contenu du message</label>
               <div className={`text-xs font-medium ${messageTemplate.length > maxChars ? "text-red-600" : "text-gray-500"}`}>{messageTemplate.length}/{maxChars} caractères · {messageValidation.lines}/{maxLines} lignes</div>
             </div>
             <textarea
@@ -159,10 +171,15 @@ export default function Automations() {
               <p className="mt-2 text-xs text-gray-500">* obligatoires : {requiredTokens.join(", ")}. Les sauts de ligne sont conservés dans WhatsApp.</p>
             </div>
 
-            <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <div><strong>Protection anti-abus :</strong> aucun lien externe n'est autorisé. Le lien sécurisé ShiftFlow doit être ajouté uniquement avec <code className="font-mono">{'{lien}'}</code> et exactement une fois.</div>
+            <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900 flex items-start gap-2">
+              <Info className="w-4 h-4 shrink-0 mt-0.5" />
+              <div><strong>Lien sécurisé :</strong> utilisez uniquement la variable <code className="font-mono">{'{lien}'}</code>, une seule fois. Les liens externes ne sont pas autorisés.</div>
             </div>
+            <section aria-label="Aperçu du message WhatsApp" data-testid="automations-whatsapp-preview" className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-gray-900">Aperçu WhatsApp</h3><span className="text-[11px] text-gray-500">Exemple fictif</span></div>
+              <div className="mt-3 max-w-lg rounded-xl border border-green-100 bg-[#edf7ed] px-4 py-3 text-sm leading-relaxed text-gray-900 whitespace-pre-wrap break-words">{preview || "Rédigez votre message pour voir un aperçu."}</div>
+              <p className="mt-2 text-xs text-gray-500">Aucun message n'est envoyé depuis cet aperçu.</p>
+            </section>
 
             {messageValidation.errors.length > 0 ? (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">

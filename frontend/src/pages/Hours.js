@@ -49,24 +49,31 @@ export default function Hours() {
     const url = URL.createObjectURL(result.data); const link = document.createElement("a");
     link.href = url; link.download = "shiftflow-heures.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
-  return <div className="max-w-6xl mx-auto space-y-5">
-    <div><h1 className="text-2xl font-bold">Heures après mission</h1><p className="text-gray-600 mt-1">Demandez, vérifiez et exportez les heures de vos intervenants confirmés.</p></div>
+  return <div data-testid="hours-page" className="max-w-6xl mx-auto space-y-5">
+    <div><div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Suivi après prestation</div><h1 className="mt-1.5 text-[28px] sm:text-3xl font-display font-bold tracking-tight">Heures après mission</h1><p className="text-gray-600 mt-2 text-sm">Demandez, vérifiez et exportez les heures de vos intervenants confirmés.</p></div>
+    <ol aria-label="Étapes de validation des heures" className="grid grid-cols-3 gap-2 sm:gap-3" data-testid="hours-steps">
+      {[["1", "Demander", "Envoyer les liens après la mission"], ["2", "Vérifier", "Valider ou corriger les déclarations"], ["3", "Exporter", "Récupérer les heures approuvées"]].map(([num, label, help]) => <li key={num} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4"><div className="flex items-center gap-2 text-sm font-semibold text-gray-900"><span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700 text-xs">{num}</span>{label}</div><p className="mt-1 hidden text-xs text-gray-500 sm:block">{help}</p></li>)}
+    </ol>
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-800">{error}</p>}
     {notice && <p role="status" className="rounded-lg bg-blue-50 p-3 text-blue-900">{notice}</p>}
     <div className="flex flex-wrap gap-3">
       <label className="text-sm">Mission<select aria-label="Mission" className={input + " block mt-1 max-w-xs"} value={mission} onChange={e => setMission(e.target.value)}><option value="">Toutes les missions</option>{missions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
       <label className="text-sm">Statut<select aria-label="Statut" className={input + " block mt-1"} value={status} onChange={e => setStatus(e.target.value)}><option value="">Tous les statuts</option>{Object.entries(HOUR_STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-      <button disabled={busy || !mission} className={button + " self-end bg-blue-600 text-white"} onClick={() => action(async () => {
+      <button disabled={busy || !mission} title={!mission ? "Sélectionnez d’abord une mission pour demander les heures." : undefined} className={button + " self-end bg-blue-600 text-white disabled:cursor-not-allowed"} onClick={() => action(async () => {
         const { data } = await api.post(`/missions/${mission}/hours/request`);
         setNotice(`${data.sent} message(s) envoyé(s), ${data.failed} échec(s), ${data.skipped} affectation(s) ignorée(s) (créneau non terminé, limite de relance, déjà soumis ou indisponible).`);
       })}>Demander / relancer les heures</button>
-      <button disabled={busy} className={button + " self-end"} onClick={exportCsv}>Exporter CSV</button>
+      <button disabled={busy || !data?.items?.length} title={!data?.items?.length ? "Aucune déclaration à exporter pour ces filtres." : undefined} className={button + " self-end disabled:cursor-not-allowed"} onClick={exportCsv}>Exporter CSV</button>
       <button disabled={busy} className={button + " self-end"} onClick={() => action(load)}>Actualiser</button>
     </div>
-    <p className="text-sm text-gray-600">Sélectionnez une mission pour envoyer les liens. Seuls les créneaux terminés et les intervenants confirmés sont concernés.</p>
+    <p className="text-sm text-gray-600">{mission ? "Seuls les créneaux terminés et les intervenants confirmés reçoivent un lien. Les envois restent soumis aux limites de relance." : "Pour commencer, choisissez une mission terminée ci-dessus. Le bouton d'envoi sera alors disponible."}</p>
     {data && <>
-      <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border bg-white p-4"><p className="text-sm text-gray-600">Heures validées (filtres actifs)</p><strong className="text-2xl">{duration(data.summary.approved_minutes)}</strong></div><div className="rounded-xl border bg-white p-4"><p>À vérifier</p><strong>{data.summary.counts.submitted}</strong></div><div className="rounded-xl border bg-white p-4 text-sm space-y-1"><p className="font-semibold">Montants validés indicatifs</p><p>{money(data.summary.approved_amount_cents.gross)} brut</p><p>{money(data.summary.approved_amount_cents.net)} net</p><p>{money(data.summary.approved_amount_cents.unspecified)} base non précisée</p></div></div>
-      {!data.items.length && <div className="rounded-xl border bg-white p-8 text-gray-600">Aucune déclaration pour ces filtres. Sélectionnez une mission terminée et demandez les heures.</div>}
+      {data.items.length > 0 && <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border bg-white p-4"><p className="text-sm text-gray-600">Heures validées (filtres actifs)</p><strong className="text-2xl">{duration(data.summary.approved_minutes)}</strong></div><div className="rounded-xl border bg-white p-4"><p>À vérifier</p><strong>{data.summary.counts.submitted}</strong></div><div className="rounded-xl border bg-white p-4 text-sm space-y-1"><p className="font-semibold">Montants validés indicatifs</p><p>{money(data.summary.approved_amount_cents.gross)} brut</p><p>{money(data.summary.approved_amount_cents.net)} net</p><p>{money(data.summary.approved_amount_cents.unspecified)} base non précisée</p></div></div>}
+      {!data.items.length && <div className="rounded-xl border border-dashed border-gray-200 bg-white p-8 text-center" data-testid="hours-empty">
+        <h2 className="font-semibold text-gray-950">Aucune déclaration d'heures pour le moment</h2>
+        <p className="mx-auto mt-2 max-w-xl text-sm text-gray-600">{mission ? "Si des intervenants sont confirmés sur des créneaux terminés, utilisez « Demander / relancer les heures » pour leur envoyer un lien personnel par WhatsApp." : "Sélectionnez une mission passée, puis envoyez la demande d'heures aux intervenants confirmés. Vous pourrez ensuite vérifier et exporter leurs déclarations."}</p>
+        {!mission && <Link to="/app/missions" className="mt-4 inline-flex text-sm font-semibold text-blue-700">Consulter les missions →</Link>}
+      </div>}
       {data.items.map(row => <article key={row.id} className="rounded-xl border bg-white p-4 sm:p-6 space-y-3">
         <div className="flex flex-wrap justify-between gap-2"><div><h2 className="text-lg font-semibold">{row.worker_name}</h2><Link className="text-blue-700 underline" to={`/app/missions/${row.mission_id}`}>{row.mission_name}</Link></div><span className="font-semibold text-blue-900">{HOUR_STATUS[row.status]}</span></div>
         <p className="text-sm">{compensationLabel(row.compensation)} · {row.timezone} · {row.minutes == null ? "Non soumis" : `${duration(row.minutes)} · ${money(row.amount_cents)}`}</p>
