@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Pencil } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
+import { trackActivation } from "../lib/activationTracking";
 import { useAuth } from "../context/AuthContext";
 import UpgradeModal from "../components/UpgradeModal";
 import ShiftFields, { MAX_CREW } from "../components/ShiftFields";
@@ -36,6 +37,7 @@ export default function MissionCreate() {
   const heading = useRef(null);
   const submitting = useRef(false);
   useEffect(() => { heading.current?.focus(); }, [step]);
+  useEffect(() => { trackActivation("mission_form_opened"); }, []);
   const [mission, setMission] = useState(savedDraft?.mission || {
     name: "", location: "", address: "", description: "",
     cascade_enabled: true, followup_hours: 2,
@@ -58,18 +60,18 @@ export default function MissionCreate() {
     e.preventDefault(); setError("");
     if (submitting.current) return;
     if (step === 0) {
-      if (!mission.name.trim() || !mission.location.trim()) { setError("Indiquez le nom et le lieu de la mission."); return; }
-      setStep(1); return;
+      if (!mission.name.trim() || !mission.location.trim()) { trackActivation("mission_form_error", "validation"); setError("Indiquez le nom et le lieu de la mission."); return; }
+      trackActivation("mission_form_step", "schedule"); setStep(1); return;
     }
     if (shifts.some(s => !s.date || !s.start_time || !s.end_time || !Number.isInteger(Number(s.people_needed)) || Number(s.people_needed) < 1 || Number(s.people_needed) > MAX_CREW || (s.pay_type === "fixed" ? s.fixed_amount === "" || !Number.isFinite(Number(s.fixed_amount)) || Number(s.fixed_amount) < 0 : s.rate_hourly === "" || !Number.isFinite(Number(s.rate_hourly)) || Number(s.rate_hourly) < 0))) { setError("Complétez la date, les horaires, le nombre de personnes et le tarif de chaque créneau."); setStep(1); return; }
-    if (shifts.some(s => s.pay_type === "fixed" && !["gross", "net"].includes(s.pay_basis))) { setError("Précisez brut ou net pour chaque cachet fixe."); setStep(1); return; }
+    if (shifts.some(s => s.pay_type === "fixed" && !["gross", "net"].includes(s.pay_basis))) { trackActivation("mission_form_error", "validation"); setError("Précisez brut ou net pour chaque cachet fixe."); setStep(1); return; }
     const pastShift = shifts.find(s => s.date && s.date < todayStr);
     if (pastShift) {
       setError("Un ou plusieurs shifts ont une date déjà passée. Corrigez la date avant de continuer.");
       setLoading(false);
       return;
     }
-    if (step === 1) { setStep(2); return; }
+    if (step === 1) { trackActivation("mission_form_step", "review"); setStep(2); return; }
     submitting.current = true; setLoading(true);
     try {
       const payload = {
@@ -88,6 +90,7 @@ export default function MissionCreate() {
       nav(`/app/missions/${data.id}?step=select`);
     } catch (err) {
       const status = err.response?.status;
+      trackActivation("mission_form_error", status === 402 ? "quota" : "request_failed");
       const detail = formatApiError(err.response?.data?.detail) || err.message;
       if (status === 402) {
         setUpgrade(detail);

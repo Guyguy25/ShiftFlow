@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import ShiftFlowLoader from "../components/ShiftFlowLoader";
+import AdminActivationDiagnostics from "../components/AdminActivationDiagnostics";
 
 const pct = (value, total) => total ? Math.round((value / total) * 100) : 0;
 const fmtDate = value => {
@@ -234,6 +235,8 @@ export default function Admin() {
           </div>
         </section>
       </div>
+
+      <AdminActivationDiagnostics />
 
       <section className="mt-5 rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="border-b border-gray-100 p-5">

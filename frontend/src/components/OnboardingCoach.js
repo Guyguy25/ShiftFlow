@@ -4,6 +4,7 @@ import { ArrowRight, MousePointer2, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useActivation } from "../context/ActivationContext";
 import { actionHints, sectionHints, coachPosition } from "../lib/onboardingCoach";
+import { trackActivation } from "../lib/activationTracking";
 
 const visible = el => el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
 export default function OnboardingCoach() {
@@ -24,7 +25,7 @@ export default function OnboardingCoach() {
     window.addEventListener("shiftflow:replay-guide", replay);
     return () => window.removeEventListener("shiftflow:replay-guide", replay);
   }, [key]);
-  const dismiss = () => { setPaused(true); setForced(false); try { localStorage.setItem(key, "paused"); } catch {} };
+  const dismiss = () => { trackActivation("onboarding_guide_dismissed"); setPaused(true); setForced(false); try { localStorage.setItem(key, "paused"); } catch {} };
   useEffect(() => {
     if (!enabled) { setView(null); return; }
     let frame = 0;

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Check, CalendarClock, Users, MessageCircle } from "lucide-react";
 import { activationSteps } from "../lib/activation";
 import FirstMissionHelp from "./FirstMissionHelp";
+import ActivationReasonPrompt from "./ActivationReasonPrompt";
 
 export default function ActivationHome({ summary, whatsapp, quota, next }) {
   const steps = activationSteps(summary, whatsapp, quota);
@@ -29,6 +30,7 @@ export default function ActivationHome({ summary, whatsapp, quota, next }) {
     <details className="mt-6 border-t border-gray-200 pt-2"><summary className="cursor-pointer py-3 text-sm font-medium text-gray-600">Contacts, WhatsApp et envois : comment ça marche ?</summary><FirstMissionHelp /></details>
     <Link to="/demo" className="inline-flex min-h-11 items-center text-sm text-blue-700 underline">Voir un exemple avec des contacts fictifs</Link>
     {quota?.plan === "free" && !quota.trial_started && <p className="mt-3 text-xs leading-relaxed text-gray-500">Vos 3 premières missions sont offertes, valables à vie et sans carte bancaire.</p>}
+    <ActivationReasonPrompt />
   </div>;
 }
 
