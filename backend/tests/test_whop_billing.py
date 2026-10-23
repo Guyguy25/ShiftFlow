@@ -39,6 +39,35 @@ class WhopTests(IsolatedAsyncioTestCase):
     async def test_wrong_price_company_currency_trial_or_period_fail_closed(self):
         for field,value in [('initial_price',89),('renewal_price',89),('company',{'id':'other'}),('currency','usd'),('billing_period',365),('trial_period_days',7),('adaptive_pricing_enabled',True)]:
             with self.subTest(field=field), self.assertRaises(HTTPException): b.validate_plan({**self.plan,field:value},self.offer)
+    async def test_business_annual_diagnostic_identifies_actual_field(self):
+        offer=b.CATALOG['business_yearly']
+        plan={**self.plan,'id':offer['plan_id'],'billing_period':365,'renewal_price':1072.80}
+        b.validate_plan(plan,offer)
+        for field,value,expected in [('renewal_price',1072,'1 072'),('currency','usd','devise'),('billing_period',30,'365 jours'),('initial_price',149,'frais initiaux')]:
+            with self.subTest(field=field), self.assertRaises(HTTPException) as caught:
+                b.validate_plan({**plan,field:value},offer)
+            self.assertIn('Business annuel',caught.exception.detail)
+            self.assertIn('Aucun paiement',caught.exception.detail)
+            if field=='renewal_price': self.assertIn('1072,80',caught.exception.detail)
+            else: self.assertIn(expected,caught.exception.detail)
+
+    async def test_current_catalog_account_and_verified_first_charge_are_supported(self):
+        plan={**self.plan,'initial_price':99,'initial_price_due':{'amount':'99.00','currency':'eur'},'account':{'id':'biz_test'}}
+        del plan['company']
+        b.validate_plan(plan,self.offer)
+        for due in [None,{}, {'amount':'198.00','currency':'eur'},{'amount':'99.00','currency':'usd'},{'amount':'99.001','currency':'eur'}]:
+            with self.subTest(due=due), self.assertRaises(HTTPException):
+                b.validate_plan({**plan,'initial_price_due':due},self.offer)
+        with self.assertRaises(HTTPException):
+            b.validate_plan({**plan,'account':{'id':'biz_other'}},self.offer)
+
+    async def test_money_comparison_never_truncates_extra_decimals(self):
+        self.assertEqual(b.cents('1072.80'),107280)
+        for value in ['1072.809',None, 'NaN', 'Infinity', {}, '']:
+            self.assertEqual(b.cents(value),-1)
+        with self.assertRaises(HTTPException):
+            b.validate_plan({**self.plan,'renewal_price':'99.001'},self.offer)
+
     async def test_checkout_metadata_and_pending_reuse(self):
         c=await b.checkout(self.db,self.user,'team_monthly');again=await b.checkout(self.db,self.user,'team_monthly')
         self.assertEqual(c,again)

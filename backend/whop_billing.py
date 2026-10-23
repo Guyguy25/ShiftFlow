@@ -29,8 +29,16 @@ def ready(): return all(os.environ.get(key, '').strip() for key in ('WHOP_API_KE
 def identifier(value): return value.get('id') if isinstance(value,dict) else value
 
 def cents(value):
-    try: return int(Decimal(str(value)) * 100)
-    except Exception: return -1
+    try:
+        amount = Decimal(str(value)) * 100
+        return int(amount) if amount.is_finite() and amount == amount.to_integral_value() else -1
+    except (ValueError, TypeError, ArithmeticError):
+        return -1
+
+
+def money(value):
+    amount = cents(value)
+    return f"{Decimal(amount) / 100:.2f} €".replace('.', ',') if amount >= 0 else 'valeur absente ou invalide'
 
 async def api(method,path,body=None):
     if not ready(): raise HTTPException(503,'Le paiement Whop est en cours de configuration. Aucun paiement n’a été lancé.')
@@ -42,13 +50,45 @@ async def api(method,path,body=None):
             return response.json()
     except httpx.HTTPError: raise HTTPException(502,'Impossible de joindre Whop. Réessayez.')
 
-def validate_plan(plan,offer):
-    company = identifier(plan.get('company')) or plan.get('company_id')
-    if (plan.get('id') != offer['plan_id'] or company != os.environ.get('WHOP_COMPANY_ID') or plan.get('currency','').lower() != 'eur'
-        or plan.get('plan_type') != 'renewal' or plan.get('billing_period') != offer['days']
-        or cents(plan.get('initial_price')) != 0 or cents(plan.get('renewal_price')) != offer['amount']
-        or plan.get('trial_period_days',0) or plan.get('expiration_days') or plan.get('split_pay_required_payments') or plan.get('adaptive_pricing_enabled') or plan.get('allow_multiple_quantity')):
-        raise HTTPException(503,'Le montant, la devise ou la périodicité de cette offre Whop ne correspond pas au tarif affiché. Contactez le support.')
+def validate_plan(plan, offer):
+    """Fail closed, but identify the exact public catalog field that differs.
+
+    New Whop responses expose account instead of company and a canonical
+    initial_price_due. Use that verified total when available: initial_price
+    alone does not establish what the first recurring checkout will charge.
+    """
+    issues = []
+    company = identifier(plan.get('company')) or plan.get('company_id') or identifier(plan.get('account'))
+    expected_company = os.environ.get('WHOP_COMPANY_ID', '').strip()
+    if plan.get('id') != offer['plan_id']: issues.append('identifiant du plan incorrect')
+    if not expected_company or company != expected_company: issues.append('entreprise différente de WHOP_COMPANY_ID, ou identifiant entreprise absent de la réponse')
+    currency = plan.get('currency')
+    if not isinstance(currency, str) or currency.lower() != 'eur':
+        issues.append('devise attendue : EUR ; reçue : ' + (currency[:12] if isinstance(currency, str) else 'absente'))
+    if plan.get('plan_type') != 'renewal': issues.append('le plan doit être un abonnement récurrent (renewal)')
+    if plan.get('billing_period') != offer['days']:
+        period = plan.get('billing_period')
+        received = str(period) if type(period) in (int, float) else 'absente ou invalide'
+        issues.append(f"périodicité attendue : {offer['days']} jours ; reçue : {received}")
+    expected_price = money(Decimal(offer['amount']) / 100)
+    if cents(plan.get('renewal_price')) != offer['amount']:
+        issues.append(f"montant du renouvellement attendu : {expected_price} ; reçu : {money(plan.get('renewal_price'))}")
+    if 'initial_price_due' in plan:
+        due = plan.get('initial_price_due')
+        if not isinstance(due, dict) or cents(due.get('amount')) != offer['amount'] or str(due.get('currency', '')).lower() != 'eur':
+            received = money(due.get('amount')) if isinstance(due, dict) else 'valeur absente ou invalide'
+            issues.append(f"premier paiement attendu : {expected_price} en EUR ; reçu : {received} (vérifiez aussi sa devise)")
+    elif cents(plan.get('initial_price')) != 0:
+        issues.append(f"frais initiaux attendus par l’intégration actuelle : 0,00 € ; reçus : {money(plan.get('initial_price'))}. Vérifiez le total du premier paiement avant de modifier le plan")
+    for key, label in (
+        ('trial_period_days', 'période d’essai'), ('expiration_days', 'expiration automatique'),
+        ('split_pay_required_payments', 'paiement fractionné'), ('adaptive_pricing_enabled', 'tarification adaptative'),
+        ('allow_multiple_quantity', 'quantités multiples'),
+    ):
+        if plan.get(key): issues.append(label + ' à désactiver pour cette offre')
+    if issues:
+        name = offer['tier'].capitalize() + (' annuel' if offer['days'] == 365 else ' mensuel')
+        raise HTTPException(503, f"Configuration Whop — {name} : " + ' ; '.join(issues) + '. Aucun paiement n’a été lancé.')
 
 async def acquire(db,key):
     nonce=secrets.token_hex(16)
