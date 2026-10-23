@@ -92,7 +92,32 @@ class WhopTests(IsolatedAsyncioTestCase):
         self.assertEqual(c,again)
         calls=[c for c in self.provider.call_args_list if c.args[0]=='POST'];self.assertEqual(len(calls),1)
         self.assertEqual(calls[0].args[2]['metadata']['organization_id'],'org_test')
-        with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'pro_monthly')
+    async def test_browse_all_offers_immediately_then_reuse_each_quote(self):
+        checkouts={}
+        for key,offer in b.CATALOG.items():
+            self.plan={**self.plan,'id':offer['plan_id'],'billing_period':offer['days'],'renewal_price':offer['amount']/100}
+            checkouts[key]=await b.checkout(self.db,self.user,key)
+        self.assertEqual(len({c['reference'] for c in checkouts.values()}),6)
+        self.assertEqual(await self.db.whop_checkouts.count_documents({'organization_id':'org_test'}),6)
+        for key in reversed(list(b.CATALOG)):
+            self.assertEqual(await b.checkout(self.db,self.user,key),checkouts[key])
+        self.assertEqual(sum(c.args[0]=='POST' for c in self.provider.call_args_list),6)
+        account=await accounts(self.db).find_one({'id':'org_test'})
+        self.assertEqual(account['plan'],'free')
+        self.assertNotIn('whop_membership_id',account)
+
+    async def test_switching_offer_keeps_old_payment_reference_verifiable(self):
+        original=await self.paid()
+        offer=b.CATALOG['business_yearly']
+        self.plan={**self.plan,'id':offer['plan_id'],'billing_period':offer['days'],'renewal_price':offer['amount']/100}
+        other=await b.checkout(self.db,self.user,'business_yearly')
+        self.assertNotEqual(original['reference'],other['reference'])
+        self.assertEqual(await b.fulfill_payment(self.db,'pay_test'),'org_test')
+        self.assertTrue((await self.db.whop_checkouts.find_one({'_id':original['reference']}))['fulfilled'])
+        self.assertFalse((await self.db.whop_checkouts.find_one({'_id':other['reference']}))['fulfilled'])
+        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'team')
+        with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'business_yearly')
+
     async def test_missing_secrets_do_not_create_checkout(self):
         with patch.dict(os.environ,{'WHOP_WEBHOOK_SECRET':''}),self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'team_monthly')
         self.provider.assert_not_called()

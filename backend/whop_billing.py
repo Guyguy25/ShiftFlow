@@ -112,9 +112,11 @@ async def checkout(db,user,offer_key):
             raise HTTPException(409,'Un abonnement existe déjà pour cette organisation. Gérez-le depuis les paramètres avant de souscrire à nouveau.')
         if (account.get('return_feedback') or {}).get('promo_code'):
             raise HTTPException(409,'Votre offre personnelle de deux mois gratuits doit être transférée sur Whop par le support avant tout paiement. Contactez-nous pour la conserver.')
-        pending=await db.whop_checkouts.find_one({'organization_id':user['id'],'expires_at':{'$gt':time.time()},'fulfilled':{'$ne':True}})
+        # A checkout is a quote, not a subscription reservation. Reuse it only
+        # for this offer so closing the modal never locks the other prices.
+        # Keep every reference: a delayed provider payment must stay verifiable.
+        pending=await db.whop_checkouts.find_one({'organization_id':user['id'],'offer_key':offer_key,'expires_at':{'$gt':time.time()},'fulfilled':{'$ne':True}})
         if pending:
-            if pending['offer_key'] != offer_key: raise HTTPException(409,'Un autre tarif est déjà ouvert pour cette organisation. Terminez ce paiement ou réessayez dans 20 minutes.')
             return {'session_id':pending['session_id'],'reference':pending['_id'],'environment':'sandbox' if os.environ.get('WHOP_SANDBOX') == 'true' else 'production'}
         plan=await api('GET','/plans/'+offer['plan_id']);validate_plan(plan,offer)
         ref=secrets.token_urlsafe(32)
