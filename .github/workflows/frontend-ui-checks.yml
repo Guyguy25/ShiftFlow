@@ -1,0 +1,28 @@
+name: Frontend UI checks
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ui-checks.yml'
+  push:
+    branches:
+      - feat/ux-clarity-oct-2026
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --non-interactive
+      - name: Unit tests
+        run: CI=true yarn test --watchAll=false --runInBand
+      - name: Production build validation (no deployment)
+        run: CI=false yarn build
