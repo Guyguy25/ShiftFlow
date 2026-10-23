@@ -80,9 +80,12 @@ def validate_plan(plan, offer):
             issues.append(f"premier paiement attendu : {expected_price} en EUR ; reçu : {received} (vérifiez aussi sa devise)")
     elif cents(plan.get('initial_price')) != 0:
         issues.append(f"frais initiaux attendus par l’intégration actuelle : 0,00 € ; reçus : {money(plan.get('initial_price'))}. Vérifiez le total du premier paiement avant de modifier le plan")
+    # Whop reports this raw flag even when adaptive pricing is unavailable.
+    # It only converts one-time payments; renewal plans keep their base currency.
+    # We require renewal/EUR above and recheck the actual paid currency below.
     for key, label in (
         ('trial_period_days', 'période d’essai'), ('expiration_days', 'expiration automatique'),
-        ('split_pay_required_payments', 'paiement fractionné'), ('adaptive_pricing_enabled', 'tarification adaptative'),
+        ('split_pay_required_payments', 'paiement fractionné'),
         ('allow_multiple_quantity', 'quantités multiples'),
     ):
         if plan.get(key): issues.append(label + ' à désactiver pour cette offre')

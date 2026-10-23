@@ -37,8 +37,27 @@ class WhopTests(IsolatedAsyncioTestCase):
         for offer in b.CATALOG.values():
             b.validate_plan({**self.plan,'id':offer['plan_id'],'billing_period':offer['days'],'initial_price':0,'renewal_price':offer['amount']/100},offer)
     async def test_wrong_price_company_currency_trial_or_period_fail_closed(self):
-        for field,value in [('initial_price',89),('renewal_price',89),('company',{'id':'other'}),('currency','usd'),('billing_period',365),('trial_period_days',7),('adaptive_pricing_enabled',True)]:
+        for field,value in [('initial_price',89),('renewal_price',89),('company',{'id':'other'}),('currency','usd'),('billing_period',365),('trial_period_days',7)]:
             with self.subTest(field=field), self.assertRaises(HTTPException): b.validate_plan({**self.plan,field:value},self.offer)
+    async def test_raw_adaptive_flag_does_not_block_any_recurring_eur_offer(self):
+        for offer in b.CATALOG.values():
+            plan={**self.plan,'id':offer['plan_id'],'billing_period':offer['days'],
+                  'renewal_price':offer['amount']/100,'adaptive_pricing_enabled':True}
+            b.validate_plan(plan,offer)
+            for change in [{'plan_type':'one_time'},{'currency':'usd'}, {'renewal_price':1}]:
+                with self.subTest(offer=offer['plan_id'],change=change),self.assertRaises(HTTPException):
+                    b.validate_plan({**plan,**change},offer)
+
+    async def test_adaptive_flag_allows_checkout_but_never_foreign_currency_activation(self):
+        self.plan['adaptive_pricing_enabled']=True
+        checkout=await self.paid()
+        self.assertEqual(checkout['session_id'],'ch_test')
+        self.payment['currency']='usd'
+        self.assertIsNone(await b.fulfill_payment(self.db,'pay_test'))
+        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['plan'],'free')
+        self.payment['currency']='eur'
+        self.assertEqual(await b.fulfill_payment(self.db,'pay_test'),'org_test')
+
     async def test_business_annual_diagnostic_identifies_actual_field(self):
         offer=b.CATALOG['business_yearly']
         plan={**self.plan,'id':offer['plan_id'],'billing_period':365,'renewal_price':1072.80}
