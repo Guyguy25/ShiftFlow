@@ -25,7 +25,7 @@ export default function Pricing() {
     api.get("/whop/config").then(({ data }) => { if (live) setConfig(data); }).catch(() => { if (live) setError("Le service de paiement est indisponible. Réessayez plus tard."); });
     if (orgId) api.get("/plan/quota", { headers: { "X-Organization-ID": orgId } }).then(({ data }) => { if (live) setQuota(data); }).catch(() => { if (live) setError("Impossible de vérifier l’offre de cette organisation. Rechargez la page."); });
     const params = new URLSearchParams(window.location.search);
-    if (user && params.get("whop_reference") && params.get("organization_id")) setCheckout({ returning: true, reference: params.get("whop_reference"), organization_id: params.get("organization_id") });
+    if (user && params.get("whop_reference") && params.get("organization_id")) setCheckout({ returning: true, reference: params.get("whop_reference"), organization_id: params.get("organization_id"), payment_id: params.get("payment"), payment_status: params.get("status") });
     return () => { live = false; };
   }, [orgId, user?.id]);
   const paid = quota?.plan === "pro";
