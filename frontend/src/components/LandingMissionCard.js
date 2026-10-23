@@ -31,16 +31,16 @@ export const missionPhases = [
 
 const STATUS_COLORS = {
   "Proposition envoyée": "text-amber-400",
-  "En attente": "text-[#a1a1aa]",
+  "En attente": "text-[#94a3b8]",
   "A refusé": "text-red-500",
   "A confirmé ✓": "text-[#25d366]",
 };
 
 function PersonRow({ name, initial, index, status }) {
   return (
-    <li className="flex min-h-[52px] items-center justify-between gap-3 rounded-xl border border-[#2a2a2f] bg-[#141416] px-3 py-2.5 text-sm transition-colors duration-500">
-      <span className="flex min-w-0 items-center gap-2.5 font-semibold text-[#f4f4f5]">
-        <span aria-hidden="true" className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#2a2a2f] text-xs font-bold text-white">{initial}</span>
+    <li className="flex min-h-[52px] items-center justify-between gap-3 rounded-xl border border-[#334155] bg-[#1e293b] px-3 py-2.5 text-sm transition-colors duration-500">
+      <span className="flex min-w-0 items-center gap-2.5 font-semibold text-[#f8fafc]">
+        <span aria-hidden="true" className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#334155] text-xs font-bold text-white">{initial}</span>
         <span className="whitespace-nowrap">{index}. {name}</span>
       </span>
       <span className={`text-right text-[11px] font-semibold leading-snug transition-colors duration-500 sm:text-xs ${STATUS_COLORS[status]}`}>{status}</span>
@@ -90,11 +90,11 @@ export default function LandingMissionCard({ expanded = false }) {
     <div
       ref={cardRef}
       data-testid="landing-mission-card"
-      className="mx-auto w-full max-w-[520px] rounded-[20px] border border-[#2a2a2f] bg-[#1a1a1d] p-4 text-[#f4f4f5] shadow-[0_30px_80px_rgba(0,0,0,0.32)] sm:p-[22px]"
+      className="mx-auto w-full max-w-[520px] rounded-[20px] border border-[#334155] bg-[#0f172a] p-4 text-[#f8fafc] shadow-[0_30px_80px_rgba(0,0,0,0.32)] sm:p-[22px]"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs text-[#a1a1aa] sm:text-[13px]">Vendredi · 7 h – 13 h · Lille Grand Palais</p>
+          <p className="text-xs text-[#94a3b8] sm:text-[13px]">Vendredi · 7 h – 13 h · Lille Grand Palais</p>
           <h3 className="mt-1 text-base font-bold tracking-tight sm:text-lg">Montage stand · 15 roads</h3>
         </div>
         <span data-testid="landing-mission-count" className="shrink-0 rounded-full bg-[#163328] px-2.5 py-1 text-[11px] font-bold text-[#25d366] sm:text-xs">
@@ -107,11 +107,11 @@ export default function LandingMissionCard({ expanded = false }) {
         aria-valuemin={0}
         aria-valuemax={15}
         aria-valuenow={current.complete ? 15 : 14}
-        className="mt-4 h-2 overflow-hidden rounded-full bg-[#101012]"
+        className="mt-4 h-2 overflow-hidden rounded-full bg-[#334155]"
       >
         <div className="h-full rounded-full bg-[#25d366] transition-[width] duration-700 motion-reduce:transition-none" style={{ width: `${progress}%` }} />
       </div>
-      <p className="mt-2 text-[13px] text-[#a1a1aa]" data-testid="landing-mission-message">
+      <p className="mt-2 text-[13px] text-[#94a3b8]" data-testid="landing-mission-message">
         {current.complete ? "Équipe complète. La dernière place est pourvue." : "Plus qu’une place. ShiftFlow s’en occupe."}
       </p>
 
@@ -126,10 +126,10 @@ export default function LandingMissionCard({ expanded = false }) {
         <p className="mt-1 text-xs text-[#7fbf98]">Envoyé depuis votre WhatsApp · réponse en 1 clic, sans appli</p>
       </div>
       {expanded && (
-        <p data-testid="landing-mission-explanation" className="mt-3 text-xs leading-relaxed text-[#c4c4ce]">{current.explanation}</p>
+        <p data-testid="landing-mission-explanation" className="mt-3 text-xs leading-relaxed text-[#cbd5e1]">{current.explanation}</p>
       )}
       <div className="relative mt-3 flex min-h-7 items-center justify-center">
-        <p className="text-center text-xs text-[#a1a1aa]">Exemple fictif</p>
+        <p className="text-center text-xs text-[#94a3b8]">Exemple fictif</p>
         <button
           type="button"
           data-testid="landing-mission-playback"
@@ -139,7 +139,7 @@ export default function LandingMissionCard({ expanded = false }) {
           }}
           aria-label={reducedMotion ? "Voir l’étape suivante" : paused ? "Reprendre l’animation" : "Mettre l’animation en pause"}
           title={reducedMotion ? "Étape suivante" : paused ? "Reprendre" : "Pause"}
-          className="absolute right-0 flex h-8 w-8 items-center justify-center rounded-md text-[#a1a1aa] transition-colors hover:bg-[#2a2a2f] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#25d366]"
+          className="absolute right-0 flex h-8 w-8 items-center justify-center rounded-md text-[#94a3b8] transition-colors hover:bg-[#334155] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#25d366]"
         >
           {reducedMotion ? <SkipForward size={14} aria-hidden="true" /> : paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
         </button>
