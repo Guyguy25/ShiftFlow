@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, MapPin, Users, Copy, XCircle, ArrowUp, ArrowDown, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
+import { trackActivation } from "../lib/activationTracking";
 import { SLOT_STATUS_LABEL, slotClass, MISSION_STATUS_LABEL } from "../lib/statusMap";
 import { toast, Toaster } from "sonner";
 import { WhatsAppImportModal } from "./Workers";
@@ -54,19 +55,22 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
 
   const sendSelection = useCallback(async (invitationTemplate) => {
     if (selected.length === 0) { setError("Sélectionnez au moins un intervenant"); return; }
+    trackActivation("invitation_send_attempted");
     setSaving(true); setError(""); setWaitingForWhatsApp(false); setConnectOpen(false);
     try {
       const { data } = await api.post(`/shifts/${shift.id}/select-workers`, { worker_ids: selected, invitation_template: invitationTemplate });
       setReviewOpen(false);
-      if (data.notifications?.failed) toast.error("La sélection est enregistrée, mais des invitations ont échoué. Reconnectez WhatsApp puis reprenez les invitations en attente.");
+      if (data.notifications?.failed) { trackActivation("invitation_send_error", "delivery_failed"); toast.error("La sélection est enregistrée, mais des invitations ont échoué. Reconnectez WhatsApp puis reprenez les invitations en attente."); }
       else reportDelivery(data, "Invitations traitées");
       onSelected();
     } catch (err) {
       const detail = formatApiError(err.response?.data?.detail) || err.message;
       if (/whatsapp/i.test(detail) && /connect|déconnect|pas connecté|not connected/i.test(detail)) {
+        trackActivation("invitation_send_error", "whatsapp_disconnected");
         setWaitingForWhatsApp(true);
         setConnectOpen(true);
       } else {
+        trackActivation("invitation_send_error", "request_failed");
         setError(detail);
       }
     } finally { setSaving(false); }
@@ -86,12 +90,14 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
     try {
       const { data } = await api.get("/whatsapp/status");
       if (!data.connected) {
+        trackActivation("invitation_send_error", "whatsapp_disconnected");
         setWaitingForWhatsApp(true);
         setConnectOpen(true);
         return;
       }
       await sendSelection(invitationTemplate);
     } catch (err) {
+      trackActivation("invitation_send_error", "request_failed");
       setError(formatApiError(err.response?.data?.detail) || "Impossible de vérifier la connexion WhatsApp.");
     } finally {
       submitLock.current = false;
@@ -227,7 +233,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
           </div>
 
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <button type="button" onClick={() => { setError(""); setReviewOpen(true); }} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`} data-onboarding={!reviewOpen && selected.length > 0 ? "review" : undefined}
+          <button type="button" onClick={() => { trackActivation("invitation_review_opened"); setError(""); setReviewOpen(true); }} disabled={saving || selected.length === 0} data-testid={`submit-selection-${shift.id}`} data-onboarding={!reviewOpen && selected.length > 0 ? "review" : undefined}
             className="mt-3 w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-sm transition-colors shadow-sm disabled:shadow-none">
             {saving
               ? "Envoi…"
