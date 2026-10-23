@@ -78,3 +78,13 @@ test("reduced motion preference disables automatic playback but allows manual pr
   expect(host.textContent).toContain("Salut Alex");
   expect(host.textContent).toContain("suivant dans votre ordre de priorité");
 });
+
+test("uses ShiftFlow navy surfaces while retaining the green WhatsApp response bubble", async () => {
+  await act(async () => root.render(<LandingMissionCard />));
+  const card = host.querySelector('[data-testid="landing-mission-card"]');
+  expect(card.className).toContain("bg-[#0f172a]");
+  expect(card.className).toContain("border-[#334155]");
+  expect(card.querySelector("li").className).toContain("bg-[#1e293b]");
+  expect(card.querySelector('[role="progressbar"] > div').className).toContain("bg-[#25d366]");
+  expect(host.textContent).toContain("Envoyé depuis votre WhatsApp");
+});
