@@ -68,7 +68,7 @@ export default function Layout({ children }) {
     navigate("/login");
   };
 
-  if (user?.organization?.locked) return <div className="min-h-screen bg-gray-50 p-6"><div className="mx-auto max-w-lg rounded-2xl border bg-white p-6"><WorkspaceSelector/><h1 className="mt-6 text-xl font-bold">L’accès à cette équipe est suspendu</h1><p className="mt-3 text-sm text-gray-600">Cette organisation doit disposer de Pro Team pour partager l’accès. Contactez son propriétaire ou sélectionnez votre espace personnel ci-dessus.</p></div></div>;
+  if (user?.organization?.locked) return <div className="min-h-screen bg-gray-50 p-6"><div className="mx-auto max-w-lg rounded-2xl border bg-white p-6"><WorkspaceSelector/><h1 className="mt-6 text-xl font-bold">L’accès à cette équipe est suspendu</h1><p className="mt-3 text-sm text-gray-600">L’abonnement de cette organisation est inactif ou sa limite de collaborateurs est atteinte. Contactez son propriétaire, sélectionnez un autre espace ou créez votre organisation depuis le menu.</p></div></div>;
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] flex">

@@ -48,7 +48,7 @@ class BillingTests(IsolatedAsyncioTestCase):
         }})
         self.raw.payment_transactions.insert_one({"session_id": "regular", "user_id": "u",
             "lookup_key": "shiftflow_monthly", "status": "initiated", "quantity": 1,
-            "offer_version": "2026-10-19", "created_at": "2026-10-14"})
+            "offer_version": "2026-10-23", "created_at": "2026-10-14"})
         create = Mock(return_value=SimpleNamespace(id="discounted", url="https://checkout.stripe.com/test"))
         retrieve = Mock(return_value=SimpleNamespace(status="open", id="regular", url="https://checkout.stripe.com/regular"))
         coupon = type("Coupon", (dict,), {"id": "coupon-u"})({"valid": True})
@@ -62,7 +62,7 @@ class BillingTests(IsolatedAsyncioTestCase):
             stripe_lib=stripe, FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id",
             request_client_ip=lambda _: None, now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
         payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_monthly", origin_url="https://www.shiftflow.io",
-            ui_mode="hosted", legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="AVIS-U")
+            ui_mode="hosted", legal_acceptance={"version": "2026-10-23"}, meta_consent=False, promo_code="AVIS-U")
         await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
         retrieve.assert_not_called()
         args = create.call_args.kwargs
@@ -175,7 +175,7 @@ class BillingTests(IsolatedAsyncioTestCase):
             FRONTEND_URL="https://www.shiftflow.io", new_id=lambda: "id", request_client_ip=lambda _: None,
             now_utc=lambda: datetime.now(timezone.utc), iso=lambda d: d.isoformat())
         payload = SimpleNamespace(quantity=1, lookup_key="shiftflow_monthly", origin_url="https://evil.test",
-            ui_mode="hosted", legal_acceptance={"version": "2026-10-19"}, meta_consent=False, promo_code="")
+            ui_mode="hosted", legal_acceptance={"version": "2026-10-23"}, meta_consent=False, promo_code="")
         return fn, payload, create, retrieve
 
     def monthly_price(self, **changes):
@@ -222,7 +222,7 @@ class BillingTests(IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException) as error:
                 await fn(payload, SimpleNamespace(headers={}), {"id": "u"})
             self.assertEqual(error.exception.status_code, 400)
-        payload.legal_acceptance = {"version": "2026-10-19"}
+        payload.legal_acceptance = {"version": "2026-10-23"}
         self.raw.users.update_one({"id": "u"}, {"$set": {"plan": "pro"}})
         with self.assertRaises(HTTPException) as error:
             await fn(payload, SimpleNamespace(headers={}), {"id": "u"})

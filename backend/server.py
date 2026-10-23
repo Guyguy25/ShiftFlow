@@ -1,3 +1,4 @@
+from workspace_accounts import accounts
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -64,7 +65,7 @@ app = FastAPI(title="ShiftFlow API")
 @app.middleware("http")
 async def hours_privacy_headers(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments") or request.url.path.startswith("/api/organization"):
+    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments") or request.url.path.startswith("/api/organization") or request.url.path.startswith("/api/whop"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -262,6 +263,7 @@ def public_user(u: dict) -> dict:
             "organization": u.get("organization"),
             "can_manage_billing": u.get("can_manage_billing", True),
             "can_create_organization": u.get("can_create_organization", False),
+            "can_manage_organization": u.get("can_manage_organization", False),
             "personal_organization_id": u.get("personal_organization_id"),
             "needs_organization": bool(u.get("needs_organization")),
             **trial_info(u)}
@@ -308,6 +310,16 @@ async def get_workspace_owner(request: Request, user=Depends(get_current_user)):
     expected = request.headers.get("X-Organization-ID")
     if expected and expected != workspace.get("organization_id"):
         raise HTTPException(status_code=409, detail="Votre organisation active a changé. Rechargez la page avant de continuer.")
+    return workspace
+
+
+async def get_workspace_manager(request: Request, user=Depends(get_current_user)):
+    workspace = await get_workspace_user(request, user)
+    if workspace.get('subscription_tier') == 'business' and workspace.get('plan') == 'pro' and workspace.get('organization_role') not in ('owner', 'admin'):
+        raise HTTPException(403, 'Cette action nécessite un administrateur ou le propriétaire.')
+    # Business roles remain restrictive after a downgrade, rather than granting more access.
+    if workspace.get('organization_role') == 'admin' and workspace.get('subscription_tier') != 'business':
+        raise HTTPException(403, 'Le rôle administrateur nécessite Business.')
     return workspace
 
 
@@ -632,7 +644,7 @@ async def cascade_next_for_shift(shift_id: str):
         return
     slots = await db.mission_workers.find({"shift_id": shift_id}, {"_id": 0}).sort("priority", 1).to_list(1000)
     need = shift["people_needed"]
-    agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+    agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
     for slot in slots:
         active_count = sum(1 for s in slots if s["status"] in ("contacted", "confirmed"))
         if active_count >= need:
@@ -668,7 +680,7 @@ async def update_shift_and_mission_status(shift_id: str):
     all_shifts = await db.shifts.find({"mission_id": mission_id, "status": {"$ne": "cancelled"}}, {"_id": 0}).to_list(1000)
     if all_shifts and all(s.get("status") == "filled" for s in all_shifts):
         await db.missions.update_one({"id": mission_id, "status": {"$ne": "cancelled"}}, {"$set": {"status": "filled"}})
-        agency = await db.users.find_one({"id": mission.get("agency_id")}, {"_id": 0})
+        agency = await accounts(db).find_one({"id": mission.get("agency_id")}, {"_id": 0})
         if agency:
             await record_activation_event(
                 agency,
@@ -798,7 +810,7 @@ async def google_auth(payload: GoogleAuthIn, request: Request, response: Respons
             if not linked.matched_count:
                 raise HTTPException(409, "Ce compte a changé. Rechargez la page pour réessayer.")
         else:
-            if not payload.registration or payload.legal_version != "2026-10-19":
+            if not payload.registration or payload.legal_version != "2026-10-23":
                 raise HTTPException(400, "Pour créer un compte Google, complétez l'inscription et acceptez les conditions.")
             from pydantic import ValidationError
             try:
@@ -1092,7 +1104,7 @@ async def update_worker(worker_id: str, payload: WorkerIn, user=Depends(get_work
 
 
 @api.delete("/workers/{worker_id}")
-async def delete_worker(worker_id: str, user=Depends(get_workspace_user)):
+async def delete_worker(worker_id: str, user=Depends(get_workspace_manager)):
     res = await db.workers.delete_one({"id": worker_id, "agency_id": user["id"]})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Intervenant introuvable")
@@ -1203,7 +1215,7 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
     if is_first_mission:
         trial_started_at = mission_created_at
         trial_ends_at = None
-        await db.users.update_one(
+        await accounts(db).update_one(
             {"id": user["id"]},
             {"$set": {
                 "trial_started_at": iso(trial_started_at),
@@ -1275,7 +1287,7 @@ async def update_mission(mission_id: str, payload: MissionUpdateIn, user=Depends
 
 
 @api.delete("/missions/{mission_id}")
-async def delete_mission(mission_id: str, user=Depends(get_workspace_user)):
+async def delete_mission(mission_id: str, user=Depends(get_workspace_manager)):
     mission = await db.missions.find_one(
         {"id": mission_id, "agency_id": user["id"], "archived": {"$ne": True}},
         {"_id": 0},
@@ -1306,7 +1318,7 @@ async def delete_mission(mission_id: str, user=Depends(get_workspace_user)):
 
 
 @api.post("/missions/{mission_id}/cancel")
-async def cancel_mission(mission_id: str, user=Depends(get_workspace_user)):
+async def cancel_mission(mission_id: str, user=Depends(get_workspace_manager)):
     from mission_operations import cancel_owned_mission
     return await cancel_owned_mission(mission_id, user)
 
@@ -1439,7 +1451,7 @@ async def public_get(token: str):
     worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
     if not mission or not worker or not shift:
         raise HTTPException(status_code=404, detail="Mission introuvable")
-    agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0, "password_hash": 0})
+    agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0, "password_hash": 0})
     return {
         "slot": {"id": slot["id"], "status": slot["status"]},
         "shift": {
@@ -1484,9 +1496,9 @@ async def public_accept(token: str):
                                         {"$set": {"status": "confirmed", "responded_at": iso(now_utc())}})
     if not result.modified_count:
         raise HTTPException(409, "Cette invitation a changé. Rechargez la page.")
-    agency = await db.users.find_one({"id": slot["agency_id"]}, {"_id": 0}) if slot.get("agency_id") else None
+    agency = await accounts(db).find_one({"id": slot["agency_id"]}, {"_id": 0}) if slot.get("agency_id") else None
     if not agency and mission:
-        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
     if agency:
         await record_activation_event(agency, "first_invite_accepted", metadata={"mission_id": slot["mission_id"], "slot_id": slot["id"]})
     await update_shift_and_mission_status(slot["shift_id"])
@@ -1538,7 +1550,7 @@ async def public_cancel(token: str):
         mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
         worker = await db.workers.find_one({"id": slot["worker_id"]}, {"_id": 0})
         if shift and mission and worker:
-            agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+            agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
             dt = datetime.fromisoformat(f"{shift['date']}T{shift['start_time']}:00+00:00")
             if (dt - now_utc()) <= timedelta(hours=24):
                 slots = await db.mission_workers.find({"shift_id": shift["id"]}, {"_id": 0}).to_list(1000)
@@ -1789,7 +1801,7 @@ async def _run_reminders():
         mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
         if not mission:
             continue
-        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
         if not agency:
             continue
         slots = await db.mission_workers.find({"shift_id": shift["id"], "status": "confirmed",
@@ -2018,7 +2030,7 @@ FREE_WORKER_LIMIT = None
 
 
 async def _get_plan(user_id: str) -> str:
-    u = await db.users.find_one({"id": user_id}, {"_id": 0})
+    u = await accounts(db).find_one({"id": user_id}, {"_id": 0})
     return (u or {}).get("plan", "free")
 
 
@@ -2079,7 +2091,7 @@ async def get_quota(user=Depends(get_workspace_user)):
     missions = await _active_missions_count(user["id"])
     missions_used = await _missions_created_count(user["id"])
     workers = await db.workers.count_documents({"agency_id": user["id"]})
-    u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    u = await accounts(db).find_one({"id": user["id"]}, {"_id": 0})
     info = trial_info(u or user)
     return {
         "plan": plan,
@@ -2132,7 +2144,7 @@ async def _send_subscribe_meta_if_needed(session_id: str, subscription_id: Optio
     if not record or not record.get("meta_consent") or record.get("meta_subscribe_sent_at"):
         return
 
-    user = await db.users.find_one({"id": record.get("user_id")}, {"_id": 0})
+    user = await accounts(db).find_one({"id": record.get("user_id")}, {"_id": 0})
     if not user:
         return
 
@@ -2190,8 +2202,10 @@ def stripe_checkout_response(session, ui_mode):
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_workspace_owner)):
-    if payload.legal_acceptance.get("version") != "2026-10-19":
+    if payload.legal_acceptance.get("version") != "2026-10-23":
         raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
+    if user["id"].startswith("org_"):
+        raise HTTPException(409, "Cette organisation utilise Whop. Ouvrez le paiement depuis la page Tarifs.")
     expected_price = ALLOWED_STRIPE_PRICES.get(payload.lookup_key)
     if not expected_price:
         raise HTTPException(status_code=400, detail="Offre Stripe non autorisée")
@@ -2212,7 +2226,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
             raise HTTPException(403, "Ce code personnel n’est pas disponible pour votre compte.")
     pending = await db.payment_transactions.find_one({
         "user_id": user["id"], "lookup_key": payload.lookup_key, "status": "initiated",
-        "quantity": quantity, "offer_version": "2026-10-19",
+        "quantity": quantity, "offer_version": "2026-10-23",
         "provider": {"$ne": "whop"},
         "ui_mode": "embedded" if payload.ui_mode == "embedded" else {"$in": [None, "hosted"]},
         "feedback_promo_code": payload.promo_code or {"$in": [None, ""]},
@@ -2270,7 +2284,7 @@ async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(ge
         "amount": 0 if payload.promo_code else expected_amount,
         "feedback_promo_code": payload.promo_code,
         "quantity": quantity, "bonus_missions": 0,
-        "mission_credits": 0, "offer_version": "2026-10-19",
+        "mission_credits": 0, "offer_version": "2026-10-23",
         "currency": "eur", "status": "initiated", "payment_status": "pending",
         "origin_url": origin,
         "legal_acceptance": payload.legal_acceptance,
@@ -2328,14 +2342,14 @@ async def fulfill_checkout(obj):
         # an already cancelled subscription.
         subscription = stripe_lib.Subscription.retrieve(obj["subscription"])
         active = subscription.status in ("active", "trialing")
-        await db.users.update_one({"id": uid}, {"$set": {
+        await accounts(db).update_one({"id": uid}, {"$set": {
             "plan": "pro" if active else "free", "subscription_status": subscription.status,
             "stripe_customer_id": obj.get("customer"), "stripe_subscription_id": obj["subscription"],
             "subscription_billing_interval": record.get("billing_interval"),
             "subscription_tier": subscription_billing.tier_from_subscription(stripe_lib, subscription),
         }})
         if active:
-            paid_user = await db.users.find_one({"id": uid})
+            paid_user = await accounts(db).find_one({"id": uid})
             await record_activation_event(paid_user, "subscription_started",
                 metadata={"subscription_id": obj["subscription"], "session_id": obj["id"]})
             await _send_subscribe_meta_if_needed(obj["id"], obj["subscription"])
@@ -2376,7 +2390,7 @@ async def stripe_webhook(request: Request):
         # Resolve the current state to tolerate out-of-order Stripe deliveries.
         subscription = stripe_lib.Subscription.retrieve(obj["id"])
         status = subscription.status
-        await db.users.update_one({"stripe_subscription_id": obj["id"]}, {"$set": {
+        await accounts(db).update_one({"stripe_subscription_id": obj["id"]}, {"$set": {
             "plan": "pro" if status in ("active", "trialing") else "free",
             "subscription_status": status,
             "subscription_tier": subscription_billing.tier_from_subscription(stripe_lib, subscription),
@@ -2386,7 +2400,7 @@ async def stripe_webhook(request: Request):
         sub_id = obj.get("subscription") or (parent.get("subscription_details") or {}).get("subscription")
         if sub_id:
             subscription = stripe_lib.Subscription.retrieve(sub_id)
-            await db.users.update_one({"stripe_subscription_id": sub_id}, {"$set": {
+            await accounts(db).update_one({"stripe_subscription_id": sub_id}, {"$set": {
                 "plan": "pro" if subscription.status in ("active", "trialing") else "free",
                 "subscription_status": subscription.status,
                 "subscription_tier": subscription_billing.tier_from_subscription(stripe_lib, subscription),
@@ -2406,7 +2420,10 @@ async def sync_team_catalog(user=Depends(get_workspace_owner)):
 
 @api.post("/payments/portal")
 async def billing_portal(request: Request, user=Depends(get_workspace_owner)):
-    u = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    u = await accounts(db).find_one({"id": user["id"]}, {"_id": 0})
+    if u and u.get("whop_membership_id"):
+        from whop_billing import portal
+        return await portal(db, user)
     if not u or not u.get("stripe_customer_id"):
         raise HTTPException(status_code=400, detail="Aucun abonnement actif")
     origin = FRONTEND_URL or "https://www.shiftflow.io"
@@ -2421,7 +2438,7 @@ async def billing_portal(request: Request, user=Depends(get_workspace_owner)):
         # Stale customer id (e.g. from a previous Stripe account) — clear it and ask user to re-subscribe.
         msg = str(e) or ""
         if "No such customer" in msg or "no such customer" in msg.lower():
-            await db.users.update_one({"id": user["id"]}, {"$set": {
+            await accounts(db).update_one({"id": user["id"]}, {"$set": {
                 "stripe_customer_id": None,
                 "stripe_subscription_id": None,
                 "subscription_status": None,
@@ -2643,6 +2660,8 @@ api.include_router(organization_router)
 
 from timesheets import router as timesheets_router
 api.include_router(timesheets_router)
+from whop_routes import router as whop_router
+api.include_router(whop_router)
 
 app.include_router(api)
 

@@ -11254,3 +11254,8 @@ zod@3.24.4:
   version "3.24.4"
   resolved "https://registry.npmjs.org/zod/-/zod-3.24.4.tgz"
   integrity sha512-OdqJE9UDRPwWsrHjLN2F8bPxvwJBK22EHLWtanu0LSYr5YqzsaaW3RMgmjwr8Rypg5k+meEJdSPXJZXE/yqOMg==
+
+"@whop/checkout@0.7.0":
+  version "0.7.0"
+  resolved "https://registry.npmjs.org/@whop/checkout/-/checkout-0.7.0.tgz#f5cce92aa68b9a414dda68dca2bbd5bc5ab2170c"
+  integrity sha512-Q7Sr1SuiTPsbUbeTLtYIOO045td9/0Z+JQWyFUC0+yjlQY51CiOudmKOcN5Fq2AzOdXOajsVITsdQFHoL43Pkg==

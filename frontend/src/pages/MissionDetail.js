@@ -1,3 +1,5 @@
+import { useAuth } from "../context/AuthContext";
+import { canManageOperations } from "../lib/permissions";
 import ShiftEditor from "../components/ShiftEditor";
 import { compensationLabel } from "../lib/compensation";
 import MissionFollowUp, { invitationStatusLabel } from "../components/MissionFollowUp";
@@ -242,6 +244,7 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
 }
 
 export function ShiftCard({ mission, shift, workers, onReload, autoExpand = false }) {
+  const canManage = canManageOperations(useAuth()?.user);
   const noSlots = !shift.slots || shift.slots.length === 0;
   const filled = shift.confirmed_count >= shift.people_needed;
   const [editing, setEditing] = useState(false);
@@ -399,7 +402,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
         <summary className="cursor-pointer min-h-11 py-3">Détails du créneau</summary>
         <p data-testid={`shift-estimate-${shift.id}`}>Budget estimé : {shift.estimated_cost ?? 0} €</p>
         <p data-testid={`shift-rate-${shift.id}`}>Tarif intervenant : {compensationLabel(shift)}</p>
-        {mission.status !== "cancelled" && shift.status !== "cancelled" && <div className="flex gap-3"><button disabled={busy} onClick={() => setEditing(true)} className="min-h-11 text-blue-700">Modifier ce créneau</button><button disabled={busy} onClick={deleteShift} className="min-h-11 text-red-700">Supprimer et notifier</button></div>}
+        {mission.status !== "cancelled" && shift.status !== "cancelled" && <div className="flex gap-3"><button disabled={busy} onClick={() => setEditing(true)} className="min-h-11 text-blue-700">Modifier ce créneau</button><button disabled={busy || !canManage} title={!canManage ? "Action réservée aux administrateurs" : undefined} onClick={deleteShift} className="min-h-11 text-red-700">Supprimer et notifier</button></div>}
         <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} className="min-h-11 mt-2 inline-flex items-center gap-2 text-gray-600"><CopyPlus size={16}/> Dupliquer ce créneau</button>
       </details>
     </div>
@@ -407,6 +410,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
 }
 
 export default function MissionDetail() {
+  const canManage = canManageOperations(useAuth()?.user);
   const { id } = useParams();
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
@@ -504,8 +508,8 @@ export default function MissionDetail() {
         <p className="mb-2 text-gray-500">{MISSION_STATUS_LABEL[m.status] || m.status}</p>
         <div className="flex flex-wrap gap-2 pb-2">
           <button onClick={duplicateMission} data-testid="mission-duplicate-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Dupliquer</button>
-          {m.status !== "cancelled" && <button disabled={missionBusy} onClick={cancelMission} data-testid="mission-cancel-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Annuler la mission</button>}
-          <button disabled={missionBusy} onClick={deleteMission} data-testid="mission-delete-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Archiver</button>
+          {m.status !== "cancelled" && <button disabled={missionBusy || !canManage} title={!canManage ? "Action réservée aux administrateurs" : undefined} onClick={cancelMission} data-testid="mission-cancel-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Annuler la mission</button>}
+          <button disabled={missionBusy || !canManage} title={!canManage ? "Action réservée aux administrateurs" : undefined} onClick={deleteMission} data-testid="mission-delete-btn" className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-600">Archiver</button>
         </div>
       </details>
     </div>

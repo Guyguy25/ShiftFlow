@@ -36,7 +36,7 @@ class EmbeddedCheckoutTests(IsolatedAsyncioTestCase):
         self.discounts = Mock(return_value={'discounts':[{'coupon':'feedback-v1-AVIS-U'}], 'payment_method_collection':'always'})
         self.ns = dict(os=os, Request=Request, Response=Response, HTTPException=HTTPException,
             Optional=Optional, Literal=Literal, BaseModel=BaseModel, Field=Field, secrets=secrets,
-            db=self.db, stripe_lib=self.stripe,
+            db=self.db, stripe_lib=self.stripe, accounts=__import__("workspace_accounts").accounts,
             mission_billing=SimpleNamespace(account=self.account, MISSION_LOOKUP="shiftflow_mission"),
             subscription_billing=SimpleNamespace(TEAM_PRICES={}, tier_from_subscription=lambda stripe, subscription: "pro", resolve_price=Mock(return_value=SimpleNamespace(id='price_month',product='prod_1'))),
             return_feedback=SimpleNamespace(eligible=lambda _: True, discount_options=self.discounts),
@@ -50,7 +50,7 @@ class EmbeddedCheckoutTests(IsolatedAsyncioTestCase):
         self.request = SimpleNamespace(headers={})
 
     def payload(self, **changes):
-        return self.ns['CheckoutIn'](**{'lookup_key':'shiftflow_monthly','ui_mode':'embedded','origin_url':'https://evil.test','legal_acceptance':{'version':'2026-10-19'},**changes})
+        return self.ns['CheckoutIn'](**{'lookup_key':'shiftflow_monthly','ui_mode':'embedded','origin_url':'https://evil.test','legal_acceptance':{'version':'2026-10-23'},**changes})
 
     async def test_embedded_session_returns_only_client_secret_and_stays_on_site(self):
         result = await self.create(self.payload(),self.request,{'id':'u1','email':'user@example.test'})

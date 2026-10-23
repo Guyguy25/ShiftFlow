@@ -1,4 +1,4 @@
-export const LEGAL_VERSION = "2026-10-19";
+export const LEGAL_VERSION = "2026-10-23";
 
 export const LEGAL = {
   publicName: "ShiftFlow",

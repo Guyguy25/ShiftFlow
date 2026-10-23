@@ -1,3 +1,4 @@
+from workspace_accounts import accounts
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -8,7 +9,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 import server as server_module
-from server import get_workspace_user, db, new_id, iso, now_utc
+from server import get_workspace_manager, get_workspace_user, db, new_id, iso, now_utc
 
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 
@@ -295,7 +296,7 @@ async def cascade_all_selected_for_shift(shift_id: str):
     mission = await db.missions.find_one({"id": shift["mission_id"]}, {"_id": 0})
     if not mission or mission.get("status") == "cancelled":
         return 0
-    agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+    agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
     if not agency:
         return 0
     if not server_module.has_active_product_access(agency):
@@ -342,7 +343,7 @@ async def run_whatsapp_followups(agency_id=None):
         mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
         if not mission:
             continue
-        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
         if not agency or not server_module.has_active_product_access(agency):
             continue
         hours = max(1, int(mission.get("followup_hours") or FOLLOWUP_DEFAULT_HOURS))
@@ -392,7 +393,7 @@ async def run_whatsapp_reminders():
         mission = await db.missions.find_one({"id": shift["mission_id"], "status": {"$ne": "cancelled"}}, {"_id": 0})
         if not mission:
             continue
-        agency = await db.users.find_one({"id": mission["agency_id"]}, {"_id": 0})
+        agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
         if not agency or not server_module.has_active_product_access(agency):
             continue
         slots = await db.mission_workers.find({"shift_id": shift["id"], "status": "confirmed", "reminder_sent": {"$ne": True}}, {"_id": 0}).to_list(500)
@@ -416,7 +417,7 @@ server_module.twilio_ready = lambda: False
 
 @router.get("/message-template")
 async def get_message_template(user=Depends(get_workspace_user)):
-    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    agency = await accounts(db).find_one({"id": user["id"]}, {"_id": 0})
     stored = (agency or {}).get("whatsapp_invite_template")
     template = stored or DEFAULT_INVITE_TEMPLATE
     try:
@@ -447,10 +448,10 @@ async def get_message_template(user=Depends(get_workspace_user)):
 
 
 @router.put("/message-template")
-async def update_message_template(payload: dict, user=Depends(get_workspace_user)):
+async def update_message_template(payload: dict, user=Depends(get_workspace_manager)):
 
     template = validate_invite_template(payload.get("template"))
-    await db.users.update_one(
+    await accounts(db).update_one(
         {"id": user["id"]},
         {"$set": {"whatsapp_invite_template": template, "whatsapp_invite_template_updated_at": iso(now_utc())}},
     )
@@ -458,8 +459,8 @@ async def update_message_template(payload: dict, user=Depends(get_workspace_user
 
 
 @router.delete("/message-template")
-async def reset_message_template(user=Depends(get_workspace_user)):
-    await db.users.update_one(
+async def reset_message_template(user=Depends(get_workspace_manager)):
+    await accounts(db).update_one(
         {"id": user["id"]},
         {"$unset": {"whatsapp_invite_template": "", "whatsapp_invite_template_updated_at": ""}},
     )
@@ -490,16 +491,16 @@ async def whatsapp_contacts(user=Depends(get_workspace_user)):
 
 
 @router.post("/refresh")
-async def whatsapp_refresh(user=Depends(get_workspace_user)):
+async def whatsapp_refresh(user=Depends(get_workspace_manager)):
     return await whatsapp_request("POST", "/refresh", user)
 
 
 @router.post("/session/start")
-async def whatsapp_start(user=Depends(get_workspace_user)):
+async def whatsapp_start(user=Depends(get_workspace_manager)):
     return await whatsapp_request("POST", "/session/start", user)
 
 @router.post("/session/pair-code")
-async def whatsapp_pair_code(payload: dict, user=Depends(get_workspace_user)):
+async def whatsapp_pair_code(payload: dict, user=Depends(get_workspace_manager)):
     phone = str(payload.get("phone") or "").strip()
     if not phone:
         raise HTTPException(status_code=400, detail="Renseignez le numéro WhatsApp à connecter.")
@@ -507,7 +508,7 @@ async def whatsapp_pair_code(payload: dict, user=Depends(get_workspace_user)):
 
 
 @router.post("/session/logout")
-async def whatsapp_logout(user=Depends(get_workspace_user)):
+async def whatsapp_logout(user=Depends(get_workspace_manager)):
     return await whatsapp_request("POST", "/session/logout", user)
 
 
@@ -566,7 +567,7 @@ async def whatsapp_import(payload: dict, request: Request, user=Depends(get_work
     selected = [contacts[str(cid)] for cid in selected_ids if str(cid) in contacts]
     if not selected:
         raise HTTPException(status_code=400, detail="Les contacts sélectionnés sont introuvables ou sans nom exploitable.")
-    plan_doc = await db.users.find_one({"id": user["id"]}, {"plan": 1})
+    plan_doc = await accounts(db).find_one({"id": user["id"]}, {"plan": 1})
     limit = None if (plan_doc or {}).get("plan", "free") == "pro" else server_module.FREE_WORKER_LIMIT
     current_count = await db.workers.count_documents({"agency_id": user["id"]})
     created, skipped = [], []
@@ -626,19 +627,19 @@ def active_template(agency, kind):
 
 @router.get("/automations")
 async def get_automations(user=Depends(get_workspace_user)):
-    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or {}
+    agency = await accounts(db).find_one({"id": user["id"]}, {"_id": 0}) or {}
     config = await get_message_template(user)
     return {**config, "templates": {kind: active_template(agency, kind) for kind in DEFAULT_TEMPLATES}, "defaults": DEFAULT_TEMPLATES}
 
 
 @router.put("/automations/{kind}")
-async def save_automation(kind: str, payload: dict, user=Depends(get_workspace_user)):
+async def save_automation(kind: str, payload: dict, user=Depends(get_workspace_manager)):
     if kind not in DEFAULT_TEMPLATES:
         raise HTTPException(404, "Type de message inconnu")
     template = validate_invite_template(payload.get("template"))
     # Keep the original field and endpoint as the canonical invitation setting.
     field = "whatsapp_invite_template" if kind == "invite" else f"whatsapp_templates.{kind}"
-    await db.users.update_one({"id": user["id"]}, {"$set": {field: template}})
+    await accounts(db).update_one({"id": user["id"]}, {"$set": {field: template}})
     return {"ok": True, "template": template}
 
 

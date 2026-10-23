@@ -1,3 +1,4 @@
+from workspace_accounts import accounts
 """Usage-based access. All balance mutations are atomic on the agency document."""
 from datetime import datetime, timezone
 from fastapi import HTTPException
@@ -15,15 +16,19 @@ def pack(quantity):
 
 
 async def account(db, user_id):
-    user = await db.users.find_one({"id": user_id})
+    user = await accounts(db).find_one({"id": user_id})
     if not user:
         raise HTTPException(404, "Compte introuvable")
+    pool_id = user.get("free_pool_id") or user_id
+    if pool_id != user_id:
+        pool = await account(db, pool_id)
+        return {**user, "free_missions_used": pool.get("free_missions_used", 0)}
     if "free_missions_used" not in user:
         # Include archived/cancelled missions: deleting never replenishes the offer.
         used = min(FREE_MISSIONS, await db.missions.count_documents({"agency_id": user_id}))
-        await db.users.update_one({"id": user_id, "free_missions_used": {"$exists": False}},
+        await accounts(db).update_one({"id": user_id, "free_missions_used": {"$exists": False}},
                                   {"$set": {"free_missions_used": used}})
-        user = await db.users.find_one({"id": user_id})
+        user = await accounts(db).find_one({"id": user_id})
     return user
 
 
@@ -36,15 +41,15 @@ def balance(user):
 
 async def reserve(db, user_id):
     user = await account(db, user_id)
-    await db.users.update_one({"id": user_id}, {"$set": {"last_mission_created_at": datetime.now(timezone.utc).isoformat()}})
+    await accounts(db).update_one({"id": user_id}, {"$set": {"last_mission_created_at": datetime.now(timezone.utc).isoformat()}})
     if user.get("plan") == "pro":
         return "pro"
-    result = await db.users.update_one(
-        {"id": user_id, "free_missions_used": {"$lt": FREE_MISSIONS}},
+    result = await accounts(db).update_one(
+        {"id": user.get("free_pool_id") or user_id, "free_missions_used": {"$lt": FREE_MISSIONS}},
         {"$inc": {"free_missions_used": 1}})
     if result.modified_count:
         return "free"
-    result = await db.users.update_one(
+    result = await accounts(db).update_one(
         {"id": user_id, "mission_credits": {"$gt": 0}},
         {"$inc": {"mission_credits": -1}})
     if result.modified_count:
@@ -55,12 +60,14 @@ async def reserve(db, user_id):
 async def release(db, user_id, source):
     if source in ("free", "credit"):
         field = "free_missions_used" if source == "free" else "mission_credits"
-        await db.users.update_one({"id": user_id}, {"$inc": {field: -1 if source == "free" else 1}})
+        current = await account(db, user_id)
+        target = (current.get("free_pool_id") or user_id) if source == "free" else user_id
+        await accounts(db).update_one({"id": target}, {"$inc": {field: -1 if source == "free" else 1}})
 
 
 async def grant_credit(db, user_id, session_id, credits=1):
     # Webhook and success-page polling can race/retry: grant exactly once.
-    return await db.users.update_one(
+    return await accounts(db).update_one(
         {"id": user_id, "credited_checkout_sessions": {"$ne": session_id}},
         {"$inc": {"mission_credits": credits},
          "$addToSet": {"credited_checkout_sessions": session_id},

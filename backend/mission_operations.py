@@ -1,8 +1,9 @@
+from workspace_accounts import accounts
 """Tenant-owned mission changes and retryable WhatsApp lifecycle notifications."""
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 import server as s
-from server import db, get_workspace_user, ShiftIn
+from server import get_workspace_manager, db, get_workspace_user, ShiftIn
 import whatsapp_routes as wa
 
 router = APIRouter(tags=["Mission operations"])
@@ -44,7 +45,7 @@ async def deliver_notice(slot, shift, mission, user, kind):
     try:
         worker = await db.workers.find_one({"id": slot["worker_id"], "agency_id": user["id"]}, {"_id": 0})
         if worker:
-            agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or user
+            agency = await accounts(db).find_one({"id": user["id"]}, {"_id": 0}) or user
             notification = await wa.send_invite_whatsapp(slot, shift, mission, worker, agency, kind=kind)
             sent = notification.get("status") == "sent"
         else:
@@ -123,7 +124,7 @@ async def edit_shift(shift_id: str, payload: ShiftIn, user=Depends(get_workspace
 
 
 @router.delete("/shifts/{shift_id}")
-async def delete_shift(shift_id: str, user=Depends(get_workspace_user)):
+async def delete_shift(shift_id: str, user=Depends(get_workspace_manager)):
     shift, mission = await owned_shift(shift_id, user)
     await db.shifts.update_one({"id": shift_id, "agency_id": user["id"]}, {"$set": {"status": "cancelled", "deleted_at": s.iso(s.now_utc()), "confirmed_count": 0}})
     await cancel_slots({"shift_id": shift_id})
@@ -147,7 +148,7 @@ async def followup(slot_id: str, user=Depends(get_workspace_user)):
     worker = await db.workers.find_one({"id": slot["worker_id"], "agency_id": user["id"]}, {"_id": 0})
     if not worker:
         raise HTTPException(404, "Intervenant introuvable")
-    agency = await db.users.find_one({"id": user["id"]}, {"_id": 0}) or user
+    agency = await accounts(db).find_one({"id": user["id"]}, {"_id": 0}) or user
     notification = await wa.send_followup(slot, shift, mission, agency, worker)
     return {"ok": notification["status"] == "sent", "notifications": {"sent": int(notification["status"] == "sent"), "failed": int(notification["status"] != "sent")}}
 

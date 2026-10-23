@@ -192,7 +192,7 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
             stripe.checkout=SimpleNamespace(Session=SimpleNamespace(create=Mock(return_value=Obj(id='cs_'+lookup,client_secret='cs_secret',status='open'))))
             with patch.object(s,'stripe_lib',stripe):
                 response=await self.request('POST','/payments/checkout',uid='other',json={
-                    'lookup_key':lookup,'ui_mode':'embedded','quantity':1,'origin_url':'https://untrusted.example','legal_acceptance':{'version':'2026-10-19'}})
+                    'lookup_key':lookup,'ui_mode':'embedded','quantity':1,'origin_url':'https://untrusted.example','legal_acceptance':{'version':'2026-10-23'}})
             self.assertEqual(response.status_code,200,response.text)
             self.assertEqual(response.json()['ui_mode'],'embedded')
             args=stripe.checkout.Session.create.call_args.kwargs
@@ -315,23 +315,25 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         personal = (await self.request('GET','/auth/me',uid='member')).json()
         self.assertEqual(personal['organization']['id'],'member')
         self.assertEqual(personal['organization']['name'],'Camille Events')
-        self.assertEqual(personal['plan'],'free');self.assertFalse(personal['can_create_organization'])
+        self.assertEqual(personal['plan'],'free');self.assertTrue(personal['can_create_organization'])
         self.assertEqual((await self.request('GET','/missions',uid='member')).json(),[])
         quota = (await self.request('GET','/plan/quota',uid='member')).json()
         self.assertEqual(quota['free_missions_remaining'],1)
         repeat = await self.request('POST','/organization',uid='member',json={'name':'Another organization'})
-        self.assertEqual(repeat.status_code,409,repeat.text)
+        self.assertEqual(repeat.status_code,200,repeat.text)
+        self.assertTrue(repeat.json()['id'].startswith('org_'))
+        self.assertEqual((await self.request('GET','/plan/quota',uid='member')).json()['free_missions_remaining'],1)
         self.assertEqual((await self.db.users.find_one({'id':'owner'}))['plan'],'pro')
         await self.request('POST','/organization/switch',uid='member',json={'organization_id':'owner'})
         shared = (await self.request('GET','/auth/me',uid='member')).json()
         self.assertEqual(shared['subscription_tier'],'team'); self.assertFalse(shared['can_manage_billing'])
         self.assertEqual((await self.request('GET','/missions',uid='member')).json()[0]['id'],'shared')
 
-    async def test_personal_creation_concurrency_never_creates_multiple_organizations(self):
+    async def test_personal_creation_concurrency_creates_distinct_organizations(self):
         await self.db.users.update_one({'id':'member'},{'$set':{'signup_origin':'invitation'}})
         results = await asyncio.gather(*[self.request('POST','/organization',uid='member',json={'name':f'Org {i}'}) for i in range(3)])
-        self.assertEqual(sum(r.status_code==200 for r in results),1)
-        self.assertEqual(await self.db.organizations.count_documents({'owner_id':'member'}),1)
+        self.assertEqual(sum(r.status_code==200 for r in results),3)
+        self.assertEqual(await self.db.organizations.count_documents({'owner_id':'member'}),3)
 
     async def test_revoked_invited_user_without_personal_space_can_create_one(self):
         await self.db.users.update_one({'id':'member'},{'$set':{'signup_origin':'invitation'}})
@@ -346,11 +348,13 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         result = await self.request('POST','/organization',uid='member',json={'name':'My company'})
         self.assertEqual(result.status_code,200,result.text)
 
-    async def test_existing_owner_cannot_create_a_second_organization(self):
+    async def test_existing_owner_can_create_independently_billed_organization(self):
         await self.request('GET','/auth/me')
         result = await self.request('POST','/organization',json={'name':'Another space'})
-        self.assertEqual(result.status_code,409,result.text)
-        self.assertEqual(await self.db.organizations.count_documents({'owner_id':'owner'}),1)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(await self.db.organizations.count_documents({'owner_id':'owner'}),2)
+        self.assertEqual((await self.request('GET','/auth/me')).json()['plan'],'free')
+        self.assertIsNone(await self.db.users.find_one({'id':result.json()['id']}))
 
     async def test_invitation_revoked_during_signup_keeps_account_recoverable_without_empty_org(self):
         data=await self.request('POST','/organization/invitations',json={'email':'fresh@example.com'})
@@ -369,10 +373,65 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         proof=s.jwt.encode({'nonce':'invited-google-nonce','type':'google_nonce','exp':s.now_utc()+timedelta(minutes=10)},s.JWT_SECRET,algorithm=s.JWT_ALGORITHM)
         self.client.cookies.set('google_nonce',proof,path='/api/auth/google')
         with patch('google_auth.verify_google_token',AsyncMock(return_value={'sub':'google-invited','email':'fresh@gmail.com','name':'Camille'})):
-            response=await self.client.post('/api/auth/google',json={'credential':'mock-credential','legal_version':'2026-10-19','registration':{'invitation_token':token,'name':'Camille'}})
+            response=await self.client.post('/api/auth/google',json={'credential':'mock-credential','legal_version':'2026-10-23','registration':{'invitation_token':token,'name':'Camille'}})
         self.assertEqual(response.status_code,200,response.text)
         self.assertTrue(response.json()['invitation_accepted'])
         uid=response.json()['user']['id']
         self.assertEqual(response.json()['user']['organization']['id'],'owner')
         self.assertIsNone(await self.db.organizations.find_one({'owner_id':uid}))
         self.assertEqual((await self.db.users.find_one({'id':uid}))['google_sub'],'google-invited')
+
+    async def test_business_admin_role_and_owner_only_billing(self):
+        await self.db.users.update_one({'id':'owner'},{'$set':{'subscription_tier':'business'}})
+        await self.join()
+        promoted=await self.request('PUT','/organization/members/member/role',json={'role':'admin'})
+        self.assertEqual(promoted.status_code,200,promoted.text)
+        view=(await self.request('GET','/organization',uid='member')).json()
+        self.assertEqual(view['role'],'admin');self.assertTrue(view['can_manage']);self.assertEqual(view['max_collaborators'],15)
+        self.assertEqual((await self.request('PUT','/organization',uid='member',json={'name':'Managed'})).status_code,200)
+        self.assertEqual((await self.request('POST','/whop/checkout',uid='member',json={'offer_key':'business_monthly','legal_version':'2026-10-23'})).status_code,403)
+        denied=await self.request('POST','/organization/invitations',uid='member',json={'email':'new@example.com','role':'admin'})
+        self.assertEqual(denied.status_code,403)
+        self.assertEqual((await self.request('PUT','/organization/members/other/role',uid='member',json={'role':'admin'})).status_code,403)
+
+    async def test_business_coordinator_cannot_delete_or_manage_members(self):
+        await self.db.users.update_one({'id':'owner'},{'$set':{'subscription_tier':'business'}})
+        await self.join()
+        self.assertEqual((await self.request('DELETE','/workers/anything',uid='member')).status_code,403)
+        self.assertEqual((await self.request('DELETE','/missions/anything',uid='member')).status_code,403)
+        self.assertEqual((await self.request('POST','/organization/invitations',uid='member',json={'email':'new@example.com'})).status_code,403)
+        self.assertEqual((await self.request('GET','/missions',uid='member')).status_code,200)
+
+    async def test_business_reserves_fifteen_seats_and_downgrade_locks_excess_members(self):
+        await self.db.users.update_one({'id':'owner'},{'$set':{'subscription_tier':'business'}})
+        await self.request('GET','/auth/me')
+        responses=await asyncio.gather(*[self.request('POST','/organization/invitations',json={'email':f'person{i}@example.com'}) for i in range(17)])
+        self.assertEqual(sum(r.status_code==200 for r in responses),15)
+        await self.db.organizations.update_one({'_id':'owner'},{'$set':{'invitations':[], 'members':[{'user_id':'owner','role':'owner'}]+[{'user_id':f'extra{i}','role':'member'} for i in range(5)]+[{'user_id':'member','role':'member'}]}})
+        await self.db.users.update_one({'id':'member'},{'$set':{'active_organization_id':'owner'}})
+        self.assertEqual((await self.request('GET','/missions',uid='member')).status_code,200)
+        await self.db.users.update_one({'id':'owner'},{'$set':{'subscription_tier':'team'}})
+        self.assertEqual((await self.request('GET','/missions',uid='member')).status_code,403)
+        self.assertTrue((await self.request('GET','/auth/me',uid='member')).json()['organization']['locked'])
+
+    async def test_whop_config_is_public_but_checkout_requires_owner_and_current_terms(self):
+        self.assertEqual((await self.client.get('/api/whop/config')).status_code,200)
+        response=await self.request('POST','/whop/checkout',json={'offer_key':'team_monthly','legal_version':'old'})
+        self.assertEqual(response.status_code,400)
+        response=await self.request('POST','/whop/status',uid='other',json={'reference':'x'*30})
+        self.assertEqual(response.status_code,404)
+
+    async def test_new_owned_organization_creates_scoped_mission_and_independent_settings(self):
+        await self.request('GET','/auth/me')
+        new=(await self.request('POST','/organization',json={'name':'Second'})).json()['id']
+        payload={'name':'New org event','location':'Lille','shifts':[{'date':'2099-01-01','start_time':'08:00','end_time':'12:00','people_needed':1}]}
+        response=await self.request('POST','/missions',json=payload)
+        self.assertEqual(response.status_code,200,response.text)
+        mission=await self.db.missions.find_one({'id':response.json()['id']})
+        self.assertEqual(mission['agency_id'],new)
+        self.assertEqual((await self.request('GET','/plan/quota')).json()['free_missions_remaining'],2)
+        await self.request('PUT','/organization',json={'name':'Second renamed'})
+        self.assertEqual((await self.db.users.find_one({'id':'owner'}))['agency_name'],'owner Events')
+        await self.request('POST','/organization/switch',json={'organization_id':'owner'})
+        self.assertEqual((await self.request('GET','/missions')).json(),[])
+        self.assertEqual((await self.request('GET','/auth/me')).json()['plan'],'pro')

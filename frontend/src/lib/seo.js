@@ -16,7 +16,7 @@ export const PUBLIC_PAGES = {
   },
   "/pricing": {
     title: "Tarifs ShiftFlow.io | Logiciel pour l’événementiel",
-    description: `Pour vos équipes de road et de montage : 3 missions offertes, puis 79 €/mois ou ${YEARLY.total} €/an. Missions et intervenants illimités. Pro Team à 89 €/mois ou 747,60 €/an pour le propriétaire et 5 collaborateurs.`,
+    description: `Pour vos équipes de road et de montage : 3 missions offertes, puis 79 €/mois ou ${YEARLY.total} €/an. Missions et intervenants illimités. Team à 99 €/mois ou 831,60 €/an pour 5 collaborateurs, Business à 149 €/mois ou 1 072,80 €/an pour 15 collaborateurs.`,
     label: "Tarifs",
   },
   "/demo": {

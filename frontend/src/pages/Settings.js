@@ -40,7 +40,7 @@ export default function Settings() {
           <div className="flex items-center gap-2 font-semibold">
             <Crown className="w-5 h-5 shrink-0"/> Abonnement de l’organisation
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
-              {isPro ? (user?.subscription_tier === "team" ? "PRO TEAM ACTIF" : "PRO ACTIF") : "À LA MISSION"}
+              {isPro ? (user?.subscription_tier === "business" ? "BUSINESS ACTIF" : user?.subscription_tier === "team" ? "TEAM ACTIF" : "PRO ACTIF") : "À LA MISSION"}
             </span>
           </div>
           <p className={`mt-3 text-xs ${isPro ? "text-blue-100" : "text-gray-500"}`}>Cette offre concerne uniquement {user?.organization?.name || "cette organisation"}. Les abonnements des autres équipes restent indépendants.</p>

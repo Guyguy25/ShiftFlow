@@ -1,3 +1,4 @@
+from workspace_accounts import accounts
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, EmailStr, field_validator
 import server as s
@@ -27,6 +28,7 @@ class OrganizationIn(BaseModel):
 
 class InviteIn(BaseModel):
     email: EmailStr
+    role: str = "member"
 
 
 class TokenIn(BaseModel):
@@ -58,12 +60,12 @@ async def create(payload: OrganizationIn, user=Depends(s.get_current_user)):
 
 @router.put('')
 async def update(payload: OrganizationIn, user=Depends(organization_user)):
-    org, _, role = await orgs.context(s.db, user)
-    if role != 'owner':
+    org, account, role = await orgs.context(s.db, user)
+    if not orgs.can_manage(role, account):
         raise HTTPException(403, 'Seul le propriétaire peut modifier l’organisation.')
     await s.db.organizations.update_one({'_id': org['id']}, {'$set': payload.model_dump()})
     # Preserve legacy message templates, public mission pages and the WhatsApp service.
-    await s.db.users.update_one({'id': org['owner_id']}, {'$set': {'agency_name': payload.name}})
+    await accounts(s.db).update_one({'id': org['id']}, {'$set': {'agency_name': payload.name}})
     return await orgs.summary(s.db, user)
 
 
@@ -79,13 +81,13 @@ async def switch(payload: SwitchIn, user=Depends(s.get_current_user)):
 
 @router.post('/invitations')
 async def invite(payload: InviteIn, user=Depends(organization_user)):
-    return await orgs.invite(s.db, user, str(payload.email), s.FRONTEND_URL or 'https://www.shiftflow.io')
+    return await orgs.invite(s.db, user, str(payload.email), s.FRONTEND_URL or 'https://www.shiftflow.io', payload.role)
 
 
 @router.delete('/invitations/{invitation_id}')
 async def revoke(invitation_id: str, user=Depends(organization_user)):
-    org, _, role = await orgs.context(s.db, user)
-    if role != 'owner':
+    org, account, role = await orgs.context(s.db, user)
+    if not orgs.can_manage(role, account):
         raise HTTPException(403, 'Seul le propriétaire peut révoquer une invitation.')
     await s.db.organizations.update_one({'_id': org['id']}, {'$pull': {'invitations': {'id': invitation_id}}})
     return {'ok': True}
@@ -93,9 +95,11 @@ async def revoke(invitation_id: str, user=Depends(organization_user)):
 
 @router.delete('/members/{member_id}')
 async def remove(member_id: str, user=Depends(organization_user)):
-    org, _, role = await orgs.context(s.db, user)
-    if role != 'owner':
+    org, account, role = await orgs.context(s.db, user)
+    if not orgs.can_manage(role, account):
         raise HTTPException(403, 'Seul le propriétaire peut retirer un membre.')
+    if role != 'owner' and any(m['user_id'] == member_id and m.get('role') == 'admin' for m in org['members']):
+        raise HTTPException(403, 'Seul le propriétaire peut retirer un administrateur.')
     if member_id == org['owner_id']:
         raise HTTPException(400, 'Le propriétaire ne peut pas être retiré.')
     await s.db.organizations.update_one({'_id': org['id']}, {'$pull': {'members': {'user_id': member_id}}})
@@ -113,3 +117,18 @@ async def invitation_info(payload: TokenIn):
 @router.post('/accept-invitation')
 async def accept(payload: TokenIn, user=Depends(s.get_current_user)):
     return await orgs.accept(s.db, user, payload.token)
+
+
+class RoleIn(BaseModel):
+    role: str
+
+@router.put('/members/{member_id}/role')
+async def set_role(member_id: str, payload: RoleIn, user=Depends(organization_user)):
+    org, account, role = await orgs.context(s.db, user)
+    if role != 'owner' or account.get('plan') != 'pro' or account.get('subscription_tier') != 'business':
+        raise HTTPException(403, 'Seul le propriétaire Business peut attribuer les rôles.')
+    if payload.role not in ('admin', 'member') or member_id == org['owner_id']:
+        raise HTTPException(400, 'Rôle invalide ou propriétaire non modifiable.')
+    result = await s.db.organizations.update_one({'_id': org['id'], 'members.user_id': member_id}, {'$set': {'members.$.role': payload.role}})
+    if not result.matched_count: raise HTTPException(404, 'Collaborateur introuvable.')
+    return {'ok': True}

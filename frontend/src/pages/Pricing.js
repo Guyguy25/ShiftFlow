@@ -1,161 +1,77 @@
-import { counted } from "../lib/french";
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Zap, ArrowLeft, Loader2 } from "lucide-react";
+import { Check, Zap, ArrowLeft } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { LEGAL_VERSION } from "../constants/legal";
+import WhopCheckoutModal from "../components/WhopCheckoutModal";
 
-import StripeCheckoutModal from "../components/StripeCheckoutModal";
-
-import { YEARLY } from "../lib/billingConfig";
-const features = ["Intervenants illimités", "Demandes et rappels WhatsApp", "Cascade automatique", "Suivi des réponses et historique"];
+export const OFFERS = [
+  { key: "pro", name: "Pro", monthly: 79, yearly: 711, discount: 25, tagline: "Votre activité, simplement", people: "Vous, seul dans votre organisation", features: ["Missions et intervenants illimités", "Demandes et rappels WhatsApp", "Cascade automatique", "Calendrier et suivi des réponses"] },
+  { key: "team", name: "Team", monthly: 99, yearly: 831.60, discount: 30, tagline: "Votre équipe au même endroit", people: "Vous + 5 collaborateurs", features: ["Toutes les fonctionnalités de Pro", "Un compte individuel par collaborateur", "Missions et intervenants partagés", "Invitations et gestion des accès"] },
+  { key: "business", name: "Business", monthly: 149, yearly: 1072.80, discount: 40, tagline: "Déléguez en gardant le contrôle", people: "Vous + 15 collaborateurs", features: ["Toutes les fonctionnalités de Team", "Administrateurs et coordinateurs", "Gestion des accès déléguée", "Facturation réservée au propriétaire"] },
+];
+const euros = value => value.toLocaleString("fr-FR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 });
 export default function Pricing() {
   const { user } = useAuth();
-  const [quota, setQuota] = useState(null);
-  const [checking, setChecking] = useState(!!user);
-  const [loading, setLoading] = useState(null);
-  const [error, setError] = useState("");
-  const [embeddedCheckout, setEmbeddedCheckout] = useState(null);
-  const checkoutInFlight = useRef(false);
-  const [accepted, setAccepted] = useState(false);
-  const [consentError, setConsentError] = useState(false);
-  const consentRef = useRef(null);
-  const [annual, setAnnual] = useState(false);
-  const [feedbackCode, setFeedbackCode] = useState("");
+  const [quota, setQuota] = useState(null), [config, setConfig] = useState(null);
+  const [annual, setAnnual] = useState(false), [accepted, setAccepted] = useState(false);
+  const [loading, setLoading] = useState(""), [error, setError] = useState(""), [checkout, setCheckout] = useState(null);
+  const inFlight = useRef(false), consent = useRef(null);
+  const orgId = user?.organization?.id;
+  const headers = { "X-Organization-ID": orgId };
   useEffect(() => {
-    let cancelled = false;
-    setFeedbackCode("");
-    if (user) api.get("/feedback/status").then(({ data }) => { if (!cancelled) setFeedbackCode(data.promo_code || ""); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [user]);
-  const teamLookup = annual ? "shiftflow_team_yearly" : "shiftflow_team_monthly";
-  const proLookup = annual ? "shiftflow_yearly" : "shiftflow_monthly";
-  useEffect(() => {
-    let cancelled = false;
-    if (!user) { setChecking(false); return; }
-    setChecking(true);
-    api.get("/plan/quota").then(({ data }) => { if (!cancelled) setQuota(data); })
-      .catch(() => { if (!cancelled) setError("Impossible de vérifier votre offre. Rechargez la page avant de payer."); })
-      .finally(() => { if (!cancelled) setChecking(false); });
-    return () => { cancelled = true; };
-  }, [user]);
-  const pro = quota?.plan === "pro" || user?.plan === "pro";
-  const teamActive = pro && (quota?.subscription_tier || user?.subscription_tier) === "team";
-  const billingOwner = user?.can_manage_billing !== false;
-  const freeAvailable = !!quota && quota.free_missions_remaining > 0;
-  const checkout = async (lookup) => {
-    if (!user) { window.location.href = "/register"; return; }
-    if (!accepted) {
-      setConsentError(true);
-      consentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      consentRef.current?.querySelector("input")?.focus();
-      return;
-    }
-    if (checkoutInFlight.current || embeddedCheckout) return;
-    checkoutInFlight.current = true;
-    setLoading(lookup); setError("");
-    try {
-      let publicKey = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || "";
-      if (!publicKey) {
-        const { data: config } = await api.get("/payments/config");
-        publicKey = config.publishable_key || "";
-      }
-      const { data } = await api.post("/payments/checkout", {
-        ui_mode: publicKey ? "embedded" : "hosted",
-        lookup_key: lookup, origin_url: window.location.origin,
-        promo_code: lookup === "shiftflow_monthly" ? feedbackCode : "",
-        quantity: 1,
-        legal_acceptance: { version: LEGAL_VERSION, accepted_at: new Date().toISOString(), scope: "pro_subscription" },
-        meta_consent: localStorage.getItem("shiftflow_cookie_consent") === "accepted",
-      });
-      if (data.ui_mode === "embedded") {
-        setEmbeddedCheckout({ ...data, publishable_key: publicKey, lookup_key: lookup });
-        setLoading(null);
-      } else { window.location.href = data.checkout_url; }
-    } catch (err) { setError(formatApiError(err.response?.data?.detail) || "Le paiement n’a pas pu être ouvert."); setLoading(null); }
-    finally { checkoutInFlight.current = false; }
-  };
-  const openPortal = async () => {
-    if (loading || !billingOwner) return;
-    setLoading("portal"); setError("");
-    try { const { data } = await api.post("/payments/portal", {}); window.location.assign(data.url); }
-    catch (err) { setError(formatApiError(err.response?.data?.detail)); setLoading(null); }
-  };
-  const button = "mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-center font-semibold disabled:opacity-50 disabled:cursor-not-allowed";
-  return <div className="min-h-screen bg-[#F9FAFB]">
-    <header className="border-b border-gray-100 bg-white"><div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
-      <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold"><Zap className="text-blue-600"/>ShiftFlow</Link>
-      <Link to={user ? "/app/dashboard" : "/"} className="flex min-h-11 items-center gap-2 text-sm text-gray-600"><ArrowLeft size={16}/>Retour</Link>
-    </div></header>
-    <main className="mx-auto max-w-6xl px-5 py-10 sm:py-16">
-      <div className="mx-auto max-w-3xl text-center">
-        <p className="text-sm font-semibold text-blue-700">Road, montage et renfort technique événementiel</p>
-        <h1 className="mt-3 font-display text-3xl font-bold tracking-tight sm:text-5xl">Vos 3 premières missions sont offertes.</h1>
-        <p className="mt-5 text-lg leading-relaxed text-gray-600">Sans date limite ni carte bancaire. Ensuite, ShiftFlow en illimité : 79 €/mois ou {YEARLY.total} €/an, soit {YEARLY.discount} % d’économie avec l’annuel.</p>
-      </div>
-      {user?.organization && <p className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-900">Offre de <strong>{user.organization.name}</strong>. Chaque organisation conserve ses données et son abonnement.{!billingOwner && " L’abonnement est géré par le propriétaire de cette équipe."}</p>}
-      {feedbackCode && !pro && <section className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-5"><h2 className="font-bold text-blue-900">Merci pour votre avis : 2 mois de Pro offerts</h2><p className="mt-2 text-sm text-blue-900">Code personnel : <strong className="break-all">{feedbackCode}</strong>. Appliqué automatiquement à Pro mensuel : 0 € pendant deux mois, puis 79 €/mois. Carte requise. Résiliable à tout moment avant la prochaine échéance. Une utilisation par compte.</p></section>}
-      {error && <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
-      {pro && <p className="mt-6 text-center font-semibold text-emerald-700">Votre abonnement Pro est actif. Vos missions sont illimitées.</p>}
-      <div className="mx-auto mt-10 grid max-w-6xl gap-5 md:grid-cols-3">
-        <section className="flex flex-col rounded-2xl border border-gray-200 bg-white p-6" data-testid="pricing-card-free">
-          <p className="text-sm font-semibold text-emerald-700">Pour découvrir</p><h2 className="mt-2 text-xl font-bold">3 missions offertes</h2>
-          <p className="mt-5 text-4xl font-bold">0 €</p><p className="mt-2 text-sm text-gray-500">Une seule fois par compte · valables à vie</p>
-          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-600">Testez ShiftFlow sur vos montages et démontages, avec votre réseau. Aucun passage automatique au payant.</p>
-          {user && (checking || !freeAvailable) ? <button type="button" disabled className={button + " border border-gray-200 bg-gray-100 text-gray-500"} data-testid="pricing-free-cta">
-            {checking ? "Vérification des missions…" : quota ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Solde indisponible"}
-          </button> : <Link to={user ? "/app/missions/new" : "/register"} className={button + " border border-gray-300 bg-white text-gray-900 hover:bg-gray-50"} data-testid="pricing-free-cta">
-            {user ? counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes") : "Commencer gratuitement"}
-          </Link>}
-        </section>
-        <section className="flex flex-col rounded-2xl border border-gray-900 bg-gray-900 p-6 text-white" data-testid="pricing-card-pro">
-          <p className="text-sm font-semibold text-blue-300">Pour vos équipes de terrain</p><h2 className="mt-2 text-xl font-bold">ShiftFlow Pro</h2>
-          <div role="group" aria-label="Fréquence de facturation" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-800 p-1">
-            <button aria-pressed={!annual} onClick={() => setAnnual(false)} disabled={!!loading} className={"min-h-11 rounded-lg px-2 text-sm font-semibold " + (!annual ? "bg-white text-gray-900" : "text-gray-200")}>Mensuel</button>
-            <button aria-label={`Annuel · −${YEARLY.discount} %`} aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"flex min-h-11 flex-wrap items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold " + (annual ? "bg-white text-gray-900" : "text-white hover:bg-gray-700")}><span>Annuel</span><span className="rounded-full bg-emerald-300 px-2.5 py-1 text-xs font-bold text-emerald-950">−{YEARLY.discount} %</span></button>
-          </div>
-          <p className="mt-5 text-4xl font-bold">{annual ? `${YEARLY.monthly} €` : "79 €"}<span className="text-base font-normal text-gray-300"> / mois</span></p>
-          <p className="mt-2 text-sm text-gray-300">{annual ? `${YEARLY.total} € payés en une fois pour 12 mois, renouvelés chaque année.` : "79 € facturés chaque mois. Sans engagement annuel."}</p>
-          <p className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2.5 text-sm font-medium text-emerald-200"><Check size={18} className="mt-0.5 shrink-0"/><span><strong>{YEARLY.saving} € économisés par an</strong> avec l’annuel, soit {YEARLY.discount} % par rapport à 12 mensualités.</span></p>
-          <p className="mt-4 text-sm font-semibold text-blue-200">1 compte dans votre organisation</p>
-          <p className="mt-5 flex-1 text-sm leading-relaxed text-gray-200">Montages, démontages et renforts : toutes vos missions et tous vos intervenants, un budget fixe. Sans supplément par personne. Résiliable pour la prochaine échéance, avec accès jusqu’à la fin de la période payée.</p>
-          <button onClick={() => checkout(proLookup)} disabled={!!loading || checking || pro || !billingOwner || (!!user && !quota)} className={button + " bg-white text-gray-900 hover:bg-blue-50"} data-testid="pricing-monthly-cta">{loading === proLookup && <Loader2 size={18} className="animate-spin"/>}{pro ? "Déjà Pro" : annual ? `Choisir ShiftFlow — ${YEARLY.total} €/an` : feedbackCode ? "Activer Pro — 2 mois à 0 €" : "Choisir ShiftFlow — 79 €/mois"}</button>
-        </section>
-        <section id="team" className="flex scroll-mt-8 flex-col rounded-2xl border-2 border-blue-600 bg-white p-6" data-testid="pricing-card-team">
-          <p className="text-sm font-semibold text-blue-700">Pour travailler ensemble</p><h2 className="mt-2 text-xl font-bold">ShiftFlow Pro Team</h2>
-          <div role="group" aria-label="Fréquence de facturation Pro Team" className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
-            <button aria-pressed={!annual} onClick={() => setAnnual(false)} disabled={!!loading} className={"min-h-11 rounded-lg text-sm font-semibold " + (!annual ? "bg-white text-blue-700 shadow-sm" : "text-gray-600")}>Mensuel</button>
-            <button aria-label="Annuel Team · −30 %" aria-pressed={annual} onClick={() => setAnnual(true)} disabled={!!loading} className={"min-h-11 rounded-lg text-sm font-semibold " + (annual ? "bg-white text-blue-700 shadow-sm" : "text-gray-600")}>Annuel <span className="ml-1 rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-800">−30 %</span></button>
-          </div>
-          <p className="mt-5 text-4xl font-bold">{annual ? "62,30 €" : "89 €"}<span className="text-base font-normal text-gray-500"> / mois</span></p>
-          <p className="mt-2 text-sm text-gray-500">{annual ? "747,60 € payés en une fois pour 12 mois, renouvelés chaque année." : "89 € facturés chaque mois. Sans engagement annuel."}</p>
-          <p className="mt-4 rounded-xl bg-blue-50 p-3 text-sm font-medium text-blue-900">320,40 € économisés par an avec l’annuel, soit 30 %.</p>
-          <ul className="mt-5 flex-1 space-y-3 text-sm text-gray-700">{["Toutes les fonctionnalités de Pro", "Missions et intervenants illimités", "Le propriétaire + 5 collaborateurs", "Un compte individuel par personne", "Missions, intervenants et WhatsApp partagés"].map(item => <li key={item} className="flex gap-2"><Check size={18} className="shrink-0 text-blue-600"/>{item}</li>)}</ul>
-          <button onClick={() => pro ? openPortal() : checkout(teamLookup)} disabled={!!loading || checking || teamActive || !billingOwner || (!!user && !quota)} className={button + " bg-blue-600 text-white hover:bg-blue-700"} data-testid="pricing-team-cta">{(loading === teamLookup || loading === "portal") && <Loader2 size={18} className="animate-spin"/>}{!billingOwner ? "Géré par le propriétaire" : teamActive ? "Pro Team actif" : pro ? "Passer à Pro Team" : annual ? "Choisir Pro Team — 747,60 €/an" : "Choisir Pro Team — 89 €/mois"}</button>
-          {pro && !teamActive && billingOwner && <p className="mt-3 text-xs leading-relaxed text-gray-500">Le changement et son éventuel prorata seront présentés dans le portail Stripe avant confirmation.</p>}
-        </section>
-      </div>
-      <section className="mt-7 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6">
-        <h2 className="font-semibold">Les mêmes outils pour réussir chaque mission</h2>
-        <ul className="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-2">{features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="shrink-0 text-emerald-600"/>{feature}</li>)}</ul>
-      </section>
-      {!pro && billingOwner && <div ref={consentRef} className={"mt-6 rounded-xl border p-4 " + (consentError ? "border-red-500 bg-red-50" : "border-gray-200 bg-white")}>
-        <label className="flex cursor-pointer items-start gap-3 text-sm text-gray-700"><input type="checkbox" checked={accepted} onChange={e => { setAccepted(e.target.checked); setConsentError(false); }} className="mt-0.5 h-5 w-5 shrink-0" aria-invalid={consentError}/><span>Avant un achat, j’accepte les <Link className="text-blue-700 underline" to="/conditions" target="_blank">conditions de vente</Link>, la <Link className="text-blue-700 underline" to="/confidentialite" target="_blank">politique de confidentialité</Link> et le <Link className="text-blue-700 underline" to="/dpa" target="_blank">DPA</Link>.</span></label>
-        {consentError && <p role="alert" className="mt-2 text-sm text-red-700">Acceptez les conditions pour ouvrir le paiement.</p>}
-      </div>}
-      <section className="mx-auto mt-12 max-w-4xl space-y-3">
-        <h2 className="mb-4 text-2xl font-bold">Tout savoir avant de commencer</h2>
-        {[
-          ["Qu’est-ce qu’une mission ?", "Un événement ou une intervention, avec ses créneaux (montage, démontage…), ses intervenants et son suivi. Un nouvel événement correspond à une nouvelle mission ; plusieurs créneaux du même événement restent inclus."],
-          ["Quand une mission est-elle décomptée ?", "À sa création, y compris en cas de duplication. Modifier ses créneaux ou suivre les réponses ne consomme pas de nouvelle mission. Archiver ou annuler ne recrédite pas la mission. La simulation gratuite permet de découvrir le fonctionnement sans consommer de mission."],
-          ["Les 3 missions offertes expirent-elles ?", "Non. Elles sont offertes une seule fois par compte, sans carte bancaire ni renouvellement mensuel. Les missions déjà créées sont prises en compte pour les comptes existants, sans facturation rétroactive."],
-          ["Que se passe-t-il après les 3 missions ?", `Vos missions existantes, leurs réponses et leurs rappels restent utilisables. Pour créer de nouvelles missions, abonnez-vous à ShiftFlow à 79 €/mois ou ${YEARLY.total} €/an, avec des missions illimitées. Aucun passage automatique au payant. Les crédits achetés avant le changement d’offre restent utilisables sans expiration.`],
-          ["Et si j’arrête mon abonnement ?", "Votre abonnement mensuel ou annuel reste actif jusqu’à la fin de la période payée. Ensuite, vos missions existantes restent utilisables. Pour en créer de nouvelles après épuisement de vos missions offertes et de vos éventuels anciens crédits, vous devez vous réabonner."],
-        ].map(([question, answer]) => <details key={question} className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer font-semibold">{question}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{answer}</p></details>)}
-      </section>
-      <p className="mt-8 text-center text-xs text-gray-500">Paiement sécurisé via Stripe. Chaque abonnement couvre une seule organisation. Pro : propriétaire seul. Pro Team : propriétaire + 5 collaborateurs. Aucun prélèvement sans votre choix.</p>
-    </main>
-    <StripeCheckoutModal checkout={embeddedCheckout} onClose={() => setEmbeddedCheckout(null)} />
+    let live = true; setQuota(null); setCheckout(null);
+    api.get("/whop/config").then(({ data }) => { if (live) setConfig(data); }).catch(() => { if (live) setError("Le service de paiement est indisponible. Réessayez plus tard."); });
+    if (orgId) api.get("/plan/quota", { headers: { "X-Organization-ID": orgId } }).then(({ data }) => { if (live) setQuota(data); }).catch(() => { if (live) setError("Impossible de vérifier l’offre de cette organisation. Rechargez la page."); });
+    const params = new URLSearchParams(window.location.search);
+    if (user && params.get("whop_reference") && params.get("organization_id")) setCheckout({ returning: true, reference: params.get("whop_reference"), organization_id: params.get("organization_id") });
+    return () => { live = false; };
+  }, [orgId, user?.id]);
+  const paid = quota?.plan === "pro";
+  const owner = user?.can_manage_billing !== false;
+  async function portal() {
+    if (inFlight.current) return; inFlight.current = true; setLoading("portal"); setError("");
+    try { const { data } = await api.post("/payments/portal", {}, { headers }); window.location.assign(data.url); }
+    catch (err) { setError(formatApiError(err.response?.data?.detail)); }
+    finally { inFlight.current = false; setLoading(""); }
+  }
+  async function subscribe(offer) {
+    if (!user) { window.location.assign("/register"); return; }
+    if (!orgId) { window.location.assign("/organizations/new"); return; }
+    if (!accepted) { setError("Acceptez les conditions pour ouvrir le paiement."); consent.current?.focus(); consent.current?.scrollIntoView?.({ block: "center", behavior: "smooth" }); return; }
+    if (inFlight.current || checkout || !owner) return;
+    inFlight.current = true; setLoading(offer); setError("");
+    try { const { data } = await api.post("/whop/checkout", { offer_key: offer, legal_version: LEGAL_VERSION }, { headers }); setCheckout({ ...data, organization_id: orgId, organization_name: user.organization.name }); }
+    catch (err) { setError(formatApiError(err.response?.data?.detail)); }
+    finally { inFlight.current = false; setLoading(""); }
+  }
+  return <div className="min-h-screen bg-[#F9FAFB] text-gray-900">
+    <header className="border-b bg-white"><div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5"><Link to="/" className="flex items-center gap-2 text-lg font-bold"><Zap className="text-blue-600"/>ShiftFlow</Link><Link to={user ? "/app/dashboard" : "/"} className="flex min-h-11 items-center gap-2 text-sm"><ArrowLeft size={16}/>Retour</Link></div></header>
+    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
+      <div className="mx-auto max-w-2xl text-center"><p className="text-sm font-semibold text-blue-700">Une offre pour chaque organisation</p><h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">Moins de coordination.<br/>Plus de missions réussies.</h1><p className="mt-5 text-gray-600">Commencez avec 3 missions offertes. Choisissez ensuite les accès adaptés à votre équipe.</p></div>
+      {orgId && <p className="mt-7 rounded-xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-900">Abonnement de <strong>{user.organization.name}</strong>. {owner ? "Chaque organisation dispose de son propre abonnement." : "Seul son propriétaire peut gérer la facturation. Vous pouvez aussi créer votre propre organisation."}</p>}
+      {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
+      {config?.ready === false && !paid && <p role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Les abonnements Whop sont en cours de configuration. Les achats seront disponibles après activation du paiement sécurisé.</p>}
+      {paid && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-sm text-emerald-900">Votre offre <strong>{OFFERS.find(o => o.key === quota.subscription_tier)?.name || "Pro"}</strong> est active.</p>{owner && <button onClick={portal} disabled={!!loading} className="min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-emerald-800">Gérer mon abonnement</button>}</div>}
+      <div role="group" aria-label="Fréquence de facturation" className="mx-auto mt-8 grid max-w-sm grid-cols-2 rounded-2xl border bg-white p-1.5 shadow-sm">{[false, true].map(value => <button key={String(value)} aria-pressed={annual === value} disabled={!!loading || !!checkout} onClick={() => setAnnual(value)} className={`min-h-12 rounded-xl px-2 text-sm font-semibold ${annual === value ? "bg-gray-900 text-white" : "text-gray-600"}`}>{value ? "Annuel · jusqu’à −40 %" : "Mensuel"}</button>)}</div>
+      <div className="mt-8 grid items-stretch gap-5 md:grid-cols-3">{OFFERS.map(offer => <section id={offer.key} key={offer.key} data-testid={`pricing-card-${offer.key}`} className={`flex min-w-0 scroll-mt-8 flex-col rounded-2xl border bg-white p-5 sm:p-6 ${offer.key === "team" ? "border-2 border-blue-600 shadow-sm" : "border-gray-200"}`}>
+        <p className="text-sm font-medium text-gray-500">{offer.tagline}</p><div className="mt-3 flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold">{offer.name}</h2>{annual && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">−{offer.discount} %</span>}</div>
+        <p className="mt-5 text-4xl font-bold tracking-tight">{euros(annual ? offer.yearly / 12 : offer.monthly)} €<span className="text-sm font-normal tracking-normal text-gray-500"> / mois</span></p>
+        <p className="mt-3 min-h-12 text-sm leading-relaxed text-gray-500">{annual ? `${euros(offer.yearly)} € facturés en une fois pour 12 mois. Renouvellement annuel.` : `${offer.monthly} € facturés chaque mois. Sans engagement annuel.`}</p>
+        {annual && <p className="mt-2 text-sm font-medium text-emerald-700">{euros(offer.monthly * 12 - offer.yearly)} € économisés par an</p>}
+        <p className="mt-5 border-t pt-5 text-sm font-semibold">{offer.people}</p><ul className="mt-5 flex-1 space-y-3 text-sm text-gray-600">{offer.features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="mt-0.5 shrink-0 text-blue-600"/>{feature}</li>)}</ul>
+        <button onClick={() => subscribe(`${offer.key}_${annual ? "yearly" : "monthly"}`)} disabled={!!loading || !!checkout || paid || !owner || config?.ready !== true || (!!orgId && !quota)} className={`mt-7 min-h-12 rounded-xl px-3 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${offer.key === "team" ? "bg-blue-600 text-white" : "bg-gray-900 text-white"}`}>{loading.startsWith(offer.key) ? "Ouverture…" : !owner ? "Géré par le propriétaire" : paid ? (quota.subscription_tier === offer.key ? "Votre offre actuelle" : "Gérer depuis votre abonnement") : `Choisir ${offer.name}`}</button>
+      </section>)}</div>
+      {!paid && owner && <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-xl border bg-white p-4 text-sm text-gray-600"><input ref={consent} type="checkbox" checked={accepted} onChange={e => setAccepted(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0"/><span>Avant l’achat, j’accepte les <Link to="/conditions" target="_blank" className="text-blue-700 underline">conditions de vente</Link>, la <Link to="/confidentialite" target="_blank" className="text-blue-700 underline">politique de confidentialité</Link> et le <Link to="/dpa" target="_blank" className="text-blue-700 underline">DPA</Link>.</span></label>}
+      <section className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 sm:p-6"><div><h2 className="font-bold">3 missions offertes, sans carte bancaire</h2><p className="mt-2 max-w-2xl text-sm text-gray-500">Une seule fois par propriétaire, partagées entre ses organisations. Créer un nouvel espace ne réinitialise pas ce quota. Aucun passage automatique au payant.</p></div>{user && orgId && quota && !paid && !quota.free_missions_remaining ? <button disabled className="min-h-11 rounded-xl border bg-gray-50 px-4 text-sm text-gray-500">Missions offertes utilisées</button> : <Link to={user ? orgId ? "/app/missions/new" : "/organizations/new" : "/register"} className="inline-flex min-h-11 items-center rounded-xl border px-4 text-sm font-semibold">{paid ? "Créer une mission" : quota ? `${quota.free_missions_remaining} mission(s) offerte(s) restante(s)` : "Commencer gratuitement"}</Link>}</section>
+      <section className="mx-auto mt-10 max-w-3xl space-y-3"><h2 className="mb-4 text-2xl font-bold">Des organisations indépendantes, un seul compte</h2>{[
+        ["Puis-je créer plusieurs organisations ?", "Oui, même si vous avez été invité dans une autre équipe. La création est gratuite. Chaque espace possède ses missions, ses intervenants, sa connexion WhatsApp et son propre abonnement. Un abonnement Pro ne couvre donc pas vos autres organisations."],
+        ["Quels droits ont les collaborateurs ?", "Avec Team, vos collaborateurs travaillent sur les missions et les intervenants. Avec Business, les coordinateurs assurent le suivi opérationnel ; les administrateurs peuvent aussi gérer les accès et les suppressions. Seul le propriétaire gère l’abonnement et nomme les administrateurs."],
+        ["Que se passe-t-il si je résilie ?", "La résiliation et sa date d’effet sont présentées dans votre portail de facturation. Vos missions existantes sont conservées. Après la fin de l’abonnement, les accès collaborateurs sont suspendus et les nouvelles missions nécessitent un solde gratuit, un ancien crédit ou un nouvel abonnement."],
+        ["Puis-je changer d’offre ?", "Si vous avez déjà un abonnement, ouvrez son portail depuis les paramètres. Consultez les changements disponibles, leur montant et leur date d’effet avant confirmation. Ne créez pas un second abonnement pour la même organisation."],
+      ].map(([q,a]) => <details key={q} className="rounded-xl border bg-white p-4"><summary className="cursor-pointer font-semibold">{q}</summary><p className="mt-3 text-sm leading-relaxed text-gray-600">{a}</p></details>)}</section>
+      <p className="mt-8 text-center text-xs leading-relaxed text-gray-500">Paiement sécurisé par Whop. Tarifs en euros ; les éventuelles taxes sont indiquées au paiement. Les abonnements Stripe existants restent gérables dans leur portail.</p>
+    </main><WhopCheckoutModal checkout={checkout} onClose={() => { setCheckout(null); if (window.location.search.includes("whop_reference")) window.history.replaceState({}, "", "/pricing"); if (orgId) api.get("/plan/quota", { headers }).then(({ data }) => setQuota(data)).catch(() => {}); }}/>
   </div>;
 }

@@ -14,6 +14,7 @@ from types import ModuleType, SimpleNamespace
 from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, patch
 
+from workspace_accounts import accounts
 import mongomock
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
 from fastapi.testclient import TestClient
@@ -65,6 +66,7 @@ class MissionOperationsTest(TestCase):
             return self.db.raw.users.find_one({"id": request.headers.get("x-agency", "a")}) or {"id": "unknown"}
         self.s.get_current_user = current_user
         self.s.get_workspace_user = current_user
+        self.s.get_workspace_manager = current_user
         tree = ast.parse((BACKEND / "server.py").read_text(encoding="utf-8"))
         names = {"ShiftIn", "MissionIn", "SelectWorkersIn", "ConfirmIn", "ShiftDuplicateIn", "compute_shift_estimate", "mission_with_shifts", "update_shift_and_mission_status", "public_get", "public_accept", "public_refuse", "select_workers_for_shift", "mark_no_answer", "cancel_mission", "duplicate_shift", "duplicate_mission", "force_cascade", "get_mission"}
         nodes = [node for node in tree.body if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names]

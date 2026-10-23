@@ -1,3 +1,4 @@
+from workspace_accounts import accounts
 """Post-mission declarations. One atomic, versioned document per assignment."""
 import csv
 import hashlib
@@ -176,7 +177,7 @@ async def get_settings(user=Depends(s.get_workspace_user)):
 
 @router.put("/hours/settings")
 async def save_settings(payload: Settings, user=Depends(s.get_workspace_user)):
-    await s.db.users.update_one({"id": user["id"]}, {"$set": {"timesheet_settings": payload.model_dump()}})
+    await accounts(s.db).update_one({"id": user["id"]}, {"$set": {"timesheet_settings": payload.model_dump()}})
     return payload.model_dump()
 
 
@@ -347,7 +348,7 @@ async def renew(sheet_id: str, user=Depends(s.get_workspace_user)):
 async def run_timesheets():
     """Called by the existing authenticated reminder webhook; opt-in per agency."""
     counts = {"sent": 0, "failed": 0, "skipped": 0}
-    users = await s.db.users.find({"timesheet_settings.enabled": True}, {"_id": 0}).to_list(None)
+    users = await accounts(s.db).find({"timesheet_settings.enabled": True}, {"_id": 0}).to_list(None)
     for user in users:
         settings = {**DEFAULT_SETTINGS, **user["timesheet_settings"]}
         missions = await s.db.missions.find({"agency_id": user["id"], "status": {"$ne": "cancelled"}, "archived": {"$ne": True}}, {"_id": 0}).to_list(None)

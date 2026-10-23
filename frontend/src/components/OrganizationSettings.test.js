@@ -20,14 +20,14 @@ afterEach(async () => {await act(async()=>root.unmount());host.remove();});
 async function render() {await act(async()=>root.render(<OrganizationSettings/>));}
 async function fill(selector,value) {await act(async()=>{const input=host.querySelector(selector);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));});}
 test("Pro can see invitations but cannot use them", async()=>{
- await render();expect(host.textContent).toContain("Nom de l’organisation");expect(host.textContent).toContain("Invitations disponibles avec Pro Team");
+ await render();expect(host.textContent).toContain("Nom de l’organisation");expect(host.textContent).toContain("Invitations disponibles avec Team");
  expect(host.querySelector('input[type="email"]').disabled).toBe(true);
  expect(host.querySelector('a[href="/pricing#team"]')).not.toBeNull();
 });
 test("Team owner invites and receives an explicit copy link if mail was not sent", async()=>{
  data.team_enabled=true;await render();expect(host.querySelector('input[type="email"]').disabled).toBe(false);
  await fill('input[type="email"]',"member@example.com");await act(async()=>host.querySelectorAll("form")[1].dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
- expect(api.post).toHaveBeenCalledWith("/organization/invitations",{email:"member@example.com"});
+ expect(api.post).toHaveBeenCalledWith("/organization/invitations",{email:"member@example.com",role:"member"});
  expect(host.textContent).toContain("Copiez le lien");expect(host.textContent).not.toContain("Invitation envoyée");
 });
 test("member can see organization but cannot edit or invite",async()=>{

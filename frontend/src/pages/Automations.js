@@ -1,3 +1,5 @@
+import { useAuth } from "../context/AuthContext";
+import { canManageOperations } from "../lib/permissions";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Save, RotateCcw, MessageCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
@@ -9,6 +11,7 @@ const DEFAULT_REQUIRED_TOKENS = ["{prenom}", "{mission}", "{date}", "{lien}"];
 
 
 export default function Automations() {
+  const canManage = canManageOperations(useAuth()?.user);
   const [notifs, setNotifs] = useState([]);
   const [messageConfig, setMessageConfig] = useState(null);
   const [messageTemplate, setMessageTemplate] = useState("");
@@ -115,7 +118,7 @@ export default function Automations() {
           </div>
 
           <label className="mt-4 block text-sm font-medium">Type de message
-            <select aria-label="Type de message" className="mt-2 w-full border rounded-lg p-3" value={automationKind} disabled={messageSaving || !automationConfig} onChange={event => {
+            <select aria-label="Type de message" className="mt-2 w-full border rounded-lg p-3" value={automationKind} disabled={!canManage || messageSaving || !automationConfig} onChange={event => {
               if (messageTemplate !== automationConfig.templates[automationKind] && !window.confirm("Abandonner les modifications non enregistrées ?")) return;
               const kind = event.target.value; setAutomationKind(kind); setMessageTemplate(automationConfig.templates[kind]);
             }}>
@@ -131,7 +134,7 @@ export default function Automations() {
               ref={messageRef}
               value={messageTemplate}
               onChange={(e) => setMessageTemplate(e.target.value.slice(0, maxChars + 20))}
-              disabled={!automationConfig || messageSaving}
+              disabled={!canManage || !automationConfig || messageSaving}
               rows={8}
               spellCheck="true"
               data-testid="automations-whatsapp-template-input"
@@ -170,7 +173,7 @@ export default function Automations() {
             )}
 
             <div className="mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <button type="button" onClick={resetMessageTemplate} disabled={messageSaving || !automationConfig} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+              <button type="button" onClick={resetMessageTemplate} disabled={!canManage || messageSaving || !automationConfig} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50">
                 <RotateCcw className="w-4 h-4"/> Restaurer le message par défaut
               </button>
               <button type="button" onClick={saveMessageTemplate} disabled={messageSaving || !automationConfig || !messageValidation.valid} data-testid="automations-whatsapp-template-save" className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
