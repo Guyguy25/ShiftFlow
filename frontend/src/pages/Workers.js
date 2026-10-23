@@ -8,6 +8,7 @@ import ShiftFlowLoader from "../components/ShiftFlowLoader";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, Trash2, Edit2, X, Info, MessageCircle, Smartphone, Check, RefreshCw, ArrowRight, UserPlus, AlertTriangle, RotateCcw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
+import { trackActivation } from "../lib/activationTracking";
 import { toast, Toaster } from "sonner";
 import UpgradeModal from "../components/UpgradeModal";
 import WhatsAppPairingSteps from "../components/WhatsAppPairingSteps";
@@ -82,8 +83,10 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
     sessionStartLockRef.current = true;
     setStartingSession(true);
     try {
+      trackActivation("whatsapp_session_started");
       await api.post("/whatsapp/session/start");
     } catch (err) {
+      trackActivation("whatsapp_session_error", "request_failed");
       console.error("Erreur démarrage WhatsApp :", err);
     } finally {
       sessionStartLockRef.current = false;
@@ -140,6 +143,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
     if (pairRequestPendingRef.current) return;
     const phone = pairPhone.trim();
     if (!phone) {
+      trackActivation("whatsapp_pair_error", "missing_phone");
       setPairError("Renseignez le numéro utilisé sur WhatsApp.");
       return;
     }
@@ -149,6 +153,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
     setPairError("");
     setPairAttempt(null);
     try {
+      trackActivation("whatsapp_pair_requested");
       const { data } = await api.post("/whatsapp/session/pair-code", { phone });
       if (data?.connected) {
         pairRequestPendingRef.current = false;
@@ -156,7 +161,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
         await fetchStatusAndContacts();
         return;
       }
-      if (!data?.code) throw new Error("Aucun code reçu.");
+      if (!data?.code) { trackActivation("whatsapp_pair_error", "missing_code"); throw new Error("Aucun code reçu."); }
       const receivedAt = Date.now();
       // Use the server's remaining time, including time spent preparing the code.
       // Do not assume 60 seconds from receipt or rely on the phone's clock setting.
@@ -168,6 +173,7 @@ export function WhatsAppImportModal({ onClose, onDone, onQuota, onConnected, con
       setStatus(previous => ({ ...previous, connected: false, pairingExpired: false, lastConnectionError: null }));
       setConnectionError("");
     } catch (err) {
+      if (err.message !== "Aucun code reçu.") trackActivation("whatsapp_pair_error", "request_failed");
       setPairError(formatApiError(err.response?.data?.detail || err.response?.data?.error) || "Impossible de générer le code. Réessayez dans quelques secondes.");
     } finally {
       pairRequestVersionRef.current += 1;
