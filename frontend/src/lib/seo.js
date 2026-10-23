@@ -10,7 +10,7 @@ export const PUBLIC_PAGES = {
     label: "Test accompagné",
   },
   "/": {
-    title: "ShiftFlow.io | Confirmez vos roads sans relances à la main",
+    title: "ShiftFlow.io | Confirmez vos équipes événementielles de road",
     description: "15 roads à confirmer, un refus de dernière minute ? ShiftFlow contacte le suivant depuis votre WhatsApp, suit les réponses et facilite les rappels. 3 missions offertes, sans carte bancaire.",
     label: "Accueil",
   },
