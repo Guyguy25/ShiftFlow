@@ -27,7 +27,7 @@ export default function Missions() {
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [order, setOrder] = useState("recent");
+  const [order, setOrder] = useState("upcoming");
   const [upgrade, setUpgrade] = useState(null);
   const nav = useNavigate();
 
@@ -72,6 +72,15 @@ export default function Missions() {
       if (filter === "past") return past;
       return true;
     }).sort((a, b) => {
+      // Keep undated drafts at the end of chronological sorting.
+      const aDate = a.first_date || "", bDate = b.first_date || "";
+      if (!aDate || !bDate) return aDate ? -1 : bDate ? 1 : 0;
+      if (order === "upcoming") {
+        const bucket = m => m.status === "draft" ? 2 : !isMissionPast(m, today) && m.status !== "cancelled" ? 0 : 1;
+        const diff = bucket(a) - bucket(b);
+        if (diff) return diff;
+        return bucket(a) === 0 ? aDate.localeCompare(bDate) : bDate.localeCompare(aDate);
+      }
       const result = missionSortDate(a).localeCompare(missionSortDate(b));
       return order === "recent" ? -result : result;
     });
@@ -116,7 +125,7 @@ export default function Missions() {
         <option value="draft">Brouillons</option>
         <option value="past">Dates passées</option>
       </select>
-      <select aria-label="Trier les missions" value={order} onChange={e => setOrder(e.target.value)} className={control}><option value="recent">Dates récentes d'abord</option><option value="oldest">Dates anciennes d'abord</option></select>
+      <select aria-label="Trier les missions" value={order} onChange={e => setOrder(e.target.value)} className={control}><option value="upcoming">À venir en premier</option><option value="recent">Dates récentes d'abord</option><option value="oldest">Dates anciennes d'abord</option></select>
     </div>
     <div className="mt-5">
       {loading ? <ShiftFlowLoader label="Chargement de vos missions…" /> : loadError ? <div role="alert" className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">{loadError}<button type="button" onClick={() => load()} className="ml-3 font-semibold underline">Réessayer</button></div> :
