@@ -40,11 +40,15 @@ test("demo preserves the 14 confirmed roadies, replaces only the last place, and
   expect(host.querySelector("input").value).toContain("Montage de scène");
 });
 
-test("landing shows full team context while the compact cascade changes state", async () => {
+test("landing presents Claude-style animated cascade in both existing locations", async () => {
   await act(async () => root.render(<Landing />));
-  const buttons = Array.from(host.querySelectorAll("button"));
-  await click(buttons.find(button => button.textContent === "3. La confirmation"));
-  expect(host.querySelector('[role="progressbar"]').getAttribute("aria-valuenow")).toBe("15");
-  await click(buttons.find(button => button.textContent === "1. La demande"));
-  expect(host.querySelector('[role="progressbar"]').getAttribute("aria-valuenow")).toBe("14");
+  const cards = Array.from(host.querySelectorAll('[data-testid="landing-mission-card"]'));
+  expect(cards).toHaveLength(2);
+  cards.forEach((card) => {
+    expect(card.textContent).toContain("Montage stand · 15 roads");
+    expect(card.textContent).toContain("Salut Camille");
+    expect(card.textContent).toContain("14/15 confirmés");
+    expect(card.querySelector('[role="progressbar"]').getAttribute("aria-valuenow")).toBe("14");
+    expect(card.querySelector('[data-testid="landing-mission-playback"]')).not.toBeNull();
+  });
 });
