@@ -1,8 +1,7 @@
-import { api } from "./api";
+import { API } from "./api";
 
-// Product diagnostics only: no URLs, typed fields, names, phone numbers,
-// WhatsApp content, form inputs, or raw error messages are transmitted.
-// Authenticated, first-party events are separated from advertising tracking.
+// Authenticated, first-party product diagnostics; no ad pixels or recording.
+// No URLs, names, phone numbers, message content, entered fields or raw errors.
 const ALLOWED = new Set([
   "mission_form_opened", "mission_form_step", "mission_form_error",
   "whatsapp_session_started", "whatsapp_session_error",
@@ -19,8 +18,18 @@ const DETAILS = {
 };
 
 export function trackActivation(event, detail = null) {
-  if (!ALLOWED.has(event)) return;
+  if (!ALLOWED.has(event) || typeof fetch !== "function") return;
   const safe = DETAILS[event]?.has(detail) ? detail : null;
-  // Best-effort telemetry must never delay or break actual user actions.
-  api.post("/activation/interaction", { event, detail: safe }).catch(() => {});
+  // Intentionally separate from the application's axios instance: diagnostic
+  // requests must never block or be mistaken for an actual business action.
+  try {
+    Promise.resolve(fetch(`${API}/activation/interaction`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event, detail: safe }),
+    })).catch(() => {});
+  } catch (_) {
+    // Never interrupt the user's mission or invitation.
+  }
 }
