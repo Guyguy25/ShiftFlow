@@ -11,8 +11,9 @@ export default function WhopCheckoutModal({ checkout, onClose }) {
   const [error, setError] = useState("");
   const [frameReady, setFrameReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [hostedOpened, setHostedOpened] = useState(false);
   const receipt = useRef("");
-  useEffect(() => { setStatus(checkout?.returning ? "confirming" : "checkout"); setError(""); setFrameReady(false); receipt.current = ""; }, [checkout]);
+  useEffect(() => { setStatus(checkout?.returning ? "confirming" : "checkout"); setError(""); setFrameReady(false); setHostedOpened(false); receipt.current = ""; }, [checkout]);
   useEffect(() => {
     if (!checkout || status !== "confirming") return undefined;
     let live = true, timer, count = 0;
@@ -39,6 +40,8 @@ export default function WhopCheckoutModal({ checkout, onClose }) {
   }, [checkout, status, frameReady]);
   if (!checkout) return null;
   const returning = `${window.location.origin}/pricing?whop_reference=${encodeURIComponent(checkout.reference)}&organization_id=${encodeURIComponent(checkout.organization_id)}`;
+  const hostedUrl = /^ch_[A-Za-z0-9]+$/.test(checkout.session_id || "") && ["production", "sandbox"].includes(checkout.environment)
+    ? `https://${checkout.environment === "sandbox" ? "sandbox.whop.com" : "whop.com"}/checkout/${checkout.session_id}/` : null;
   return <Dialog.Root open onOpenChange={open => { if (!open) onClose(); }}><Dialog.Portal>
     <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"/>
     <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[94dvh] w-[calc(100%_-_1rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6">
@@ -46,6 +49,11 @@ export default function WhopCheckoutModal({ checkout, onClose }) {
       <Dialog.Description className="mt-2 text-sm text-gray-600">Paiement sécurisé par Whop. Le tarif final et les éventuelles taxes sont présentés avant confirmation.</Dialog.Description>
       <Dialog.Close aria-label="Fermer le paiement" className="absolute right-3 top-3 rounded-lg p-2 hover:bg-gray-100"><X size={20}/></Dialog.Close>
       {status === "checkout" && <div className="mt-5 min-h-64"><WhopCheckoutEmbed sessionId={checkout.session_id} environment={checkout.environment} theme="light" locale="fr" adaptivePricing={false} returnUrl={returning} skipRedirect onStateChange={state => { if (state === "ready") { setFrameReady(true); setError(""); } }} onPaymentError={() => setError("Le paiement n’a pas abouti. Vérifiez les indications de Whop avant de réessayer.")} onComplete={(_, id) => { receipt.current = /^pay_[A-Za-z0-9]+$/.test(id || "") ? id : ""; setStatus("confirming"); }}/></div>}
+      {status === "checkout" && hostedUrl && <div className="mt-4 rounded-xl border border-gray-200 p-4 text-sm">
+        <p className="text-gray-600">Le formulaire affiche une erreur ? Continuez avec le paiement sécurisé sur Whop.</p>
+        <a href={hostedUrl} target="_blank" rel="noopener noreferrer" onClick={() => setHostedOpened(true)} className="mt-3 block rounded-xl bg-blue-600 px-4 py-3 text-center font-semibold text-white hover:bg-blue-700">Ouvrir le paiement sur Whop</a>
+        {hostedOpened && <><p className="mt-3 text-gray-600">Après le paiement, revenez ici pour vérifier l’activation de votre abonnement.</p><button onClick={() => { setError(""); setStatus("confirming"); }} className="mt-3 rounded-lg px-2 py-2 font-semibold text-blue-700 underline">J’ai terminé : vérifier mon abonnement</button></>}
+      </div>}
       {status === "confirming" && <p role="status" className="py-8 text-sm text-gray-600">Vérification du paiement auprès de Whop…</p>}
       {error && <div role="alert" className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"><p>{error}</p><button onClick={() => { if (status === "checkout") onClose(); else { setError(""); setAttempt(v => v + 1); } }} className="mt-3 font-semibold underline">{status === "checkout" ? "Fermer le formulaire" : "Vérifier à nouveau"}</button></div>}
       {status === "paid" && <div className="py-8 text-center"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600"/><p className="mt-4">Les fonctionnalités de votre offre sont disponibles pour cette organisation.</p><button onClick={onClose} className="mt-5 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white">Continuer</button></div>}

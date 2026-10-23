@@ -15,3 +15,23 @@ test("expired or refunded memberships do not show activation",async()=>{api.post
 test("redirect return verifies the original organization without trusting query fields",async()=>{api.post.mockRejectedValue({response:{status:409}});await act(async()=>root.render(<WhopCheckoutModal checkout={{...checkout,returning:true}} onClose={()=>{}}/>));expect(api.post).toHaveBeenCalledWith("/whop/status",{reference:"reference_test",payment_id:""},{headers:{"X-Organization-ID":"org_test"}});expect(mockRefresh).not.toHaveBeenCalled();expect(document.body.textContent).toContain("Ouvrez l’organisation");});
 
 test("checkout explicitly keeps the plan currency instead of local currency conversion",async()=>{await act(async()=>root.render(<WhopCheckoutModal checkout={checkout} onClose={()=>{}}/>));expect(mockEmbedProps.adaptivePricing).toBe(false);expect(mockEmbedProps.sessionId).toBe("ch_test");});
+
+test("hosted fallback reuses the same session and requires server confirmation",async()=>{
+  api.post.mockResolvedValue({data:{status:"pending"}});
+  await act(async()=>root.render(<WhopCheckoutModal checkout={checkout} onClose={()=>{}}/>));
+  const link=document.querySelector('a[href="https://whop.com/checkout/ch_test/"]');
+  expect(link).not.toBeNull();expect(link.rel).toContain("noopener");
+  await act(async()=>link.dispatchEvent(new MouseEvent("click",{bubbles:true})));
+  const verify=[...document.querySelectorAll("button")].find(b=>b.textContent.includes("J’ai terminé"));
+  await act(async()=>verify.click());
+  expect(api.post).toHaveBeenCalledWith("/whop/status",{reference:"reference_test",payment_id:""},{headers:{"X-Organization-ID":"org_test"}});
+  expect(mockRefresh).not.toHaveBeenCalled();
+});
+test.each(["javascript:alert(1)","ch_bad/path"])("invalid session %s cannot create a hosted link",async session_id=>{
+ await act(async()=>root.render(<WhopCheckoutModal checkout={{...checkout,session_id}} onClose={()=>{}}/>));
+ expect(document.querySelector('a')).toBeNull();
+});
+test("sandbox fallback stays in sandbox",async()=>{
+ await act(async()=>root.render(<WhopCheckoutModal checkout={{...checkout,environment:"sandbox"}} onClose={()=>{}}/>));
+ expect(document.querySelector('a').href).toBe("https://sandbox.whop.com/checkout/ch_test/");
+});
