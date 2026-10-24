@@ -19,12 +19,12 @@ beforeEach(() => {
 afterEach(async () => {await act(async()=>root.unmount());host.remove();});
 async function render() {await act(async()=>root.render(<OrganizationSettings/>));}
 async function fill(selector,value) {await act(async()=>{const input=host.querySelector(selector);Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));});}
-test("Pro can see invitations but cannot use them", async()=>{
- await render();expect(host.textContent).toContain("Nom de l’organisation");expect(host.textContent).toContain("Invitations disponibles avec Team");
+test("Start can see invitations but cannot use them", async()=>{
+ await render();expect(host.textContent).toContain("Nom de l’organisation");expect(host.textContent).toContain("Invitations disponibles avec Pro ou Business");
  expect(host.querySelector('input[type="email"]').disabled).toBe(true);
  expect(host.querySelector('a[href="/pricing#pro"]')).not.toBeNull();
 });
-test("Team owner invites and receives an explicit copy link if mail was not sent", async()=>{
+test("Pro owner invites and receives an explicit copy link if mail was not sent", async()=>{
  data.team_enabled=true;await render();expect(host.querySelector('input[type="email"]').disabled).toBe(false);
  await fill('input[type="email"]',"member@example.com");await act(async()=>host.querySelectorAll("form")[1].dispatchEvent(new Event("submit",{bubbles:true,cancelable:true})));
  expect(api.post).toHaveBeenCalledWith("/organization/invitations",{email:"member@example.com",role:"member"});
@@ -37,8 +37,8 @@ test("member can see organization but cannot edit or invite",async()=>{
  expect(host.textContent).not.toContain("Enregistrer l’organisation");
 });
 test("shared seats show capacity while allowing an existing collaborator in another space",async()=>{
- data.team_enabled=true;data.invitations=Array.from({length:5},(_,i)=>({id:String(i),email:`m${i}@example.com`}));await render();
- expect(host.querySelector('input[type="email"]').disabled).toBe(false);expect(host.textContent).toContain("5/5 places");
+ data.team_enabled=true;data.max_collaborators=3;data.invitations=Array.from({length:3},(_,i)=>({id:String(i),email:`m${i}@example.com`}));await render();
+ expect(host.querySelector('input[type="email"]').disabled).toBe(false);expect(host.textContent).toContain("3/3 places");
 });
 test("organization update only sends the editable name and photo",async()=>{
  await render();await fill('input[maxlength="120"]',"Nouvelle régie");
