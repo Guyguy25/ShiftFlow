@@ -811,7 +811,7 @@ async def google_auth(payload: GoogleAuthIn, request: Request, response: Respons
             if not linked.matched_count:
                 raise HTTPException(409, "Ce compte a changé. Rechargez la page pour réessayer.")
         else:
-            if not payload.registration or payload.legal_version != "2026-10-23":
+            if not payload.registration or payload.legal_version not in ("2026-10-23", "2026-10-24"):
                 raise HTTPException(400, "Pour créer un compte Google, complétez l'inscription et acceptez les conditions.")
             from pydantic import ValidationError
             try:
@@ -2261,7 +2261,7 @@ def stripe_checkout_response(session, ui_mode):
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_workspace_owner)):
-    if payload.legal_acceptance.get("version") != "2026-10-23":
+    if payload.legal_acceptance.get("version") not in ("2026-10-23", "2026-10-24"):
         raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
     if user["id"].startswith("org_"):
         raise HTTPException(409, "Cette organisation utilise Whop. Ouvrez le paiement depuis la page Tarifs.")
