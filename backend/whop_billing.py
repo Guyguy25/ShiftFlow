@@ -19,12 +19,19 @@ from meta_capi import send_meta_event
 CATALOG = {
  'pro_monthly': {'plan_id':'plan_wT9sMJbmEPmEX','tier':'pro','amount':7900,'days':30},
  'pro_yearly': {'plan_id':'plan_bfw2MekzEdm1L','tier':'pro','amount':71100,'days':365},
- 'team_monthly': {'plan_id':'plan_0qi0BSH21UYmt','tier':'team','amount':9900,'days':30},
- 'team_yearly': {'plan_id':'plan_c4V3F8w1mC2Ij','tier':'team','amount':83160,'days':365},
+ 'start_monthly': {'plan_id':'plan_0qi0BSH21UYmt','tier':'start','amount':2900,'days':30},
+ 'start_yearly': {'plan_id':'plan_c4V3F8w1mC2Ij','tier':'start','amount':27840,'days':365},
  'business_monthly': {'plan_id':'plan_acPF1WcadHWiT','tier':'business','amount':14900,'days':30},
  'business_yearly': {'plan_id':'plan_7k832i8ogYfkD','tier':'business','amount':107280,'days':365},
 }
-RANK = {'pro':0,'team':1,'business':2}
+# Legacy Team sold under the same Whop plan IDs before their repricing to Start.
+# Keep older checkout quotes verifiable and grandfather already-active memberships.
+LEGACY_TEAM_CHECKOUTS = {
+ 'team_monthly': {'plan_id':CATALOG['start_monthly']['plan_id'],'tier':'team','amount':9900,'days':30},
+ 'team_yearly': {'plan_id':CATALOG['start_yearly']['plan_id'],'tier':'team','amount':83160,'days':365},
+}
+START_PLAN_IDS = {CATALOG['start_monthly']['plan_id'], CATALOG['start_yearly']['plan_id']}
+RANK = {'start':0,'pro':1,'team':1,'business':2}
 
 def ready(): return all(os.environ.get(key, '').strip() for key in ('WHOP_API_KEY','WHOP_WEBHOOK_SECRET','WHOP_COMPANY_ID'))
 def identifier(value): return value.get('id') if isinstance(value,dict) else value
@@ -156,13 +163,21 @@ async def fulfill_payment(db,payment_id,expected_org=None):
         offer=next((v for v in CATALOG.values() if v['plan_id']==plan_id),None)
         if not offer or provider_company(payment) != os.environ.get('WHOP_COMPANY_ID'): return None
         initial=not bound
+        legacy_quote = LEGACY_TEAM_CHECKOUTS.get(record.get('offer_key')) if record else None
+        quoted_offer = legacy_quote if initial and legacy_quote else offer
         if initial and (metadata.get('organization_id') != org_id or plan_id != record['plan_id']):
             raise HTTPException(400,'Le paiement ne correspond pas à cette organisation.')
         amount=cents(payment.get('subtotal'))
         if payment.get('status') not in ('paid','succeeded') or payment.get('refunded_amount',0) or payment.get('currency','').lower() != 'eur': return None
         # Initial price must exactly match the displayed offer. A known membership
         # may renew or change plan with a provider-calculated prorated amount.
-        if (initial and amount != offer['amount']) or (not initial and not 0 < amount <= offer['amount']): return None
+        if initial and amount != quoted_offer['amount']: return None
+        if not initial:
+            allowed = offer['amount']
+            if bound.get('subscription_tier') == 'team' and bound.get('billing_catalog_version') != 2:
+                if plan_id == CATALOG['start_monthly']['plan_id']: allowed = 9900
+                if plan_id == CATALOG['start_yearly']['plan_id']: allowed = 83160
+            if not 0 < amount <= allowed: return None
         if not membership_id or not re.fullmatch(r'mem_[A-Za-z0-9]+',membership_id): return None
         member=await api('GET','/memberships/'+membership_id)
         if member.get('status') != 'active' or identifier(member.get('plan')) != plan_id or provider_company(member) != os.environ.get('WHOP_COMPANY_ID'): return None
@@ -177,7 +192,11 @@ async def fulfill_payment(db,payment_id,expected_org=None):
         if not current or current.get('whop_refunded_payment_id') == payment_id: return None
         if current.get('stripe_subscription_id') or (current.get('whop_membership_id') and current['whop_membership_id'] != membership_id):
             raise HTTPException(409,'Un autre abonnement est déjà lié à cette organisation. Contactez le support.')
-        await accounts(db).update_one({'id':target_id},{'$set':{'plan':'pro','subscription_tier':offer['tier'],'payment_provider':'whop','subscription_status':'active','whop_membership_id':membership_id,'whop_plan_id':plan_id,**({'whop_last_payment_id':payment_id,'whop_last_payment_at':str(payment.get('created_at') or '')} if not current.get('whop_last_payment_id') or str(payment.get('created_at') or '') > current.get('whop_last_payment_at','') else {})}})
+        legacy_team = (current.get('subscription_tier') == 'team' and current.get('billing_catalog_version') != 2
+                       and current.get('whop_plan_id') == plan_id and plan_id in START_PLAN_IDS)
+        next_tier = 'team' if legacy_team else quoted_offer['tier'] if initial else offer['tier']
+        is_new_catalog = (initial and not legacy_quote) or (not initial and current.get('whop_plan_id') != plan_id)
+        await accounts(db).update_one({'id':target_id},{'$set':{'plan':'pro','subscription_tier':next_tier,**({'billing_catalog_version':2} if is_new_catalog else {}),'payment_provider':'whop','subscription_status':'active','whop_membership_id':membership_id,'whop_plan_id':plan_id,**({'whop_last_payment_id':payment_id,'whop_last_payment_at':str(payment.get('created_at') or '')} if not current.get('whop_last_payment_id') or str(payment.get('created_at') or '') > current.get('whop_last_payment_at','') else {})}})
         await db.whop_processed_payments.update_one({'_id':payment_id},{'$setOnInsert':{'organization_id':org_id}},upsert=True)
         if record:
             await db.whop_checkouts.update_one({'_id':ref},{'$set':{'fulfilled':True,'membership_id':membership_id,'payment_id':payment_id}})
@@ -198,7 +217,10 @@ async def sync_membership(db,membership_id):
         offer=next((v for v in CATALOG.values() if v['plan_id']==plan_id),None)
         active=member.get('status')=='active' and bool(offer) and current.get('subscription_status') != 'refunded'
         tier=current.get('subscription_tier','pro')
-        if active and RANK[offer['tier']] < RANK.get(tier,0): tier=offer['tier']
+        if active and RANK[offer['tier']] < RANK.get(tier,0):
+            grandfathered = (tier == 'team' and current.get('billing_catalog_version') != 2
+                             and plan_id in START_PLAN_IDS and current.get('whop_plan_id') == plan_id)
+            if not grandfathered: tier=offer['tier']
         await accounts(db).update_one({'id':current['id'],'whop_membership_id':membership_id},{'$set':{'plan':'pro' if active else 'free','subscription_tier':tier,'subscription_status':member.get('status'),'whop_plan_id':plan_id}, **({'$unset':{'whop_membership_id':''}} if member.get('status') in ('expired','canceled','cancelled') else {})})
     finally: await release(db,lock_owner,lock)
 
