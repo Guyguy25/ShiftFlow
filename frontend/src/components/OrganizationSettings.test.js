@@ -22,7 +22,7 @@ async function fill(selector,value) {await act(async()=>{const input=host.queryS
 test("Pro can see invitations but cannot use them", async()=>{
  await render();expect(host.textContent).toContain("Nom de l’organisation");expect(host.textContent).toContain("Invitations disponibles avec Team");
  expect(host.querySelector('input[type="email"]').disabled).toBe(true);
- expect(host.querySelector('a[href="/pricing#team"]')).not.toBeNull();
+ expect(host.querySelector('a[href="/pricing#pro"]')).not.toBeNull();
 });
 test("Team owner invites and receives an explicit copy link if mail was not sent", async()=>{
  data.team_enabled=true;await render();expect(host.querySelector('input[type="email"]').disabled).toBe(false);
