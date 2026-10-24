@@ -13,7 +13,12 @@ MAX_COLLABORATORS = 5
 MAX_MEMBERS = 16
 
 def collaborator_limit(account):
-    return max(account.get('billing_collaborator_limit',0), 15 if account.get('plan') == 'pro' and account.get('subscription_tier') == 'business' else 5)
+    if account.get('plan') != 'pro': return 0
+    if account.get('billing_collaborator_limit'): return account['billing_collaborator_limit']
+    tier = account.get('subscription_tier', 'pro')
+    if account.get('billing_catalog_version') == 2:
+        return {'start': 0, 'pro': 3, 'business': 10}.get(tier, 0)
+    return {'team': 5, 'business': 15}.get(tier, 0)
 
 def member_allowed(org, account, user_id):
     if org['owner_id'] == user_id: return True
@@ -34,7 +39,10 @@ def digest(token):
 
 
 def is_team(owner):
-    return owner.get('plan') == 'pro' and owner.get('subscription_tier') in ('team', 'business')
+    if owner.get('plan') != 'pro': return False
+    if owner.get('billing_catalog_version') == 2:
+        return owner.get('subscription_tier') in ('pro', 'business')
+    return owner.get('subscription_tier') in ('team', 'business')
 
 
 async def ensure_personal(db, user, force=False):
@@ -90,7 +98,7 @@ async def workspace(db, user, owner_only=False):
     if owner_only and role != 'owner':
         raise HTTPException(403, 'Seul le propriétaire peut gérer cette organisation et sa facturation.')
     if not member_allowed(org, owner, user['id']):
-        raise HTTPException(403, 'L’accès collaborateur nécessite un abonnement Pro Team actif. Vous pouvez revenir à votre espace personnel.')
+        raise HTTPException(403, 'L’accès collaborateur nécessite une offre avec accès d’équipe actif. Vous pouvez revenir à votre espace personnel.')
     # Business routes keep their agency-scoped queries. actor_id is never used as the tenant key.
     return {**{key: value for key, value in owner.items() if key != 'password_hash' and not key.startswith('_')}, 'id': org['id'], 'actor_id': user['id'], 'account_owner_id': org['owner_id'],
             'organization_id': org['id'], 'organization_role': role,
@@ -124,7 +132,7 @@ async def _invite(db, user, email, origin, invited_role="member"):
     if not can_manage(role, owner):
         raise HTTPException(403, 'Seul le propriétaire ou un administrateur Business peut inviter des collaborateurs.')
     if not is_team(owner):
-        raise HTTPException(403, 'Passez à Pro Team pour inviter jusqu’à 5 collaborateurs.')
+        raise HTTPException(403, 'Passez à Pro ou Business pour inviter des collaborateurs.')
     if invited_role not in ('member', 'admin'): raise HTTPException(400, 'Rôle invalide.')
     if invited_role == 'admin' and (role != 'owner' or owner.get('subscription_tier') != 'business'):
         raise HTTPException(403, 'Les rôles personnalisés nécessitent Business.')
@@ -188,7 +196,7 @@ async def _accept(db, user, token):
         raise HTTPException(403, 'Connectez-vous avec l’adresse email qui a reçu cette invitation.')
     owner = await accounts(db).find_one({'id': org['id']})
     if not owner or not is_team(owner):
-        raise HTTPException(403, 'Cette organisation doit disposer de Pro Team pour accepter de nouveaux collaborateurs.')
+        raise HTTPException(403, 'Cette organisation nécessite une offre autorisant les collaborateurs.')
     usage = await owner_seats(db, org['owner_id'])
     seat = 'u:'+user['id']
     if seat not in usage['reserved'] or usage['reserved'].index(seat) >= collaborator_limit(owner):
@@ -225,7 +233,7 @@ async def validate_signup_invitation(db, token, email):
         raise HTTPException(403, 'Utilisez l’adresse email à laquelle cette invitation est destinée.')
     owner = await accounts(db).find_one({'id': org['id']})
     if not owner or not is_team(owner):
-        raise HTTPException(403, 'Cette organisation doit disposer de Pro Team pour accueillir des collaborateurs.')
+        raise HTTPException(403, 'Cette organisation nécessite une offre autorisant les collaborateurs.')
     return org
 
 

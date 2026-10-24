@@ -30,14 +30,14 @@ export default function UpgradeModal({ open, onClose, title, message }) {
             {title || "Continuez avec votre prochaine mission"}
           </h2>
           <p className="mt-2 text-blue-100 text-sm">
-            {message || "Vos missions existantes restent utilisables. Continuez avec ShiftFlow à 79 €/mois, missions illimitées."}
+            {message || "Vos missions existantes restent utilisables. Continuez avec ShiftFlow à partir de 29 €/mois, selon votre volume de missions."}
           </p>
         </div>
         <div className="p-6">
           <ul className="space-y-2.5 text-sm text-gray-700">
             <li className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-              Missions et intervenants illimités
+              Un quota de missions adapté à votre activité
             </li>
             <li className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
@@ -49,7 +49,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
             </li>
             <li className="flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-              Historique complet & support prioritaire
+              Vos missions et contacts conservés
             </li>
           </ul>
           <div className="mt-6 flex flex-col gap-2">
@@ -59,7 +59,7 @@ export default function UpgradeModal({ open, onClose, title, message }) {
               data-testid="upgrade-modal-cta"
               className="w-full h-11 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center justify-center gap-2 transition-colors"
             >
-              <Crown className="w-4 h-4" /> Choisir ShiftFlow — 79 €/mois
+              <Crown className="w-4 h-4" /> Voir les offres dès 29 €/mois
             </Link>
             <button
               onClick={onClose}

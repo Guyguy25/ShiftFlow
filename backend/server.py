@@ -811,7 +811,7 @@ async def google_auth(payload: GoogleAuthIn, request: Request, response: Respons
             if not linked.matched_count:
                 raise HTTPException(409, "Ce compte a changé. Rechargez la page pour réessayer.")
         else:
-            if not payload.registration or payload.legal_version != "2026-10-23":
+            if not payload.registration or payload.legal_version not in ("2026-10-23", "2026-10-24"):
                 raise HTTPException(400, "Pour créer un compte Google, complétez l'inscription et acceptez les conditions.")
             from pydantic import ValidationError
             try:
@@ -2062,8 +2062,8 @@ async def _missions_created_count(user_id: str) -> int:
 async def check_quota_or_raise(user, kind: str):
     if kind == "mission":
         current = await mission_billing.account(db, user["id"])
-        if not mission_billing.balance(current)["can_create_mission"]:
-            raise HTTPException(402, "Choisissez ShiftFlow à 79 €/mois, missions illimitées. Vos missions existantes restent utilisables.")
+        if not (await mission_billing.quota(db, user["id"]))["can_create_mission"]:
+            raise HTTPException(402, "Votre quota de missions est atteint. Consultez les offres ShiftFlow à partir de 29 €/mois.")
 
 
 class OnboardingIn(BaseModel):
@@ -2096,12 +2096,12 @@ async def get_quota(user=Depends(get_workspace_user)):
     workers = await db.workers.count_documents({"agency_id": user["id"]})
     u = await accounts(db).find_one({"id": user["id"]}, {"_id": 0})
     info = trial_info(u or user)
+    usage = await mission_billing.quota(db, user["id"])
     return {
         "plan": plan,
         "active_missions": missions,
         "missions_used": missions_used,
-        "mission_limit": None if plan == "pro" else FREE_MISSION_LIMIT,
-        **mission_billing.balance(await mission_billing.account(db, user["id"])),
+        **usage,
         "workers": workers,
         "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
         "subscription_status": (u or {}).get("subscription_status"),
@@ -2261,7 +2261,7 @@ def stripe_checkout_response(session, ui_mode):
 
 @api.post("/payments/checkout")
 async def create_checkout(payload: CheckoutIn, request: Request, user=Depends(get_workspace_owner)):
-    if payload.legal_acceptance.get("version") != "2026-10-23":
+    if payload.legal_acceptance.get("version") not in ("2026-10-23", "2026-10-24"):
         raise HTTPException(400, "Veuillez accepter les conditions actuelles sur la page Tarifs.")
     if user["id"].startswith("org_"):
         raise HTTPException(409, "Cette organisation utilise Whop. Ouvrez le paiement depuis la page Tarifs.")

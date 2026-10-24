@@ -40,14 +40,14 @@ export default function Settings() {
           <div className="flex items-center gap-2 font-semibold">
             <Crown className="w-5 h-5 shrink-0"/> Abonnement du propriétaire
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
-              {isPro ? (user?.subscription_tier === "business" ? "BUSINESS ACTIF" : user?.subscription_tier === "team" ? "TEAM ACTIF" : "PRO ACTIF") : "À LA MISSION"}
+              {isPro ? (user?.subscription_tier === "business" ? "BUSINESS ACTIF" : user?.subscription_tier === "start" ? "START ACTIF" : user?.subscription_tier === "team" ? "TEAM HISTORIQUE" : "PRO ACTIF") : "À LA MISSION"}
             </span>
           </div>
           <p className={`mt-3 text-xs ${isPro ? "text-blue-100" : "text-gray-500"}`}>Cette offre couvre toutes les organisations de leur propriétaire, actuelles et futures. Les places collaborateurs sont partagées entre ces espaces.</p>
           {quota && (
             <div className={`mt-3 text-sm ${isPro ? "text-blue-100" : "text-gray-700"}`}>
               {isPro ? (
-                <>Missions et intervenants <strong>illimités</strong>. Merci pour votre soutien !</>
+                <>Intervenants illimités · {quota.mission_limit == null ? <strong>Missions illimitées</strong> : <strong>{quota.missions_this_month || 0}/{quota.mission_limit} missions utilisées ce mois-ci</strong>}. {quota.mission_limit != null && "Quota mutualisé entre vos organisations."}</>
               ) : (
                 <>{counted(quota.free_missions_remaining, "mission offerte restante", "missions offertes restantes")} · {counted(quota.mission_credits, "mission achetée", "missions achetées")} · <strong>valables à vie</strong>. Vos missions existantes restent utilisables.</>
               )}
@@ -62,7 +62,7 @@ export default function Settings() {
             ) : (
               <Link to="/pricing" data-testid="settings-upgrade-link"
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                <Crown className="w-4 h-4"/> Acheter une mission ou choisir Pro
+                <Crown className="w-4 h-4"/> Voir les offres dès 29 €/mois
               </Link>
             )}
           </div>

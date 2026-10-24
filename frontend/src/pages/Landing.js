@@ -26,7 +26,7 @@ const questions = [
   ["Quels contacts sont accessibles en connectant WhatsApp ?", "La connexion synchronise les noms et numéros des contacts disponibles dans votre WhatsApp pour vous permettre de les choisir. Seuls ceux que vous sélectionnez et importez sont ajoutés à vos intervenants ShiftFlow. Vous pouvez aussi ajouter vos intervenants manuellement."],
   ["Et si personne n’accepte la mission ?", "ShiftFlow organise les demandes auprès des personnes sélectionnées ; il ne garantit pas leur disponibilité. Si votre liste ne permet pas de pourvoir les places, le besoin reste à compléter. Vous voyez les réponses et les places encore ouvertes dans votre mission."],
   ["Puis-je découvrir le fonctionnement sans envoyer de message ?", "Oui. La simulation utilise des personnages fictifs, sans connexion WhatsApp ni envoi réel. Elle ne crée aucune mission et ne consomme aucune de vos trois missions offertes."],
-  ["Que se passe-t-il après les trois missions offertes ?", `Il n’y a aucun passage automatique au payant. Vos missions existantes restent utilisables. Pour en créer d’autres, choisissez ShiftFlow à 79 €/mois ou ${YEARLY.total} €/an (${YEARLY.discount} % d’économie), avec des missions illimitées.`],
+  ["Que se passe-t-il après les trois missions offertes ?", `Il n’y a aucun passage automatique au payant. Vos missions existantes restent utilisables. Pour en créer d’autres, choisissez Start à 29 €/mois ou ${YEARLY.total} €/an (${YEARLY.discount} % d’économie), pour 3 missions par mois. Les offres supérieures accompagnent votre croissance.`],
 ];
 export default function Landing() {
   return <div className="min-h-screen bg-white text-slate-950 selection:bg-blue-100">

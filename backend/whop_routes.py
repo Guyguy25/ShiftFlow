@@ -21,7 +21,7 @@ async def config(response:Response):
 
 @router.post('/checkout')
 async def checkout(payload:CheckoutIn,request:Request,user=Depends(s.get_workspace_owner)):
-    if payload.legal_version!='2026-10-23': raise HTTPException(400,'Acceptez les conditions actuelles.')
+    if payload.legal_version!='2026-10-24': raise HTTPException(400,'Acceptez les conditions actuelles.')
     return await billing.checkout(s.db,user,payload.offer_key,tracking={
         'consent':payload.meta_consent,'fbp':payload.meta_fbp if payload.meta_consent else '',
         'fbc':payload.meta_fbc if payload.meta_consent else '',

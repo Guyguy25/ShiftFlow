@@ -2,7 +2,7 @@
 BILLING_FIELDS = ('plan', 'subscription_tier', 'subscription_status', 'payment_provider',
                   'whop_membership_id', 'whop_plan_id', 'whop_last_payment_id',
                   'whop_last_payment_at', 'whop_refunded_payment_id',
-                  'stripe_subscription_id', 'stripe_customer_id')
+                  'stripe_subscription_id', 'stripe_customer_id', 'billing_catalog_version')
 
 
 def collection(db, identifier):
@@ -30,9 +30,12 @@ async def billing_source(db, identifier):
         {'$or': [{'owner_id': owner_id}, {'free_pool_id': owner_id}, {'id': {'$in': ids}}]}).sort('id', 1).to_list(None)
     paid = [c for c in candidates if c.get('plan') == 'pro']
     if paid:
-        selected = dict(max(paid, key=lambda c: {'pro':0,'team':1,'business':2}.get(c.get('subscription_tier','pro'),0)))
+        selected = dict(max(paid, key=lambda c: {'start':0,'pro':1,'team':1,'business':2}.get(c.get('subscription_tier','pro'),0)))
         # Preserve separately purchased legacy capacity until billing consolidation.
-        selected['_shared_capacity'] = sum(15 if c.get('subscription_tier') == 'business' else 5 if c.get('subscription_tier') == 'team' else 0 for c in paid)
+        selected['_shared_capacity'] = sum(
+            (10 if c.get('billing_catalog_version') == 2 else 15) if c.get('subscription_tier') == 'business'
+            else (3 if c.get('billing_catalog_version') == 2 else 0) if c.get('subscription_tier') == 'pro'
+            else 5 if c.get('subscription_tier') == 'team' else 0 for c in paid)
         selected['_multiple_subscriptions'] = len(paid) > 1
         return owner_id, selected
     for candidate in candidates:
