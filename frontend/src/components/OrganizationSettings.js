@@ -30,7 +30,7 @@ export default function OrganizationSettings() {
   const owner = org?.role === "owner";
   const used = org?.used_collaborators ?? (Math.max(0, (org?.members?.length || 1) - 1) + (org?.invitations?.length || 0));
   const manager = owner || org?.can_manage;
-  const limit = org?.max_collaborators || 5;
+  const limit = org?.max_collaborators ?? 0;
   const canInvite = manager && org?.team_enabled;
   async function action(fn) {
     setBusy(true); setError("");
@@ -67,8 +67,8 @@ export default function OrganizationSettings() {
       </form>
       <div id="collaborateurs" className="mt-7 scroll-mt-28 border-t border-gray-100 pt-5" tabIndex={-1}>
         <h3 className="flex items-center gap-2 font-semibold"><Users size={18}/>Collaborateurs</h3>
-        <p className="mt-2 text-sm text-gray-500">Team : 5 collaborateurs distincts au total. Business : 15. Ces places sont partagées entre les organisations du propriétaire. Une même personne compte une seule fois ; les invitations en attente réservent une place.</p>
-        {!org.team_enabled && <div className="mt-4 rounded-lg bg-blue-50 p-4 text-sm text-blue-900"><p className="flex items-center gap-2 font-semibold"><LockKeyhole size={16}/>Invitations disponibles avec Team</p><p className="mt-1">99 €/mois ou 831,60 €/an. Missions et intervenants illimités pour toute l’organisation.</p>{owner && <Link to="/pricing#team" className="mt-2 inline-block font-semibold underline">Découvrir Team</Link>}</div>}
+        <p className="mt-2 text-sm text-gray-500">Start : propriétaire seul. Pro : jusqu’à 3 collaborateurs. Business : jusqu’à 10. Les abonnés historiques gardent leurs places existantes. Ces limites sont partagées entre toutes les organisations du propriétaire ; une même personne compte une seule fois.</p>
+        {!org.team_enabled && <div className="mt-4 rounded-lg bg-blue-50 p-4 text-sm text-blue-900"><p className="flex items-center gap-2 font-semibold"><LockKeyhole size={16}/>Invitations disponibles avec Pro ou Business</p><p className="mt-1">Pro comprend 3 accès collaborateurs pour 79 €/mois. Business en comprend 10 pour 149 €/mois.</p>{owner && <Link to="/pricing#pro" className="mt-2 inline-block font-semibold underline">Comparer les offres</Link>}</div>}
         <form className="mt-4 flex flex-col gap-2 sm:flex-row" onSubmit={event => { event.preventDefault(); action(async () => { const { data } = await api.post("/organization/invitations", { email, role: invitedRole }); setInvite(data); setEmail(""); await load(); }); }}>
           <label className="min-w-0 flex-1"><span className="sr-only">Email du collaborateur</span><input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="collegue@entreprise.fr" required maxLength={254} disabled={!canInvite || busy} className="h-11 w-full rounded-lg border px-3 disabled:bg-gray-50"/></label>
           {org.business_enabled && owner && <label><span className="sr-only">Rôle de l’invitation</span><select aria-label="Rôle de l’invitation" value={invitedRole} onChange={e => setInvitedRole(e.target.value)} disabled={!canInvite || busy} className="h-11 w-full rounded-lg border px-3"><option value="member">Coordinateur</option><option value="admin">Administrateur</option></select></label>}
