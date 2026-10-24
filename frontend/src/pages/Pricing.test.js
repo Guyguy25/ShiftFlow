@@ -31,7 +31,7 @@ test("checkout only forwards advertising identifiers with current cookie consent
  try {
   api.post.mockResolvedValue({data:{session_id:"ch_test",reference:"ref"}});await render();
   await act(async()=>host.querySelector('input[type="checkbox"]').click());
-  await act(async()=>card("team").querySelector("button").click());
+  await act(async()=>card("start").querySelector("button").click());
   expect(api.post).toHaveBeenCalledWith("/whop/checkout",expect.objectContaining({meta_consent:true}),expect.anything());
  } finally {localStorage.removeItem("shiftflow_cookie_consent");}
 });
