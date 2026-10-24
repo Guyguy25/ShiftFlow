@@ -20,3 +20,18 @@ test("missing configuration blocks payment visibly",async()=>{ready=false;await 
 test("quota failure blocks payment",async()=>{api.get.mockImplementation(url=>url==="/whop/config"?Promise.resolve({data:{ready:true}}):Promise.reject(new Error()));await render();expect(card("pro").querySelector("button").disabled).toBe(true);expect(host.textContent).toContain("Impossible de vérifier");});
 test("existing subscription uses portal",async()=>{quota={plan:"pro",subscription_tier:"team"};api.post.mockRejectedValue({response:{data:{detail:"Portail test"}}});await render();expect(card("business").querySelector("button").disabled).toBe(true);await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent==="Gérer mon abonnement").click());expect(api.post).toHaveBeenCalledWith("/payments/portal",{},{headers:{"X-Organization-ID":"org"}});});
 test("collaborator cannot purchase for owner",async()=>{useAuth.mockReturnValue({user:{id:"m",organization:{id:"org",name:"Team"},can_manage_billing:false}});await render();expect([...host.querySelectorAll('section[data-testid] button')].every(b=>b.disabled)).toBe(true);expect(host.querySelector('input[type="checkbox"]')).toBeNull();});
+
+test("owner-wide coverage and shared limits are explicit",async()=>{
+ await render();expect(host.textContent).toContain("couvre toutes les organisations");
+ expect(card("team").textContent).toContain("5 collaborateurs au total");
+ expect(card("business").textContent).toContain("15 collaborateurs au total");
+});
+test("checkout only forwards advertising identifiers with current cookie consent",async()=>{
+ localStorage.setItem("shiftflow_cookie_consent","accepted");
+ try {
+  api.post.mockResolvedValue({data:{session_id:"ch_test",reference:"ref"}});await render();
+  await act(async()=>host.querySelector('input[type="checkbox"]').click());
+  await act(async()=>card("team").querySelector("button").click());
+  expect(api.post).toHaveBeenCalledWith("/whop/checkout",expect.objectContaining({meta_consent:true}),expect.anything());
+ } finally {localStorage.removeItem("shiftflow_cookie_consent");}
+});

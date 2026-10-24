@@ -13,7 +13,8 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import HTTPException
 from pymongo.errors import DuplicateKeyError
-from workspace_accounts import accounts
+from workspace_accounts import accounts, billing_owner_id, billing_source
+from meta_capi import send_meta_event
 
 CATALOG = {
  'pro_monthly': {'plan_id':'plan_wT9sMJbmEPmEX','tier':'pro','amount':7900,'days':30},
@@ -27,6 +28,9 @@ RANK = {'pro':0,'team':1,'business':2}
 
 def ready(): return all(os.environ.get(key, '').strip() for key in ('WHOP_API_KEY','WHOP_WEBHOOK_SECRET','WHOP_COMPANY_ID'))
 def identifier(value): return value.get('id') if isinstance(value,dict) else value
+
+def provider_company(obj):
+    return identifier(obj.get('company')) or identifier(obj.get('account')) or obj.get('company_id')
 
 def cents(value):
     try:
@@ -101,31 +105,36 @@ async def acquire(db,key):
     return nonce
 async def release(db,key,nonce): await db.billing_locks.delete_one({'_id':key,'nonce':nonce})
 
-async def checkout(db,user,offer_key):
+async def checkout(db,user,offer_key,tracking=None):
     if not ready(): raise HTTPException(503,'Le paiement Whop est en cours de configuration. Aucun paiement n’a été lancé.')
     offer=CATALOG.get(offer_key)
     if not offer: raise HTTPException(400,'Offre inconnue.')
-    lock=await acquire(db,user['id'])
+    owner_id=await billing_owner_id(db,user['id'])
+    lock=await acquire(db,owner_id)
     try:
         account=await accounts(db).find_one({'id':user['id']})
         if account.get('plan') == 'pro' or account.get('whop_membership_id') or account.get('stripe_subscription_id'):
-            raise HTTPException(409,'Un abonnement existe déjà pour cette organisation. Gérez-le depuis les paramètres avant de souscrire à nouveau.')
-        if (account.get('return_feedback') or {}).get('promo_code'):
+            raise HTTPException(409,'Un abonnement couvre déjà vos organisations. Gérez-le depuis les paramètres avant de souscrire à nouveau.')
+        owner_record=await db.users.find_one({'id':owner_id}) or {}
+        if (account.get('return_feedback') or owner_record.get('return_feedback') or {}).get('promo_code'):
             raise HTTPException(409,'Votre offre personnelle de deux mois gratuits doit être transférée sur Whop par le support avant tout paiement. Contactez-nous pour la conserver.')
         # A checkout is a quote, not a subscription reservation. Reuse it only
         # for this offer so closing the modal never locks the other prices.
         # Keep every reference: a delayed provider payment must stay verifiable.
-        pending=await db.whop_checkouts.find_one({'organization_id':user['id'],'offer_key':offer_key,'expires_at':{'$gt':time.time()},'fulfilled':{'$ne':True}})
+        pending=await db.whop_checkouts.find_one({'organization_id':user['id'],'billing_owner_id':owner_id,'offer_key':offer_key,'expires_at':{'$gt':time.time()},'fulfilled':{'$ne':True}})
         if pending:
+            await db.whop_checkouts.update_one({'_id':pending['_id']},{'$set':{'tracking':tracking or {}}})
+            await track_checkout(db,pending['_id'],owner_id,offer)
             return {'session_id':pending['session_id'],'reference':pending['_id'],'environment':'sandbox' if os.environ.get('WHOP_SANDBOX') == 'true' else 'production'}
         plan=await api('GET','/plans/'+offer['plan_id']);validate_plan(plan,offer)
         ref=secrets.token_urlsafe(32)
         config=await api('POST','/checkout_configurations',{'plan_id':offer['plan_id'],'mode':'payment','metadata':{'shiftflow_checkout':ref,'organization_id':user['id']}})
         session_id=config.get('id','')
         if not re.fullmatch(r'ch_[A-Za-z0-9]+',session_id): raise HTTPException(502,'La session de paiement Whop est invalide.')
-        await db.whop_checkouts.insert_one({'_id':ref,'session_id':session_id,'organization_id':user['id'],'offer_key':offer_key,'plan_id':offer['plan_id'],'expires_at':time.time()+1200,'created_at':time.time(),'legal_version':'2026-10-23','actor_id':user.get('actor_id',user['id']),'fulfilled':False})
+        await db.whop_checkouts.insert_one({'_id':ref,'session_id':session_id,'organization_id':user['id'],'offer_key':offer_key,'plan_id':offer['plan_id'],'expires_at':time.time()+1200,'created_at':time.time(),'legal_version':'2026-10-23','actor_id':user.get('actor_id',user['id']),'billing_owner_id':owner_id,'tracking':tracking or {},'fulfilled':False})
+        await track_checkout(db,ref,owner_id,offer)
         return {'session_id':session_id,'reference':ref,'environment':'sandbox' if os.environ.get('WHOP_SANDBOX') == 'true' else 'production'}
-    finally: await release(db,user['id'],lock)
+    finally: await release(db,owner_id,lock)
 
 async def fulfill_payment(db,payment_id,expected_org=None):
     if not re.fullmatch(r'pay_[A-Za-z0-9]+',payment_id): raise HTTPException(400,'Paiement invalide.')
@@ -138,12 +147,14 @@ async def fulfill_payment(db,payment_id,expected_org=None):
     if not record and not bound: return None
     org_id=record['organization_id'] if record else bound['id']
     if expected_org and expected_org != org_id: raise HTTPException(403,'Ce paiement appartient à une autre organisation.')
-    if bound and bound['id'] != org_id: raise HTTPException(400,'Abonnement lié à une autre organisation.')
-    lock=await acquire(db,org_id)
+    if bound and await billing_owner_id(db,bound['id']) != await billing_owner_id(db,org_id):
+        raise HTTPException(400,'Abonnement lié à un autre propriétaire.')
+    owner_id=await billing_owner_id(db,org_id)
+    lock=await acquire(db,owner_id)
     try:
         plan_id=identifier(payment.get('plan'))
         offer=next((v for v in CATALOG.values() if v['plan_id']==plan_id),None)
-        if not offer or identifier(payment.get('company')) != os.environ.get('WHOP_COMPANY_ID'): return None
+        if not offer or provider_company(payment) != os.environ.get('WHOP_COMPANY_ID'): return None
         initial=not bound
         if initial and (metadata.get('organization_id') != org_id or plan_id != record['plan_id']):
             raise HTTPException(400,'Le paiement ne correspond pas à cette organisation.')
@@ -154,34 +165,42 @@ async def fulfill_payment(db,payment_id,expected_org=None):
         if (initial and amount != offer['amount']) or (not initial and not 0 < amount <= offer['amount']): return None
         if not membership_id or not re.fullmatch(r'mem_[A-Za-z0-9]+',membership_id): return None
         member=await api('GET','/memberships/'+membership_id)
-        if member.get('status') != 'active' or identifier(member.get('plan')) != plan_id or identifier(member.get('company')) != os.environ.get('WHOP_COMPANY_ID'): return None
-        current=await accounts(db).find_one({'id':org_id})
-        if await db.whop_processed_payments.find_one({'_id':payment_id}): return org_id
+        if member.get('status') != 'active' or identifier(member.get('plan')) != plan_id or provider_company(member) != os.environ.get('WHOP_COMPANY_ID'): return None
+        _, source=await billing_source(db,org_id)
+        target_id=bound['id'] if bound else source['id']
+        current=await accounts(db).collection(target_id).find_one({'id':target_id})
+        if await db.whop_processed_payments.find_one({'_id':payment_id}):
+            if record and current and current.get('whop_membership_id') == membership_id:
+                await db.whop_checkouts.update_one({'_id':ref},{'$set':{'fulfilled':True,'membership_id':membership_id,'payment_id':payment_id}})
+            await track_subscription(db,record,payment,membership_id,owner_id)
+            return org_id
         if not current or current.get('whop_refunded_payment_id') == payment_id: return None
         if current.get('stripe_subscription_id') or (current.get('whop_membership_id') and current['whop_membership_id'] != membership_id):
             raise HTTPException(409,'Un autre abonnement est déjà lié à cette organisation. Contactez le support.')
-        await accounts(db).update_one({'id':org_id},{'$set':{'plan':'pro','subscription_tier':offer['tier'],'payment_provider':'whop','subscription_status':'active','whop_membership_id':membership_id,'whop_plan_id':plan_id,**({'whop_last_payment_id':payment_id,'whop_last_payment_at':str(payment.get('created_at') or '')} if not current.get('whop_last_payment_id') or str(payment.get('created_at') or '') > current.get('whop_last_payment_at','') else {})}})
+        await accounts(db).update_one({'id':target_id},{'$set':{'plan':'pro','subscription_tier':offer['tier'],'payment_provider':'whop','subscription_status':'active','whop_membership_id':membership_id,'whop_plan_id':plan_id,**({'whop_last_payment_id':payment_id,'whop_last_payment_at':str(payment.get('created_at') or '')} if not current.get('whop_last_payment_id') or str(payment.get('created_at') or '') > current.get('whop_last_payment_at','') else {})}})
         await db.whop_processed_payments.update_one({'_id':payment_id},{'$setOnInsert':{'organization_id':org_id}},upsert=True)
         if record:
             await db.whop_checkouts.update_one({'_id':ref},{'$set':{'fulfilled':True,'membership_id':membership_id,'payment_id':payment_id}})
+        await track_subscription(db,record,payment,membership_id,owner_id)
         return org_id
-    finally: await release(db,org_id,lock)
+    finally: await release(db,owner_id,lock)
 
 async def sync_membership(db,membership_id):
     if not re.fullmatch(r'mem_[A-Za-z0-9]+',membership_id): return
     current=await accounts(db).find_one({'whop_membership_id':membership_id})
     if not current: return
-    lock=await acquire(db,current['id'])
+    lock_owner=await billing_owner_id(db,current['id'])
+    lock=await acquire(db,lock_owner)
     try:
         member=await api('GET','/memberships/'+membership_id)
-        if identifier(member.get('company')) != os.environ.get('WHOP_COMPANY_ID'): raise HTTPException(400,'Organisation Whop incorrecte.')
+        if provider_company(member) != os.environ.get('WHOP_COMPANY_ID'): raise HTTPException(400,'Organisation Whop incorrecte.')
         plan_id=identifier(member.get('plan'))
         offer=next((v for v in CATALOG.values() if v['plan_id']==plan_id),None)
         active=member.get('status')=='active' and bool(offer) and current.get('subscription_status') != 'refunded'
         tier=current.get('subscription_tier','pro')
         if active and RANK[offer['tier']] < RANK.get(tier,0): tier=offer['tier']
         await accounts(db).update_one({'id':current['id'],'whop_membership_id':membership_id},{'$set':{'plan':'pro' if active else 'free','subscription_tier':tier,'subscription_status':member.get('status'),'whop_plan_id':plan_id}, **({'$unset':{'whop_membership_id':''}} if member.get('status') in ('expired','canceled','cancelled') else {})})
-    finally: await release(db,current['id'],lock)
+    finally: await release(db,lock_owner,lock)
 
 def verify_webhook(raw,headers):
     secret=os.environ.get('WHOP_WEBHOOK_SECRET','')
@@ -202,7 +221,7 @@ async def portal(db,user):
     membership_id=current.get('whop_membership_id')
     if not membership_id: raise HTTPException(400,'Aucun abonnement Whop pour cette organisation.')
     member=await api('GET','/memberships/'+membership_id)
-    if identifier(member.get('company')) != os.environ.get('WHOP_COMPANY_ID'): raise HTTPException(400,'Abonnement Whop incorrect.')
+    if provider_company(member) != os.environ.get('WHOP_COMPANY_ID'): raise HTTPException(400,'Abonnement Whop incorrect.')
     url=member.get('manage_url','')
     parsed=urlparse(url)
     if parsed.scheme != 'https' or parsed.hostname not in ('whop.com','www.whop.com'): raise HTTPException(502,'Portail Whop indisponible.')
@@ -211,11 +230,49 @@ async def portal(db,user):
 async def refund_payment(db,payment_id):
     if not re.fullmatch(r'pay_[A-Za-z0-9]+',payment_id): return
     payment=await api('GET','/payments/'+payment_id)
-    if identifier(payment.get('company')) != os.environ.get('WHOP_COMPANY_ID'): return
+    if provider_company(payment) != os.environ.get('WHOP_COMPANY_ID'): return
     if cents(payment.get('refunded_amount',0)) < cents(payment.get('total',payment.get('subtotal'))) or cents(payment.get('refunded_amount',0)) <= 0: return
     current=await accounts(db).find_one({'whop_last_payment_id':payment_id})
     if not current: return
-    lock=await acquire(db,current['id'])
+    lock_owner=await billing_owner_id(db,current['id'])
+    lock=await acquire(db,lock_owner)
     try:
         await accounts(db).update_one({'id':current['id'],'whop_last_payment_id':payment_id},{'$set':{'plan':'free','subscription_status':'refunded','whop_refunded_payment_id':payment_id}})
-    finally: await release(db,current['id'],lock)
+    finally: await release(db,lock_owner,lock)
+
+
+async def track_subscription(db, record, payment, membership_id, owner_id):
+    """One consented acquisition event per checkout, after verified entitlement only."""
+    if not record or not (record.get('tracking') or {}).get('consent'): return
+    try:
+        saved=await db.whop_checkouts.find_one({'_id':record['_id']})
+        if not saved or saved.get('meta_subscribe_sent_at') or not saved.get('fulfilled'): return
+        owner=await db.users.find_one({'id':owner_id}) or {}
+        tracking=record['tracking']
+        sent=await send_meta_event(event_name='Subscribe', event_id='subscribe_'+membership_id,
+            event_source_url=(os.environ.get('FRONTEND_URL') or 'https://www.shiftflow.io').rstrip('/')+'/pricing',
+            email=owner.get('email'),phone=owner.get('phone'),external_id=owner_id,
+            client_user_agent=tracking.get('user_agent'),client_ip_address=tracking.get('ip'),
+            fbp=tracking.get('fbp'),fbc=tracking.get('fbc'),subscription_id=membership_id,
+            custom_data={'currency':'EUR','value':cents(payment.get('subtotal'))/100})
+        if sent: await db.whop_checkouts.update_one({'_id':record['_id']},{'$set':{'meta_subscribe_sent_at':time.time()}})
+    except Exception:
+        # Payment activation succeeds even if attribution is unavailable.
+        pass
+
+
+async def track_checkout(db, reference, owner_id, offer):
+    try:
+        record=await db.whop_checkouts.find_one({'_id':reference})
+        tracking=(record or {}).get('tracking') or {}
+        if not tracking.get('consent') or record.get('meta_checkout_sent_at'): return
+        owner=await db.users.find_one({'id':owner_id}) or {}
+        sent=await send_meta_event(event_name='InitiateCheckout',event_id='checkout_'+reference,
+            event_source_url=(os.environ.get('FRONTEND_URL') or 'https://www.shiftflow.io').rstrip('/')+'/pricing',
+            email=owner.get('email'),phone=owner.get('phone'),external_id=owner_id,
+            client_user_agent=tracking.get('user_agent'),client_ip_address=tracking.get('ip'),
+            fbp=tracking.get('fbp'),fbc=tracking.get('fbc'),
+            custom_data={'currency':'EUR','value':offer['amount']/100})
+        if sent: await db.whop_checkouts.update_one({'_id':reference},{'$set':{'meta_checkout_sent_at':time.time()}})
+    except Exception:
+        pass

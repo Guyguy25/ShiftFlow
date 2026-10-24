@@ -36,9 +36,9 @@ test("member can see organization but cannot edit or invite",async()=>{
  expect(host.querySelector('input[maxlength="120"]').disabled).toBe(true);
  expect(host.textContent).not.toContain("Enregistrer l’organisation");
 });
-test("pending invitations reserve all five collaborator places",async()=>{
+test("shared seats show capacity while allowing an existing collaborator in another space",async()=>{
  data.team_enabled=true;data.invitations=Array.from({length:5},(_,i)=>({id:String(i),email:`m${i}@example.com`}));await render();
- expect(host.querySelector('input[type="email"]').disabled).toBe(true);expect(host.textContent).toContain("5/5 places");
+ expect(host.querySelector('input[type="email"]').disabled).toBe(false);expect(host.textContent).toContain("5/5 places");
 });
 test("organization update only sends the editable name and photo",async()=>{
  await render();await fill('input[maxlength="120"]',"Nouvelle régie");

@@ -127,12 +127,12 @@ class WhopTests(IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'team_monthly')
             await self.db.organization_accounts.update_one({'id':'org_test'},{'$unset':{field:''}})
         self.provider.assert_not_called()
-    async def test_verified_payment_grants_only_bound_organization_idempotently(self):
+    async def test_verified_payment_grants_owner_organizations_idempotently(self):
         await self.paid()
         self.assertEqual(await b.fulfill_payment(self.db,'pay_test'), 'org_test')
         await b.fulfill_payment(self.db,'pay_test')
         self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'team')
-        self.assertEqual((await self.db.users.find_one({'id':'owner'}))['plan'],'free')
+        self.assertEqual((await self.db.users.find_one({'id':'owner'}))['plan'],'pro')
         with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'team_monthly')
     async def test_foreign_owner_callback_does_not_fulfill_payment(self):
         await self.paid()

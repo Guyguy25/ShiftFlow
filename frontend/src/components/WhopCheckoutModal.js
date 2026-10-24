@@ -62,7 +62,7 @@ export default function WhopCheckoutModal({ checkout, onClose }) {
   return <Dialog.Root open onOpenChange={open => { if (!open) onClose(); }}><Dialog.Portal>
     <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"/>
     <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[94dvh] w-[calc(100%_-_1rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-4 shadow-xl sm:p-6">
-      <Dialog.Title className="pr-10 text-xl font-bold">{status === "paid" ? "Abonnement activé" : `Abonnement de ${checkout.organization_name || "votre organisation"}`}</Dialog.Title>
+      <Dialog.Title className="pr-10 text-xl font-bold">{status === "paid" ? "Abonnement activé" : `Abonnement pour toutes vos organisations`}</Dialog.Title>
       <Dialog.Description className="mt-2 text-sm text-gray-600">Paiement sécurisé par Whop. Le tarif final et les éventuelles taxes sont présentés avant confirmation.</Dialog.Description>
       <Dialog.Close aria-label="Fermer le paiement" className="absolute right-3 top-3 rounded-lg p-2 hover:bg-gray-100"><X size={20}/></Dialog.Close>
       {status === "checkout" && validConfiguration && <div className="mt-5 min-h-64 min-w-0">
@@ -78,7 +78,7 @@ export default function WhopCheckoutModal({ checkout, onClose }) {
       {status === "checkout" && !validConfiguration && <p role="alert" className="mt-5 text-sm text-red-700">Le formulaire de paiement est invalide. Fermez cette fenêtre puis réessayez.</p>}
       {status === "confirming" && <p role="status" className="py-8 text-sm text-gray-600">Vérification du paiement auprès de Whop…</p>}
       {error && <div role="alert" className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900"><p>{error}</p><button onClick={() => { if (status === "checkout" || status === "interrupted") onClose(); else { setError(""); setAttempt(v => v + 1); } }} className="mt-3 font-semibold underline">{status === "checkout" || status === "interrupted" ? "Fermer le formulaire" : "Vérifier à nouveau"}</button></div>}
-      {status === "paid" && <div className="py-8 text-center"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600"/><p className="mt-4">Les fonctionnalités de votre offre sont disponibles pour cette organisation.</p><button onClick={onClose} className="mt-5 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white">Continuer</button></div>}
+      {status === "paid" && <div className="py-8 text-center"><CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600"/><p className="mt-4">Les fonctionnalités de votre offre sont disponibles dans toutes vos organisations.</p><button onClick={onClose} className="mt-5 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white">Continuer</button></div>}
     </Dialog.Content>
   </Dialog.Portal></Dialog.Root>;
 }

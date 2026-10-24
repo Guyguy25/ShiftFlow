@@ -348,12 +348,12 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         result = await self.request('POST','/organization',uid='member',json={'name':'My company'})
         self.assertEqual(result.status_code,200,result.text)
 
-    async def test_existing_owner_can_create_independently_billed_organization(self):
+    async def test_existing_owner_new_organization_inherits_subscription(self):
         await self.request('GET','/auth/me')
         result = await self.request('POST','/organization',json={'name':'Another space'})
         self.assertEqual(result.status_code,200,result.text)
         self.assertEqual(await self.db.organizations.count_documents({'owner_id':'owner'}),2)
-        self.assertEqual((await self.request('GET','/auth/me')).json()['plan'],'free')
+        self.assertEqual((await self.request('GET','/auth/me')).json()['plan'],'pro')
         self.assertIsNone(await self.db.users.find_one({'id':result.json()['id']}))
 
     async def test_invitation_revoked_during_signup_keeps_account_recoverable_without_empty_org(self):
@@ -429,7 +429,7 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code,200,response.text)
         mission=await self.db.missions.find_one({'id':response.json()['id']})
         self.assertEqual(mission['agency_id'],new)
-        self.assertEqual((await self.request('GET','/plan/quota')).json()['free_missions_remaining'],2)
+        self.assertEqual((await self.request('GET','/plan/quota')).json()['free_missions_remaining'],3)
         await self.request('PUT','/organization',json={'name':'Second renamed'})
         self.assertEqual((await self.db.users.find_one({'id':'owner'}))['agency_name'],'owner Events')
         await self.request('POST','/organization/switch',json={'organization_id':'owner'})

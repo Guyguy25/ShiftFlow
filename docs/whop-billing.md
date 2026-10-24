@@ -1,6 +1,6 @@
 # Whop billing deployment
 
-Every organization has separate operational data, WhatsApp configuration and subscription. Login identities remain in `users`; additional organization accounts use `organization_accounts`. The first organization retains its historical agency ID. Free mission reservations share the owner's original three-mission pool, atomically, across owned organizations. Invitations never transfer ownership or subscription benefits to a member's other organizations.
+Every organization has separate operational data and WhatsApp configuration. One subscription covers every workspace with the same owner, including future workspaces. Team allows five distinct collaborators across those spaces; Business allows fifteen. A person in multiple owned spaces counts once, and pending invitations reserve shared seats. Owner-wide locks serialize purchases, seat reservations and lifecycle events. Login identities remain in `users`; additional organization accounts use `organization_accounts`. The first organization retains its historical agency ID. Free mission reservations share the owner's original three-mission pool, atomically, across owned organizations. Invitations never transfer ownership or subscription benefits to a member's other organizations.
 
 ## Production prerequisites
 
@@ -11,7 +11,7 @@ Configure these server environment variables in the ShiftFlow Vercel project, fo
 - `WHOP_WEBHOOK_SECRET`: signing secret of the production webhook.
 - Leave `WHOP_SANDBOX` unset for production. Sandbox requires separate credentials and matching sandbox plans.
 
-Webhook URL: `https://www.shiftflow.io/api/whop/webhook`. Subscribe to `payment.succeeded`, `payment.failed`, `payment.refunded` and all membership lifecycle events available in the Whop dashboard. Existing Stripe webhooks must remain enabled for existing subscribers.
+Webhook URL: `https://www.shiftflow.io/api/whop/webhook`. Subscribe to `payment.succeeded`, `payment.failed`, `refund.created`, `refund.updated` and all membership lifecycle events available in the Whop dashboard. Existing Stripe webhooks must remain enabled for existing subscribers.
 
 The six public plan IDs live in `backend/whop_billing.py`. Expected EUR renewal prices (initial setup fee must be 0, because Whop adds it to the first recurring charge): Pro 79/month or 711/year; Team 99/month or 831.60/year; Business 149/month or 1072.80/year. Plans must be recurring, 30 or 365 days respectively, without trials, split-pay or multiple quantities. Whop adaptive pricing applies only to one-time purchases; its raw plan flag does not block these recurring plans. The modal uses `@whop/elements` and `@whop/elements-react` pinned to 1.9.0. It passes the server-created `ch_` configuration as `Checkout.checkoutConfiguration`, preserving the server-bound organization metadata. It mounts `CheckoutElement` directly, without a hosted-checkout button. Fulfillment verifies the actual currency and amount. The server validates the provider catalog before opening checkout. Tax treatment remains a merchant dashboard setting; the app does not assert tax exemption.
 
@@ -34,4 +34,8 @@ Feedback rewards from the Stripe era are blocked from accidental paid conversion
 
 Whop wallet buttons require merchant payment-method domain verification for `www.shiftflow.io` (and `shiftflow.io` if served there). Card checkout does not depend on those optional wallet buttons. See https://docs.whop.com/elements/beta/checkout/overview.
 
-Unpaid checkout configurations are reused for 20 minutes per organization **and offer**, not across the whole organization. A buyer can close the modal and immediately inspect another tier or frequency. Old references remain available for delayed verified payments; browsing does not activate a subscription. Existing-subscription and fulfillment conflict guards remain in force.
+Unpaid checkout configurations are reused for 20 minutes per selected workspace **and offer**, not across the whole organization. A buyer can close the modal and immediately inspect another tier or frequency. Old references remain available for delayed verified payments; browsing does not activate a subscription. Existing subscriptions across the owner’s workspaces block additional purchases. Old Whop and Stripe subscriptions keep their original provider binding; no charge is silently migrated or cancelled. Entitlements are resolved at read time so future spaces and revocations stay consistent.
+
+## Meta attribution with Whop
+
+The existing Meta pixel ID is retained. With current cookie consent, checkout records the browser attribution context and sends `InitiateCheckout` once per configuration. A verified initial Whop payment sends the existing `Subscribe` conversion server-side, once per membership (`subscribe_mem_…`), including the paid EUR amount. Replays use the same event ID and a persisted sent marker. No consent means no attribution event. Analytics failures never block paid access. The server needs its existing `META_PIXEL_ID` and `META_CAPI_ACCESS_TOKEN`; the client keeps its existing public pixel ID. Avoid a second independent Whop-to-Meta subscription conversion integration unless deduplication IDs are coordinated. Confirm delivery in Meta Test Events; offline tests and a rendered checkout cannot establish real transaction/webhook delivery.

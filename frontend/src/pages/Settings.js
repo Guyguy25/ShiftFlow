@@ -33,17 +33,17 @@ export default function Settings() {
     <div data-testid="settings-page">
       <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Organisation</div>
       <h1 className="mt-2 text-3xl font-display font-bold tracking-tight">Paramètres</h1>
-      <p className="mt-2 text-sm text-gray-500">Gérez votre organisation, ses membres et son abonnement.</p>
+      <p className="mt-2 text-sm text-gray-500">Gérez votre organisation, ses membres et votre abonnement.</p>
       <div className="mt-8 grid gap-6 max-w-3xl">
         <OrganizationSettings />
         <div className={`rounded-xl border p-6 ${isPro ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-700" : "bg-white border-gray-200"}`} data-testid="settings-subscription-block">
           <div className="flex items-center gap-2 font-semibold">
-            <Crown className="w-5 h-5 shrink-0"/> Abonnement de l’organisation
+            <Crown className="w-5 h-5 shrink-0"/> Abonnement du propriétaire
             <span className={`ml-auto text-xs px-2 py-1 rounded-md font-bold ${isPro ? "bg-white text-blue-700" : "bg-gray-100 text-gray-700"}`} data-testid="settings-plan-badge">
               {isPro ? (user?.subscription_tier === "business" ? "BUSINESS ACTIF" : user?.subscription_tier === "team" ? "TEAM ACTIF" : "PRO ACTIF") : "À LA MISSION"}
             </span>
           </div>
-          <p className={`mt-3 text-xs ${isPro ? "text-blue-100" : "text-gray-500"}`}>Cette offre concerne uniquement {user?.organization?.name || "cette organisation"}. Les abonnements des autres équipes restent indépendants.</p>
+          <p className={`mt-3 text-xs ${isPro ? "text-blue-100" : "text-gray-500"}`}>Cette offre couvre toutes les organisations de leur propriétaire, actuelles et futures. Les places collaborateurs sont partagées entre ces espaces.</p>
           {quota && (
             <div className={`mt-3 text-sm ${isPro ? "text-blue-100" : "text-gray-700"}`}>
               {isPro ? (

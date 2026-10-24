@@ -7,6 +7,9 @@ router=APIRouter(prefix='/whop',tags=['Whop'])
 class CheckoutIn(BaseModel):
     offer_key:str
     legal_version:str
+    meta_consent:bool=False
+    meta_fbp:str=Field(default='',max_length=250)
+    meta_fbc:str=Field(default='',max_length=500)
 class StatusIn(BaseModel):
     reference:str=Field(min_length=20,max_length=100)
     payment_id:str=''
@@ -17,9 +20,13 @@ async def config(response:Response):
     return {'provider':'whop','ready':billing.ready(),'offers':billing.CATALOG}
 
 @router.post('/checkout')
-async def checkout(payload:CheckoutIn,user=Depends(s.get_workspace_owner)):
+async def checkout(payload:CheckoutIn,request:Request,user=Depends(s.get_workspace_owner)):
     if payload.legal_version!='2026-10-23': raise HTTPException(400,'Acceptez les conditions actuelles.')
-    return await billing.checkout(s.db,user,payload.offer_key)
+    return await billing.checkout(s.db,user,payload.offer_key,tracking={
+        'consent':payload.meta_consent,'fbp':payload.meta_fbp if payload.meta_consent else '',
+        'fbc':payload.meta_fbc if payload.meta_consent else '',
+        'user_agent':request.headers.get('user-agent') if payload.meta_consent else None,
+        'ip':s.request_client_ip(request) if payload.meta_consent else None})
 
 @router.post('/status')
 async def status(payload:StatusIn,user=Depends(s.get_workspace_owner)):
@@ -47,6 +54,9 @@ async def webhook(request:Request):
         else:
             member=billing.identifier(data.get('membership'))
             if member: await billing.sync_membership(s.db,member)
+    elif kind in ('refund.created','refund.updated'):
+        payment_id=billing.identifier(data.get('payment'))
+        if payment_id: await billing.refund_payment(s.db,payment_id)
     elif kind.startswith('membership.'):
         await billing.sync_membership(s.db,data.get('id',''))
     await s.db.whop_events.update_one({'_id':event_id},{'$set':{'processed':True}},upsert=True)

@@ -36,6 +36,6 @@ export default function WorkspaceSelector({ compact = false }) {
     <Menu.Item asChild><Link to={settings} className={item}><Settings size={17}/>Paramètres de l’organisation</Link></Menu.Item>
     <Menu.Item asChild><Link to={`${settings}#collaborateurs`} className={item}><Users size={17}/>Membres et invitations</Link></Menu.Item>
     {spaces.length > 1 && <><Menu.Separator className="my-2 h-px bg-gray-100"/><Menu.Label className="px-3 py-2 text-xs text-gray-500">Mes espaces</Menu.Label>{spaces.map(space => <Menu.Item key={space.id} disabled={busy} onSelect={() => { if (space.id !== org?.id) switchSpace(space.id); }} className={item}><Building2 size={16} className="shrink-0"/><span className="min-w-0 flex-1 truncate">{space.name}</span>{space.id === org?.id && <Check size={16} className="shrink-0 text-blue-600"/>}</Menu.Item>)}</>}
-    {user?.can_create_organization && <><Menu.Separator className="my-2 h-px bg-gray-100"/><Menu.Item asChild><Link to="/organizations/new" className={item}><Plus size={17}/>Créer une organisation</Link></Menu.Item><p className="px-3 pb-2 text-[11px] text-gray-500">Espace et abonnement indépendants.</p></>}
+    {user?.can_create_organization && <><Menu.Separator className="my-2 h-px bg-gray-100"/><Menu.Item asChild><Link to="/organizations/new" className={item}><Plus size={17}/>Créer une organisation</Link></Menu.Item><p className="px-3 pb-2 text-[11px] text-gray-500">Données séparées, abonnement partagé entre vos espaces.</p></>}
   </Menu.Content></Menu.Portal></Menu.Root>;
 }
