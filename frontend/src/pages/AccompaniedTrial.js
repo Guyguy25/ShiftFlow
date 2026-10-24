@@ -1,8 +1,7 @@
 import { YEARLY } from "../lib/billingConfig";
-import CalendlyInlineBooking from "../components/CalendlyInlineBooking";
+import DemoQualification from "../components/DemoQualification";
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../lib/api";
 import { ArrowRight, Check, Zap, MessageCircle, CalendarDays, ShieldCheck, Users, ArrowUpRight } from "lucide-react";
 
 const wrap = "mx-auto max-w-6xl px-5 sm:px-8";
@@ -13,22 +12,6 @@ function CTA({ children = "Préparer mon test accompagné" }) { return <a href="
 
 export default function AccompaniedTrial() {
   const [step, setStep] = useState(0);
-  const [booking, setBooking] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (event) => {
-    event.preventDefault();
-    if (saving) return;
-    const data = new FormData(event.currentTarget);
-    setSaving(true);
-    setError("");
-    try {
-    await api.post("/public/accompanied-trial", Object.fromEntries(data));
-    setBooking({ name: String(data.get("name") || ""), email: String(data.get("email") || "") });
-    } catch {
-      setError("La demande n’a pas pu être enregistrée. Réessayez ou écrivez à contact@shiftflow.io.");
-    } finally { setSaving(false); }
-  };
   const examples = [
     ["Préparez la mission", "Montage de scène · Lille", "Vendredi · 8 h – 12 h", "Vous choisissez les intervenants de votre réseau et leur ordre de priorité."],
     ["Envoyez vos propositions", "Votre WhatsApp → Camille", "Proposition de mission", "Camille reçoit les informations et un lien pour accepter ou refuser, sans créer de compte."],
@@ -44,42 +27,16 @@ export default function AccompaniedTrial() {
       <section className="border-y border-slate-100 py-6"><div className={`${wrap} flex flex-wrap justify-center gap-x-12 gap-y-4 text-sm font-medium text-slate-600`}>{["Votre réseau actuel", "Votre compte WhatsApp", "Aucun compte pour les intervenants"].map(text => <p key={text} className="flex items-center gap-2"><Check size={17} className="text-blue-600" aria-hidden="true" />{text}</p>)}</div></section>
       <section className={`${wrap} py-16 sm:py-24`}><p className="text-xs font-bold uppercase tracking-widest text-blue-700">Un premier test, ensemble</p><div className="mt-4 grid gap-5 lg:grid-cols-2"><h2 className={heading}>Vous avez une mission.<br />On vous aide à la préparer.</h2><p className="text-lg leading-relaxed text-slate-600">Le plus simple pour comprendre ShiftFlow, c’est de partir de votre quotidien. Pas besoin de tout configurer seul avant de nous parler.</p></div><ol className="mt-10 grid gap-5 md:grid-cols-3">{[[CalendarDays,"On échange · 25 min","Vous nous présentez votre prochaine mission. On vérifie ensemble si ShiftFlow répond à votre besoin."],[MessageCircle,"On configure ensemble","Création du compte, connexion WhatsApp et préparation de la mission. Si nécessaire, on prévoit une suite pour terminer."],[Users,"Vous testez sur le terrain","Vous lancez après vérification, suivez les réponses de votre réseau, puis faites le point avec nous sur l’expérience."]].map(([Icon,title,text],i) => <li key={title} className="rounded-2xl border border-slate-200 p-6"><div className="flex items-center justify-between"><Icon size={25} className="text-blue-600" aria-hidden="true" /><span className="text-sm font-semibold text-slate-400">0{i+1}</span></div><h3 className="mt-6 text-lg font-bold">{title}</h3><p className="mt-3 text-sm leading-relaxed text-slate-600">{text}</p></li>)}</ol></section>
       <section className="bg-slate-950 py-16 text-white sm:py-20"><div className={`${wrap} grid gap-10 lg:grid-cols-2`}><div><p className="text-xs font-bold uppercase tracking-widest text-blue-300">Est-ce adapté à votre activité ?</p><h2 className={`${heading} mt-4`}>Vous constituez des équipes<br />depuis votre propre réseau ?</h2><p className="mt-5 leading-relaxed text-slate-300">Ce test s’adresse aux responsables planning et d’exploitation qui sollicitent des roadies ou des techniciens pour leurs missions événementielles.</p></div><div className="space-y-5">{["Vous gérez des propositions et des confirmations par WhatsApp.","Vous avez une mission réelle à préparer prochainement.","Vous pouvez connecter votre WhatsApp ou faire participer la personne responsable."].map(text => <p className="flex items-start gap-3" key={text}><Check size={20} className="mt-1 shrink-0 text-blue-300" aria-hidden="true" /><span className="leading-relaxed">{text}</span></p>)}<p className="border-t border-slate-700 pt-5 text-sm leading-relaxed text-slate-400">ShiftFlow organise les sollicitations de votre réseau. Il ne fournit pas de personnel et ne garantit pas la disponibilité des intervenants.</p></div></div></section>
-      <section className={`${wrap} grid items-center gap-8 py-16 sm:py-20 lg:grid-cols-2`}><div><p className="text-xs font-bold uppercase tracking-widest text-blue-700">Un tarif clair dès le départ</p><h2 className={`${heading} mt-4`}>Commencez avec<br />3 missions offertes.</h2><p className="mt-5 leading-relaxed text-slate-600">Sans carte bancaire, sans date limite et sans passage automatique au payant. L’échange et l’aide à la prise en main sont inclus.</p></div><div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-7"><p className="font-semibold text-blue-700">Pour continuer après votre essai</p><p className="mt-3"><strong className="text-5xl tracking-tight">79 €</strong><span className="text-slate-500"> / mois</span></p><p className="mt-4 text-sm text-slate-600">Missions et intervenants illimités.<br />Ou {YEARLY.total} €/an, selon les conditions de l’offre.</p><Link to="/pricing" className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700">Consulter les tarifs <ArrowRight size={16} aria-hidden="true" /></Link></div></section>
+      <section className={`${wrap} grid items-center gap-8 py-16 sm:py-20 lg:grid-cols-2`}><div><p className="text-xs font-bold uppercase tracking-widest text-blue-700">Un tarif clair dès le départ</p><h2 className={`${heading} mt-4`}>Commencez avec<br />3 missions offertes.</h2><p className="mt-5 leading-relaxed text-slate-600">Sans carte bancaire, sans date limite et sans passage automatique au payant. L’échange et l’aide à la prise en main sont inclus.</p></div><div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-7"><p className="font-semibold text-blue-700">Pour continuer après votre essai</p><p className="mt-3"><span className="text-sm text-slate-500">À partir de </span><strong className="text-5xl tracking-tight">29 €</strong><span className="text-slate-500"> / mois</span></p><p className="mt-4 text-sm text-slate-600">Start, Pro ou Business selon votre activité.<br />Start : {YEARLY.total} €/an avec le paiement annuel.</p><Link to="/pricing" className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700">Consulter les tarifs <ArrowRight size={16} aria-hidden="true" /></Link></div></section>
       <section id="reserver" className="scroll-mt-6 border-y border-slate-200 bg-slate-50 py-16 sm:py-24">
         <div className={wrap}>
-          {booking ? (
-            <div className="mx-auto max-w-5xl" data-testid="booking-inline-step">
-              <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Étape 2 sur 2 · Votre créneau</p>
-                  <h2 className={`${heading} mt-3`}>Choisissez votre rendez-vous.</h2>
-                  <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600">
-                    Sélectionnez directement ci-dessous un créneau de 25 minutes. Vos coordonnées sont préremplies ; le rendez-vous ne sera confirmé qu’après validation sur Calendly.
-                  </p>
-                </div>
-                <button type="button" onClick={() => setBooking(null)} className="min-h-11 self-start text-sm font-semibold text-blue-700 underline hover:text-blue-800 sm:self-auto">
-                  Modifier mes informations
-                </button>
-              </div>
-              <div className="mt-7 overflow-hidden rounded-2xl border border-slate-200 bg-white px-3 pb-5 pt-1 shadow-sm sm:px-6 sm:pb-8 sm:pt-3">
-                <CalendlyInlineBooking name={booking.name} email={booking.email} />
-              </div>
-            </div>
-          ) : (
-            <div className="grid items-center gap-10 lg:grid-cols-[.85fr_1.15fr]">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Votre première mission commence ici</p>
-                <h2 className={`${heading} mt-4`}>Parlons de votre<br />prochaine mission.</h2>
-                <p className="mt-5 leading-relaxed text-slate-600">Quelques informations pour préparer l’échange, puis vous choisirez votre créneau directement ici.</p>
-                <ul className="mt-7 space-y-4 text-sm text-slate-600">
-                  {["25 minutes en visio", "Pas de compte à créer maintenant", "Prévoyez les détails d’une mission à venir"].map(text => <li key={text} className="flex gap-2"><Check size={18} className="text-blue-600" aria-hidden="true" />{text}</li>)}
-                </ul>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-                <form onSubmit={submit}><p className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-500">Étape 1 sur 2 · Votre contexte</p><div className="grid gap-5 sm:grid-cols-2">{[["name","Votre nom","text","name"],["email","Email professionnel","email","email"],["company","Entreprise","text","organization"]].map(([name,label,type,autoComplete]) => <label key={name} className={`block text-sm font-semibold ${name === "company" ? "sm:col-span-2" : ""}`}>{label}<input name={name} type={type} autoComplete={autoComplete} required maxLength={150} className="mt-2 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" /></label>)}<label className="block text-sm font-semibold sm:col-span-2">Votre prochaine mission<select required name="mission" defaultValue="" className="mt-2 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal"><option disabled value="">Quand souhaitez-vous tester ?</option><option>Dans les 7 prochains jours</option><option>Dans les 30 prochains jours</option><option>Plus tard / date à définir</option></select></label><label className="block text-sm font-semibold sm:col-span-2">Qu’aimeriez-vous simplifier ?<textarea name="need" required maxLength={800} rows={3} placeholder="Ex. : solliciter 15 roadies et suivre qui a confirmé pour un montage." className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 font-normal outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" /></label><label className="block text-sm font-semibold sm:col-span-2">Pour connecter WhatsApp…<select required name="whatsapp" defaultValue="" className="mt-2 min-h-12 w-full rounded-lg border border-slate-300 bg-white px-3 font-normal"><option disabled value="">Choisissez votre situation</option><option>Je peux le connecter moi-même</option><option>Je peux faire participer la personne responsable</option><option>J’ai besoin d’en discuter avant</option></select></label></div><p className="mt-5 text-xs leading-relaxed text-slate-500">Vos informations sont enregistrées par ShiftFlow pendant 90 jours pour préparer et suivre votre demande. Après cette étape, l’agenda Calendly s’affiche directement ici et reçoit votre nom et votre email pour préremplir la réservation. <Link to="/confidentialite" className="underline">Confidentialité</Link>.</p><p role="alert" className="mt-4 text-sm text-red-700">{error}</p><button type="submit" disabled={saving} className={`${cta} mt-6 w-full disabled:opacity-60`}>{saving ? "Enregistrement…" : "Choisir mon créneau"} <ArrowRight size={17} aria-hidden="true" /></button><p className="mt-3 text-center text-xs text-slate-500">Sans engagement · Aucun paiement demandé</p></form>
-              </div>
-            </div>
-          )}
+          <div className="mx-auto mb-8 max-w-2xl text-center">
+            <p className="text-xs font-bold uppercase tracking-widest text-blue-700">Votre démo personnalisée</p>
+            <h2 className={`${heading} mt-3`}>Moins de relances.<br />Une équipe plus simple à organiser.</h2>
+            <p className="mt-4 text-sm leading-relaxed text-slate-600">Quatre réponses rapides pour adapter la démo à votre activité, puis choisissez votre créneau de 25 minutes avec Tanguy, fondateur de ShiftFlow.</p>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">ShiftFlow vous aide à organiser votre propre réseau d’intervenants. Nous ne fournissons pas de personnel.</p>
+          </div>
+          <DemoQualification />
         </div>
       </section>
       <section className={`${wrap} max-w-3xl py-16`}><h2 className="mb-7 text-2xl font-bold">Avant notre échange</h2>{[["Dois-je déjà avoir un compte ?","Non. Nous pouvons le créer ensemble pendant l’échange, puis commencer la configuration."],["Tout sera-t-il configuré en 25 minutes ?","L’objectif est de commencer sur votre cas concret. Selon votre disponibilité et les accès nécessaires, une session complémentaire peut être prévue."],["Mes intervenants doivent-ils installer une application ?","Non. Ils reçoivent votre proposition sur WhatsApp et répondent via un lien, sans compte ShiftFlow."],["Puis-je regarder le produit avant de réserver ?","Oui. La simulation interactive est accessible sans inscription depuis la page Démo."]].map(([q,a]) => <details key={q} className="border-t border-slate-200 py-5"><summary className="cursor-pointer font-semibold">{q}</summary><p className="mt-3 text-sm leading-relaxed text-slate-600">{a}</p></details>)}<Link to="/demo" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700">Explorer la démo interactive <ArrowUpRight size={16} aria-hidden="true" /></Link></section>

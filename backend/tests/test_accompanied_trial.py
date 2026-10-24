@@ -3,7 +3,7 @@ import ast
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from unittest import TestCase
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
 from fastapi.testclient import TestClient
@@ -50,3 +50,15 @@ class AccompaniedTrialTest(TestCase):
         for _ in range(5):
             self.assertEqual(self.client.post("/api/public/accompanied-trial", json=self.payload).status_code, 201)
         self.assertEqual(self.client.post("/api/public/accompanied-trial", json=self.payload).status_code, 429)
+
+    def test_new_qualification_without_whatsapp(self):
+        payload = {k: v for k, v in self.payload.items() if k != "whatsapp"}
+        payload.update(monthly_missions="1 à 3", team_size="Plus de 20")
+        response = self.client.post("/api/public/accompanied-trial", json=payload)
+        self.assertEqual(response.status_code, 201, response.text)
+        result = self.client.get("/api/admin/accompanied-trial", headers={"x-test-owner": "yes"}).json()[0]
+        self.assertEqual(result["monthly_missions"], "1 à 3")
+        self.assertEqual(result["team_size"], "Plus de 20")
+        self.assertIsNone(result["whatsapp"])
+        for key in ("monthly_missions", "team_size"):
+            self.assertEqual(self.client.post("/api/public/accompanied-trial", json={**payload, key: "unknown"}).status_code, 422)
