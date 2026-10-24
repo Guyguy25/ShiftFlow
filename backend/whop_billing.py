@@ -217,11 +217,14 @@ async def sync_membership(db,membership_id):
         offer=next((v for v in CATALOG.values() if v['plan_id']==plan_id),None)
         active=member.get('status')=='active' and bool(offer) and current.get('subscription_status') != 'refunded'
         tier=current.get('subscription_tier','pro')
+        changed_to_new_catalog = False
         if active and RANK[offer['tier']] < RANK.get(tier,0):
             grandfathered = (tier == 'team' and current.get('billing_catalog_version') != 2
                              and plan_id in START_PLAN_IDS and current.get('whop_plan_id') == plan_id)
-            if not grandfathered: tier=offer['tier']
-        await accounts(db).update_one({'id':current['id'],'whop_membership_id':membership_id},{'$set':{'plan':'pro' if active else 'free','subscription_tier':tier,'subscription_status':member.get('status'),'whop_plan_id':plan_id}, **({'$unset':{'whop_membership_id':''}} if member.get('status') in ('expired','canceled','cancelled') else {})})
+            if not grandfathered:
+                tier=offer['tier']
+                changed_to_new_catalog = plan_id != current.get('whop_plan_id')
+        await accounts(db).update_one({'id':current['id'],'whop_membership_id':membership_id},{'$set':{'plan':'pro' if active else 'free','subscription_tier':tier,'subscription_status':member.get('status'),'whop_plan_id':plan_id,**({'billing_catalog_version':2} if changed_to_new_catalog else {})}, **({'$unset':{'whop_membership_id':''}} if member.get('status') in ('expired','canceled','cancelled') else {})})
     finally: await release(db,lock_owner,lock)
 
 def verify_webhook(raw,headers):
