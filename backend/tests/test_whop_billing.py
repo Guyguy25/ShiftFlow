@@ -16,8 +16,8 @@ class WhopTests(IsolatedAsyncioTestCase):
         await self.db.users.insert_one({'id':'owner','plan':'free','free_missions_used':0})
         await self.db.organization_accounts.insert_one({'id':'org_test','plan':'free','free_pool_id':'owner'})
         self.user={'id':'org_test','actor_id':'owner'}
-        self.offer=b.CATALOG['team_monthly']
-        self.plan={'id':self.offer['plan_id'],'company':{'id':'biz_test'},'currency':'eur','plan_type':'renewal','billing_period':30,'initial_price':0,'renewal_price':99}
+        self.offer=b.CATALOG['start_monthly']
+        self.plan={'id':self.offer['plan_id'],'company':{'id':'biz_test'},'currency':'eur','plan_type':'renewal','billing_period':30,'initial_price':0,'renewal_price':29}
         self.provider=AsyncMock(side_effect=self.response)
         self.p=patch.object(b,'api',self.provider);self.p.start();self.addCleanup(self.p.stop)
         self.payment=None;self.member=None
@@ -28,8 +28,8 @@ class WhopTests(IsolatedAsyncioTestCase):
         if path.startswith('/memberships/'): return deepcopy(self.member)
         raise AssertionError(path)
     async def paid(self):
-        checkout=await b.checkout(self.db,self.user,'team_monthly')
-        self.payment={'id':'pay_test','metadata':{'shiftflow_checkout':checkout['reference'],'organization_id':'org_test'},'membership':{'id':'mem_test'},'company':{'id':'biz_test'},'plan':{'id':self.offer['plan_id']},'status':'paid','currency':'eur','subtotal':99,'total':99,'refunded_amount':0}
+        checkout=await b.checkout(self.db,self.user,'start_monthly')
+        self.payment={'id':'pay_test','metadata':{'shiftflow_checkout':checkout['reference'],'organization_id':'org_test'},'membership':{'id':'mem_test'},'company':{'id':'biz_test'},'plan':{'id':self.offer['plan_id']},'status':'paid','currency':'eur','subtotal':29,'total':29,'refunded_amount':0}
         self.member={'id':'mem_test','status':'active','company':{'id':'biz_test'},'plan':{'id':self.offer['plan_id']},'manage_url':'https://whop.com/hub/memberships/mem_test/'}
         return checkout
     async def test_catalog_exactly_matches_six_supplied_plans(self):
@@ -71,10 +71,10 @@ class WhopTests(IsolatedAsyncioTestCase):
             else: self.assertIn(expected,caught.exception.detail)
 
     async def test_current_catalog_account_and_verified_first_charge_are_supported(self):
-        plan={**self.plan,'initial_price':99,'initial_price_due':{'amount':'99.00','currency':'eur'},'account':{'id':'biz_test'}}
+        plan={**self.plan,'initial_price':29,'initial_price_due':{'amount':'29.00','currency':'eur'},'account':{'id':'biz_test'}}
         del plan['company']
         b.validate_plan(plan,self.offer)
-        for due in [None,{}, {'amount':'198.00','currency':'eur'},{'amount':'99.00','currency':'usd'},{'amount':'99.001','currency':'eur'}]:
+        for due in [None,{}, {'amount':'58.00','currency':'eur'},{'amount':'29.00','currency':'usd'},{'amount':'29.001','currency':'eur'}]:
             with self.subTest(due=due), self.assertRaises(HTTPException):
                 b.validate_plan({**plan,'initial_price_due':due},self.offer)
         with self.assertRaises(HTTPException):
@@ -85,10 +85,10 @@ class WhopTests(IsolatedAsyncioTestCase):
         for value in ['1072.809',None, 'NaN', 'Infinity', {}, '']:
             self.assertEqual(b.cents(value),-1)
         with self.assertRaises(HTTPException):
-            b.validate_plan({**self.plan,'renewal_price':'99.001'},self.offer)
+            b.validate_plan({**self.plan,'renewal_price':'29.001'},self.offer)
 
     async def test_checkout_metadata_and_pending_reuse(self):
-        c=await b.checkout(self.db,self.user,'team_monthly');again=await b.checkout(self.db,self.user,'team_monthly')
+        c=await b.checkout(self.db,self.user,'start_monthly');again=await b.checkout(self.db,self.user,'start_monthly')
         self.assertEqual(c,again)
         calls=[c for c in self.provider.call_args_list if c.args[0]=='POST'];self.assertEqual(len(calls),1)
         self.assertEqual(calls[0].args[2]['metadata']['organization_id'],'org_test')
@@ -115,32 +115,32 @@ class WhopTests(IsolatedAsyncioTestCase):
         self.assertEqual(await b.fulfill_payment(self.db,'pay_test'),'org_test')
         self.assertTrue((await self.db.whop_checkouts.find_one({'_id':original['reference']}))['fulfilled'])
         self.assertFalse((await self.db.whop_checkouts.find_one({'_id':other['reference']}))['fulfilled'])
-        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'team')
+        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'start')
         with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'business_yearly')
 
     async def test_missing_secrets_do_not_create_checkout(self):
-        with patch.dict(os.environ,{'WHOP_WEBHOOK_SECRET':''}),self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'team_monthly')
+        with patch.dict(os.environ,{'WHOP_WEBHOOK_SECRET':''}),self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'start_monthly')
         self.provider.assert_not_called()
     async def test_existing_subscriptions_and_rewards_are_not_bypassed(self):
         for field,value in [('stripe_subscription_id','sub_test'),('whop_membership_id','mem_existing'),('plan','pro'),('return_feedback',{'promo_code':'AVIS'})]:
             await self.db.organization_accounts.update_one({'id':'org_test'},{'$set':{field:value}})
-            with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'team_monthly')
+            with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'start_monthly')
             await self.db.organization_accounts.update_one({'id':'org_test'},{'$unset':{field:''}})
         self.provider.assert_not_called()
     async def test_verified_payment_grants_owner_organizations_idempotently(self):
         await self.paid()
         self.assertEqual(await b.fulfill_payment(self.db,'pay_test'), 'org_test')
         await b.fulfill_payment(self.db,'pay_test')
-        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'team')
+        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'start')
         self.assertEqual((await self.db.users.find_one({'id':'owner'}))['plan'],'pro')
-        with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'team_monthly')
+        with self.assertRaises(HTTPException): await b.checkout(self.db,self.user,'start_monthly')
     async def test_foreign_owner_callback_does_not_fulfill_payment(self):
         await self.paid()
         with self.assertRaises(HTTPException): await b.fulfill_payment(self.db,'pay_test',expected_org='other')
         self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['plan'],'free')
     async def test_pending_refunded_wrong_amount_and_trial_do_not_activate(self):
         await self.paid()
-        for field,value in [('status','pending'),('refunded_amount',99),('subtotal',89),('currency','usd')]:
+        for field,value in [('status','pending'),('refunded_amount',29),('subtotal',89),('currency','usd')]:
             original=self.payment[field];self.payment[field]=value
             self.assertIsNone(await b.fulfill_payment(self.db,'pay_test'));self.payment[field]=original
         self.member['status']='trialing';self.assertIsNone(await b.fulfill_payment(self.db,'pay_test'))
@@ -149,14 +149,14 @@ class WhopTests(IsolatedAsyncioTestCase):
         await self.paid();await b.fulfill_payment(self.db,'pay_test')
         self.member['plan']={'id':b.CATALOG['business_monthly']['plan_id']}
         await b.sync_membership(self.db,'mem_test')
-        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'team')
+        self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'start')
         self.payment['plan']=self.member['plan'];self.payment['subtotal']=50
         await b.fulfill_payment(self.db,'pay_upgrade')
         self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['subscription_tier'],'business')
         self.member['status']='expired';await b.sync_membership(self.db,'mem_test')
         current=await accounts(self.db).find_one({'id':'org_test'});self.assertEqual(current['plan'],'free');self.assertNotIn('whop_membership_id',current)
     async def test_full_refund_revokes_and_membership_event_cannot_restore_access(self):
-        await self.paid();await b.fulfill_payment(self.db,'pay_test');self.payment['refunded_amount']=99
+        await self.paid();await b.fulfill_payment(self.db,'pay_test');self.payment['refunded_amount']=29
         await b.refund_payment(self.db,'pay_test');await b.sync_membership(self.db,'mem_test')
         self.assertEqual((await accounts(self.db).find_one({'id':'org_test'}))['plan'],'free')
     async def test_partial_refund_retains_access_and_portal_is_validated(self):
