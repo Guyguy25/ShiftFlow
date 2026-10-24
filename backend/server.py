@@ -2762,7 +2762,9 @@ class AccompaniedTrialLead(BaseModel):
     company: str = Field(min_length=1, max_length=150)
     mission: Literal["Dans les 7 prochains jours", "Dans les 30 prochains jours", "Plus tard / date à définir"]
     need: str = Field(min_length=1, max_length=800)
-    whatsapp: Literal["Je peux le connecter moi-même", "Je peux faire participer la personne responsable", "J’ai besoin d’en discuter avant"]
+    whatsapp: Optional[Literal["Je peux le connecter moi-même", "Je peux faire participer la personne responsable", "J’ai besoin d’en discuter avant"]] = None
+    monthly_missions: Optional[Literal["1 à 3", "4 à 10", "11 à 20", "Plus de 20", "Activité ponctuelle / variable"]] = None
+    team_size: Optional[Literal["1 à 5", "6 à 10", "11 à 20", "Plus de 20"]] = None
 
     @field_validator("name", "company", "need")
     @classmethod
