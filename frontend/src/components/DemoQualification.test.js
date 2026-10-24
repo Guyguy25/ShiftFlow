@@ -39,3 +39,22 @@ test("failed requests preserve answers and allow retry without opening calendar"
   expect(host.querySelector('[role="alert"]')).toBeTruthy(); expect(host.querySelector('[data-testid="calendar"]')).toBeNull(); expect(host.querySelector('input[name="email"]').value).toBe("alex@example.com");
   api.post.mockResolvedValue({ data: {} }); await click(next()); expect(host.querySelector('[data-testid="calendar"]')).toBeTruthy();
 });
+
+test("supports multiple needs, deselection, back navigation and joined API payload", async () => {
+  api.post.mockResolvedValue({ data: {} });
+  await toContacts();
+  await click(Array.from(host.querySelectorAll("button")).find(el => el.textContent.includes("Retour")));
+  expect(host.querySelectorAll('input[name="need"][type="checkbox"]').length).toBe(5);
+  await choose("need", "Les messages et les relances");
+  expect(host.querySelectorAll('input[name="need"]:checked').length).toBe(2);
+  await choose("need", "Les remplacements après un désistement");
+  await choose("need", "Les messages et les relances");
+  expect(next().disabled).toBe(true);
+  await choose("need", "Les messages et les relances");
+  await choose("need", "Le suivi des confirmations");
+  await click(next());
+  await click(Array.from(host.querySelectorAll("button")).find(el => el.textContent.includes("Retour")));
+  expect(host.querySelectorAll('input[name="need"]:checked').length).toBe(2);
+  await click(next()); await click(next());
+  expect(api.post).toHaveBeenCalledWith("/public/accompanied-trial", expect.objectContaining({ need: "Les messages et les relances\nLe suivi des confirmations" }));
+});
