@@ -1,0 +1,32 @@
+name: Pricing v2 backend checks
+on:
+  pull_request:
+    paths:
+      - 'backend/whop_billing.py'
+      - 'backend/workspace_accounts.py'
+      - 'backend/mission_billing.py'
+      - 'backend/organizations.py'
+      - 'backend/server.py'
+      - 'backend/tests/**'
+      - '.github/workflows/pricing-v2-checks.yml'
+jobs:
+  billing-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+      - name: Install test dependencies
+        run: python -m pip install -r backend/requirements-test.txt
+      - name: Python syntax validation
+        run: python -m py_compile backend/whop_billing.py backend/workspace_accounts.py backend/mission_billing.py backend/organizations.py backend/server.py
+      - name: Start / Whop regressions
+        run: |
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_pricing_v2.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_billing.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_owner_subscription.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_organizations.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_mission_billing.py -v
