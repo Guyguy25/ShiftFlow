@@ -2062,8 +2062,8 @@ async def _missions_created_count(user_id: str) -> int:
 async def check_quota_or_raise(user, kind: str):
     if kind == "mission":
         current = await mission_billing.account(db, user["id"])
-        if not mission_billing.balance(current)["can_create_mission"]:
-            raise HTTPException(402, "Choisissez ShiftFlow à 79 €/mois, missions illimitées. Vos missions existantes restent utilisables.")
+        if not (await mission_billing.quota(db, user["id"]))["can_create_mission"]:
+            raise HTTPException(402, "Votre quota de missions est atteint. Consultez les offres ShiftFlow à partir de 29 €/mois.")
 
 
 class OnboardingIn(BaseModel):
@@ -2096,12 +2096,12 @@ async def get_quota(user=Depends(get_workspace_user)):
     workers = await db.workers.count_documents({"agency_id": user["id"]})
     u = await accounts(db).find_one({"id": user["id"]}, {"_id": 0})
     info = trial_info(u or user)
+    usage = await mission_billing.quota(db, user["id"])
     return {
         "plan": plan,
         "active_missions": missions,
         "missions_used": missions_used,
-        "mission_limit": None if plan == "pro" else FREE_MISSION_LIMIT,
-        **mission_billing.balance(await mission_billing.account(db, user["id"])),
+        **usage,
         "workers": workers,
         "worker_limit": None if plan == "pro" else FREE_WORKER_LIMIT,
         "subscription_status": (u or {}).get("subscription_status"),
