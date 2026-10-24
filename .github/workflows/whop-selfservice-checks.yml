@@ -1,0 +1,28 @@
+name: Whop self-service billing checks
+on:
+  pull_request:
+    paths:
+      - "backend/whop_billing.py"
+      - "backend/whop_routes.py"
+      - "backend/server.py"
+      - "backend/tests/test_whop_selfservice.py"
+      - ".github/workflows/whop-selfservice-checks.yml"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+      - name: Install test dependencies
+        run: python -m pip install -r backend/requirements-test.txt
+      - name: Validate syntax
+        run: python -m py_compile backend/whop_billing.py backend/whop_routes.py backend/server.py
+      - name: Run self-service and billing regression tests
+        run: |
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_selfservice.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_billing.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_owner_subscription.py -v

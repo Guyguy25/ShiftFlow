@@ -301,3 +301,104 @@ async def track_checkout(db, reference, owner_id, offer):
         if sent: await db.whop_checkouts.update_one({'_id':reference},{'$set':{'meta_checkout_sent_at':time.time()}})
     except Exception:
         pass
+
+
+# Self-service lifecycle changes never run a second checkout, and never grant access
+# from a user-provided plan or status. Whop remains the billing source of truth.
+def _membership_id(current):
+    membership_id = current.get('whop_membership_id')
+    if not isinstance(membership_id, str) or not re.fullmatch(r'mem_[A-Za-z0-9]+', membership_id):
+        raise HTTPException(404, 'Aucun abonnement Whop à gérer.')
+    if current.get('billing_legacy_multiple'):
+        raise HTTPException(409, 'Plusieurs abonnements historiques couvrent ce compte. Contactez le support pour les modifier sans interruption.')
+    return membership_id
+
+
+async def owned_membership(db, user):
+    current = await accounts(db).find_one({'id': user['id']})
+    if not current:
+        raise HTTPException(404, 'Compte introuvable.')
+    membership_id = _membership_id(current)
+    member = await api('GET', '/memberships/' + membership_id)
+    if (member.get('id') != membership_id or
+            provider_company(member) != os.environ.get('WHOP_COMPANY_ID')):
+        raise HTTPException(502, 'Impossible de vérifier cet abonnement auprès de Whop.')
+    return current, member
+
+
+def _renewal_date(member):
+    raw = member.get('renewal_period_end')
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            return None
+        return parsed.isoformat()
+    except ValueError:
+        return None
+
+
+def _manage_link(member):
+    value = member.get('manage_url')
+    if not isinstance(value, str): return None
+    parsed = urlparse(value)
+    if parsed.scheme == 'https' and parsed.hostname in ('whop.com', 'www.whop.com') and not parsed.username and not parsed.password:
+        return value
+    return None
+
+
+def subscription_details(current, member):
+    scheduled = member.get('cancel_at_period_end') is True
+    status = str(member.get('status') or current.get('subscription_status') or 'unknown')
+    date = _renewal_date(member)
+    return {
+        'provider': 'whop',
+        'tier': current.get('subscription_tier'),
+        'status': status,
+        'cancel_at_period_end': scheduled,
+        'period_end': date,
+        'billing_interval': 'yearly' if identifier(member.get('plan')) in {v['plan_id'] for v in CATALOG.values() if v['days'] == 365}
+              else 'monthly' if identifier(member.get('plan')) in {v['plan_id'] for v in CATALOG.values() if v['days'] == 30}
+              else None,
+        'manage_available': bool(_manage_link(member)),
+        'can_cancel': status == 'active' and not scheduled,
+        'can_resume': status == 'active' and scheduled,
+        'multiple_subscriptions': current.get('billing_legacy_multiple', False),
+    }
+
+
+async def subscription(db, user):
+    current, member = await owned_membership(db, user)
+    return subscription_details(current, member)
+
+
+async def cancel_at_period_end(db, user):
+    current, member = await owned_membership(db, user)
+    if member.get('status') != 'active':
+        raise HTTPException(409, 'Cet abonnement ne peut pas être résilié depuis ShiftFlow dans son état actuel.')
+    if not member.get('cancel_at_period_end'):
+        membership_id = _membership_id(current)
+        # Explicit mode avoids accidentally canceling immediately.
+        await api('POST', '/memberships/' + membership_id + '/cancel', {'cancellation_mode': 'at_period_end'})
+        member = await api('GET', '/memberships/' + membership_id)
+        if (member.get('id') != membership_id or
+                provider_company(member) != os.environ.get('WHOP_COMPANY_ID') or
+                member.get('cancel_at_period_end') is not True):
+            raise HTTPException(502, 'Whop n’a pas encore confirmé la résiliation. Vérifiez votre abonnement avant de réessayer.')
+    return subscription_details(current, member)
+
+
+async def undo_cancellation(db, user):
+    current, member = await owned_membership(db, user)
+    if member.get('status') != 'active':
+        raise HTTPException(409, 'Cet abonnement n’est plus actif. Contactez le support pour le réactiver.')
+    if member.get('cancel_at_period_end') is True:
+        membership_id = _membership_id(current)
+        await api('POST', '/memberships/' + membership_id + '/uncancel')
+        member = await api('GET', '/memberships/' + membership_id)
+        if (member.get('id') != membership_id or
+                provider_company(member) != os.environ.get('WHOP_COMPANY_ID') or
+                member.get('cancel_at_period_end') is not False):
+            raise HTTPException(502, 'Whop n’a pas encore confirmé la reprise. Vérifiez votre abonnement avant de réessayer.')
+    return subscription_details(current, member)

@@ -38,6 +38,18 @@ async def status(payload:StatusIn,user=Depends(s.get_workspace_owner)):
     active=current and current.get('plan')=='pro' and current.get('whop_membership_id')==record.get('membership_id')
     return {'status': ('paid' if active else 'inactive') if record.get('fulfilled') else 'pending'}
 
+@router.get('/subscription')
+async def subscription(user=Depends(s.get_workspace_owner)):
+    return await billing.subscription(s.db, user)
+
+@router.post('/cancel')
+async def cancel(user=Depends(s.get_workspace_owner)):
+    return await billing.cancel_at_period_end(s.db, user)
+
+@router.post('/uncancel')
+async def uncancel(user=Depends(s.get_workspace_owner)):
+    return await billing.undo_cancellation(s.db, user)
+
 @router.post('/portal')
 async def portal(user=Depends(s.get_workspace_owner)): return await billing.portal(s.db,user)
 

@@ -2477,6 +2477,45 @@ async def sync_team_catalog(user=Depends(get_workspace_owner)):
     return {"prices": {lookup: price.id for lookup, price in prices.items()}}
 
 
+@api.get("/payments/subscription")
+async def payment_subscription(user=Depends(get_workspace_owner)):
+    """Read-only billing state from the provider; never invent a renewal date."""
+    current = await accounts(db).find_one({"id": user["id"]})
+    if not current:
+        raise HTTPException(404, "Compte introuvable.")
+    if current.get("billing_legacy_multiple"):
+        return {"provider": "multiple", "tier": current.get("subscription_tier"),
+                "status": current.get("subscription_status"),
+                "multiple_subscriptions": True, "period_end": None,
+                "cancel_at_period_end": False}
+    if current.get("whop_membership_id"):
+        from whop_billing import subscription
+        return await subscription(db, user)
+    subscription_id = current.get("stripe_subscription_id")
+    if subscription_id:
+        try:
+            sub = stripe_lib.Subscription.retrieve(subscription_id)
+            raw_end = sub.get("current_period_end")
+            if raw_end is None:
+                entries = (sub.get("items") or {}).get("data") or []
+                raw_end = entries[0].get("current_period_end") if entries else None
+            try:
+                period_end = iso(datetime.fromtimestamp(int(raw_end), timezone.utc)) if raw_end else None
+            except (TypeError, ValueError, OverflowError):
+                period_end = None
+            return {"provider": "stripe", "tier": current.get("subscription_tier"),
+                    "status": sub.get("status") or current.get("subscription_status"),
+                    "cancel_at_period_end": sub.get("cancel_at_period_end") is True,
+                    "period_end": period_end, "billing_interval": None,
+                    "manage_available": True, "can_cancel": False, "can_resume": False,
+                    "multiple_subscriptions": False}
+        except stripe_lib.error.StripeError:
+            raise HTTPException(503, "Impossible de récupérer les dates de facturation Stripe. Réessayez ou ouvrez le portail.")
+    return {"provider": None, "tier": None, "status": "free", "period_end": None,
+            "cancel_at_period_end": False, "manage_available": False,
+            "can_cancel": False, "can_resume": False, "multiple_subscriptions": False}
+
+
 @api.post("/payments/portal")
 async def billing_portal(request: Request, user=Depends(get_workspace_owner)):
     u = await accounts(db).find_one({"id": user["id"]}, {"_id": 0})
