@@ -138,7 +138,7 @@ async def checkout(db,user,offer_key,tracking=None):
         config=await api('POST','/checkout_configurations',{'plan_id':offer['plan_id'],'mode':'payment','metadata':{'shiftflow_checkout':ref,'organization_id':user['id']}})
         session_id=config.get('id','')
         if not re.fullmatch(r'ch_[A-Za-z0-9]+',session_id): raise HTTPException(502,'La session de paiement Whop est invalide.')
-        await db.whop_checkouts.insert_one({'_id':ref,'session_id':session_id,'organization_id':user['id'],'offer_key':offer_key,'plan_id':offer['plan_id'],'expires_at':time.time()+1200,'created_at':time.time(),'legal_version':'2026-10-23','actor_id':user.get('actor_id',user['id']),'billing_owner_id':owner_id,'tracking':tracking or {},'fulfilled':False})
+        await db.whop_checkouts.insert_one({'_id':ref,'session_id':session_id,'organization_id':user['id'],'offer_key':offer_key,'plan_id':offer['plan_id'],'expires_at':time.time()+1200,'created_at':time.time(),'legal_version':'2026-10-24','actor_id':user.get('actor_id',user['id']),'billing_owner_id':owner_id,'tracking':tracking or {},'fulfilled':False})
         await track_checkout(db,ref,owner_id,offer)
         return {'session_id':session_id,'reference':ref,'environment':'sandbox' if os.environ.get('WHOP_SANDBOX') == 'true' else 'production'}
     finally: await release(db,owner_id,lock)
