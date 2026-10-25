@@ -73,6 +73,7 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
         data=response.json()['user']
         self.assertEqual(data['organization']['name'],'Régie & Lumière')
         self.assertEqual(data['organization']['id'],data['id'])
+        self.assertEqual(data['onboarding_answers'], {'annual_events':30})
         self.assertEqual(data['organization']['role'],'owner')
 
     async def test_invitation_is_hashed_bound_to_email_single_use_and_not_listed_as_plaintext(self):
@@ -221,6 +222,18 @@ class OrganizationAPITests(IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code,200,response.text)
         owner=await self.db.users.find_one({'id':'owner'})
         self.assertEqual(owner['plan'],'free');self.assertEqual(owner['subscription_tier'],'pro')
+
+    async def test_profile_returns_own_signup_answers_even_inside_an_invited_workspace(self):
+        await self.db.users.update_one({'id':'owner'}, {'$set':{'onboarding_answers':{'annual_events':300}}})
+        await self.db.users.update_one({'id':'member'}, {'$set':{'onboarding_answers':{'monthly_missions':'1-3'}}})
+        await self.join()
+        owner = (await self.request('GET','/auth/me')).json()
+        member = (await self.request('GET','/auth/me',uid='member')).json()
+        self.assertEqual(owner['onboarding_answers'], {'annual_events':300})
+        self.assertEqual(member['onboarding_answers'], {'monthly_missions':'1-3'})
+        self.assertNotIn('password_hash', member)
+        without_answers = (await self.request('GET','/auth/me',uid='other')).json()
+        self.assertIsNone(without_answers['onboarding_answers'])
 
     async def test_member_onboarding_updates_their_own_account_only(self):
         await self.join()

@@ -53,3 +53,33 @@ test("annual signup answers recommend Start without treating intervenants as app
 test("unknown signup volume never invents a personalized recommendation",async()=>{
  await render();expect(host.textContent).not.toContain("Recommandé pour vous");
 });
+
+
+test("comparison exposes shared features and differences with accessible availability",async()=>{
+ await render();
+ expect(host.textContent).toContain("Comparez les plans en un coup d’œil");
+ const table=host.querySelector("table");
+ const rows=[...table.querySelectorAll("tbody tr")];
+ expect(rows.find(r=>r.textContent.startsWith("Missions par mois")).textContent).toContain("320Illimitées");
+ expect([...rows.find(r=>r.textContent.startsWith("Accès individuels")).querySelectorAll("td")].map(c=>c.textContent)).toEqual(["Non inclus","Inclus","Inclus"]);
+ expect([...rows.find(r=>r.textContent.startsWith("Rôles administrateur")).querySelectorAll("td")].map(c=>c.textContent)).toEqual(["Non inclus","Non inclus","Inclus"]);
+});
+test("missing signup volume explains recommendation and lets the visitor estimate it",async()=>{
+ useAuth.mockReturnValue({user:false});await render();
+ expect(host.textContent).toContain("Connectez-vous pour retrouver");
+ expect(card("start").textContent).not.toContain("Recommandé pour vous");
+ await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent==="Jusqu’à 3 / mois").click());
+ expect(card("start").textContent).toContain("Recommandé pour vous");
+ await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent==="Plus de 20 / mois").click());
+ expect(card("business").textContent).toContain("Recommandé pour vous");
+ expect(card("start").textContent).not.toContain("Recommandé pour vous");
+});
+test("saved recommendation can be adjusted and restored without changing signup answers",async()=>{
+ useAuth.mockReturnValue({user:{id:"u",can_manage_billing:true,onboarding_answers:{annual_events:30}}});await render();
+ expect(card("start").textContent).toContain("Recommandé pour vous");
+ await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent==="4 à 20 / mois").click());
+ expect(card("pro").textContent).toContain("Recommandé pour vous");
+ await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent==="Revenir à mes réponses d’inscription").click());
+ expect(card("start").textContent).toContain("Recommandé pour vous");
+ expect(api.post).not.toHaveBeenCalled();
+});
