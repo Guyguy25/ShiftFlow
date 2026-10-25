@@ -34,3 +34,22 @@ test("checkout only forwards advertising identifiers with current cookie consent
   expect(api.post).toHaveBeenCalledWith("/whop/checkout",expect.objectContaining({meta_consent:true}),expect.anything());
  } finally {localStorage.removeItem("shiftflow_cookie_consent");}
 });
+
+test.each([["1-3","start"],["4-10","pro"],["21+","business"]])("personalized recommendation %s highlights only %s, including annual prices",async(monthly_missions,tier)=>{
+ const current=useAuth().user;
+ useAuth.mockReturnValue({user:{...current,onboarding_answers:{monthly_missions}}});
+ await render();
+ expect(card(tier).textContent).toContain("Recommandé pour vous");
+ expect([...host.querySelectorAll('section[data-testid]')].filter(s=>s.textContent.includes("Recommandé pour vous"))).toHaveLength(1);
+ expect(card(tier).className).toContain("border-blue-600");
+ await act(async()=>[...host.querySelectorAll('button')].find(b=>b.textContent.startsWith("Annuel")).click());
+ expect(card(tier).textContent).toContain("Recommandé pour vous");
+});
+test("annual signup answers recommend Start without treating intervenants as app users",async()=>{
+ useAuth.mockReturnValue({user:{id:"u",organization:{id:"org",name:"AXE Events"},can_manage_billing:true,onboarding_answers:{annual_events:30,people_per_mission:100}}});
+ await render();expect(card("start").textContent).toContain("Recommandé pour vous");
+ expect(card("start").textContent).toContain("30 événements par an");
+});
+test("unknown signup volume never invents a personalized recommendation",async()=>{
+ await render();expect(host.textContent).not.toContain("Recommandé pour vous");
+});
