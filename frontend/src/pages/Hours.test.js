@@ -110,3 +110,25 @@ test("organizer sees a guided empty state and cannot export an empty list", asyn
   expect(host.querySelector('[data-testid="hours-empty"]').textContent).toContain("Aucune déclaration");
   expect(findButton("Exporter CSV").disabled).toBe(true);
 });
+
+
+test("no missions explains prerequisite and hides unusable controls", async () => {
+  mockOwner([]);
+  const original = api.get.getMockImplementation();
+  api.get.mockImplementation(url => url === "/missions" ? Promise.resolve({ data: [] }) : original(url));
+  await mount(<Hours />);
+  expect(host.querySelector('[data-testid="hours-first-mission"]').textContent).toContain("confirmez vos intervenants");
+  expect(host.querySelector('a[href="/app/missions/new"]').textContent).toContain("Créer ma première mission");
+  expect(host.querySelector('select')).toBeNull();
+  expect(findButton("Demander / relancer")).toBeUndefined();
+  expect(host.querySelector('form')).toBeNull();
+});
+
+test("mission loading failure does not show a false first mission state", async () => {
+  mockOwner([]);
+  const original = api.get.getMockImplementation();
+  api.get.mockImplementation(url => url === "/missions" ? Promise.reject(new Error("offline")) : original(url));
+  await mount(<Hours />);
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(host.querySelector('[data-testid="hours-first-mission"]')).toBeNull();
+});
