@@ -3,7 +3,7 @@ import { workspacePath, unscopedPath } from "../lib/workspacePaths";
 import WorkspaceSelector from "./WorkspaceSelector";
 import React, { useEffect, useState } from "react";
 import { NavLink, Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, MessageCircle, LogOut, MoreHorizontal, X, LifeBuoy, Plus, UserRound, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, CalendarClock, Calendar as CalendarIcon, Users, History, Settings, MessageCircle, LogOut, MoreHorizontal, X, LifeBuoy, Plus, UserRound, ShieldCheck, ExternalLink } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import ProfileMenu from "./ProfileMenu";
 import WelcomeDialog from "./WelcomeDialog";
@@ -115,6 +115,7 @@ export default function Layout({ children }) {
         <div className="border-t border-gray-100 p-3 shrink-0 bg-white">
           <Link to={scoped("/app/settings")} className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><Settings size={17}/>Paramètres de l’organisation</Link>
           <Link to={scoped("/app/help")} className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><LifeBuoy size={17}/>Aide et tutoriels</Link>
+          <Link to="/" data-testid="desktop-view-site" className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"><ExternalLink size={17} aria-hidden="true"/>Voir le site</Link>
           <p className="px-3 pt-3 text-[11px] font-semibold text-gray-400">ShiftFlow · Votre équipe, réunie.</p>
         </div>
       </aside>
@@ -159,6 +160,7 @@ export default function Layout({ children }) {
               Administration
               <span className="ml-auto rounded-full bg-indigo-100 px-2 py-0.5 text-[9px] font-bold uppercase">Owner</span>
             </NavLink>}
+            <Link to="/" data-testid="mobile-view-site" onClick={() => setOpen(false)} className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-700"><ExternalLink className="h-5 w-5" aria-hidden="true"/>Voir le site</Link>
             <button
               onClick={handleLogout}
               data-testid="mobile-logout-btn"

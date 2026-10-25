@@ -42,7 +42,7 @@ import { Toaster } from "sonner";
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<PublicOnlyRoute><Landing /></PublicOnlyRoute>} />
+      <Route path="/" element={<Landing />} />
       <Route path="/demo" element={<Demo />} />
       <Route path="/test-accompagne" element={<AccompaniedTrial />} />
       <Route path="/organizations/new" element={<ProtectedRoute><CreateOrganization/></ProtectedRoute>} />
