@@ -24,6 +24,7 @@ const VOLUMES = [["1-3", "Jusqu’à 3 / mois"], ["4-10", "4 à 20 / mois"], ["2
 const euros = value => value.toLocaleString("fr-FR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 });
 export default function Pricing() {
   const { user } = useAuth();
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [quota, setQuota] = useState(null), [config, setConfig] = useState(null);
   const [annual, setAnnual] = useState(false);
   const [selectedVolume, setSelectedVolume] = useState(null);

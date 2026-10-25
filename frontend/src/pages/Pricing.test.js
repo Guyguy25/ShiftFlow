@@ -8,7 +8,7 @@ jest.mock("../context/AuthContext",()=>({useAuth:jest.fn()}));
 jest.mock("../components/WhopCheckoutModal",()=>({__esModule:true,default:({checkout,onClose})=>checkout?<div data-testid="modal">{checkout.session_id}<button onClick={onClose}>Fermer</button></div>:null}));
 jest.mock("react-router-dom",()=>({Link:({to,children,...p})=><a href={to} {...p}>{children}</a>}),{virtual:true});
 let host,root,quota,ready;
-beforeEach(()=>{global.IS_REACT_ACT_ENVIRONMENT=true;host=document.createElement("div");document.body.appendChild(host);root=createRoot(host);useAuth.mockReturnValue({user:{id:"u",organization:{id:"org",name:"AXE Events"},can_manage_billing:true}});quota={plan:"free",free_missions_remaining:0};ready=true;api.get.mockImplementation(url=>Promise.resolve({data:url==="/whop/config"?{ready}:quota}));api.post.mockReset();HTMLElement.prototype.scrollIntoView=jest.fn();});
+beforeEach(()=>{window.scrollTo=jest.fn();global.IS_REACT_ACT_ENVIRONMENT=true;host=document.createElement("div");document.body.appendChild(host);root=createRoot(host);useAuth.mockReturnValue({user:{id:"u",organization:{id:"org",name:"AXE Events"},can_manage_billing:true}});quota={plan:"free",free_missions_remaining:0};ready=true;api.get.mockImplementation(url=>Promise.resolve({data:url==="/whop/config"?{ready}:quota}));api.post.mockReset();HTMLElement.prototype.scrollIntoView=jest.fn();});
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
 const render=async()=>{await act(async()=>root.render(<Pricing/>));};
 const card=tier=>host.querySelector(`[data-testid="pricing-card-${tier}"]`);
