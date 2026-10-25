@@ -3,7 +3,7 @@ export function activationNext(summary, whatsapp, quota) {
   const mission = [...summary.ongoing, ...summary.upcoming].find(m =>
     m.status !== "cancelled" && m.shifts?.some(s => s.status !== "cancelled" && Number(s.confirmed_count || 0) < Number(s.people_needed)));
   const href = mission ? `/app/missions/${mission.id}?step=select` : "/app/missions/new";
-  if (!mission && quota?.can_create_mission === false) return { label: "Préparer ma prochaine mission", href: "/pricing", description: "Continuez avec ShiftFlow à 79 €/mois, missions illimitées." };
+  if (!mission && quota?.can_create_mission === false) return { label: "Préparer ma prochaine mission", href: "/pricing", description: "Choisissez une offre dès 29 €/mois, selon votre volume de missions." };
   if (!mission) return { label: summary.missions_total ? "Créer une mission à venir" : "Créer ma première mission", href, description: "Indiquez où, quand et combien de personnes vous cherchez." };
   if (!summary.activation.active_workers) return { label: "Ajouter mes intervenants", stage: "workers", href: `/app/workers?add=1&returnTo=${encodeURIComponent(href)}`, description: `Ajoutez les personnes que vous contactez habituellement lorsqu’il vous manque quelqu’un pour « ${mission.name} ».` };
   if (!whatsapp) return { label: "Vérifier WhatsApp", connect: true, href: `/app/workers?connect=1&returnTo=${encodeURIComponent(href)}`, description: "La connexion WhatsApp n’a pas pu être vérifiée. Ouvrez-la pour réessayer." };
