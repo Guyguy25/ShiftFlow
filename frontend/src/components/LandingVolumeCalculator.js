@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Calculator, CheckCircle2 } from "lucide-react";
+import { PLAN_OFFERS } from "../lib/billingConfig";
+import { pricingRecommendation } from "../lib/pricingRecommendation";
 import { estimateLandingVolume, formatLandingTime } from "../lib/landingVolume";
 
 const number = (value) => new Intl.NumberFormat("fr-FR").format(value);
@@ -21,6 +23,7 @@ export default function LandingVolumeCalculator() {
   const [missions, setMissions] = useState(10);
   const [people, setPeople] = useState(15);
   const [refusals, setRefusals] = useState(3);
+  const offer = PLAN_OFFERS.find(plan => plan.key === pricingRecommendation({monthly_missions: missions}).tier);
   const volume = estimateLandingVolume({ missions, people, refusals });
 
   return <section id="calculateur" className="scroll-mt-24 border-y border-slate-200 bg-slate-50 py-16 sm:py-20" aria-labelledby="landing-calculator-title">
@@ -50,7 +53,7 @@ export default function LandingVolumeCalculator() {
           </div>
           <div className="mt-auto pt-6">
             <Link to="/register" data-testid="landing-calculator-cta" className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700">Tester ShiftFlow sur mes 3 premières missions <ArrowRight size={17} aria-hidden="true" /></Link>
-            <p className="mt-3 text-center text-xs text-slate-600">Pro à 79 €/mois, soit {euros(79 / missions)} par mission avec ce volume. <Link to="/pricing" className="font-semibold text-blue-700 underline underline-offset-2">Voir les 3 offres</Link></p>
+            <p className="mt-3 text-center text-xs text-slate-600">{offer.name} à {offer.monthly} €/mois, soit {euros(offer.monthly / missions)} par mission avec ce volume. <Link to="/pricing" className="font-semibold text-blue-700 underline underline-offset-2">Voir les 3 offres</Link></p>
           </div>
         </div>
       </div>

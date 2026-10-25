@@ -5,13 +5,10 @@ import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { LEGAL_VERSION } from "../constants/legal";
 import WhopCheckoutModal from "../components/WhopCheckoutModal";
+import { PLAN_OFFERS } from "../lib/billingConfig";
 import { pricingRecommendation } from "../lib/pricingRecommendation";
 
-export const OFFERS = [
-  { key: "start", name: "Start", monthly: 29, yearly: 278.40, discount: 20, tagline: "L'essentiel pour les petites équipes", people: "3 missions par mois · 1 responsable", features: ["Intervenants et contacts illimités", "Invitations et relances WhatsApp", "Remplacement en cascade", "Calendrier et relevés d’heures"] },
-  { key: "pro", name: "Pro", monthly: 79, yearly: 711, discount: 25, tagline: "Pour les prestataires réguliers", people: "20 missions par mois · Vous + 3 collaborateurs", features: ["Toutes les fonctions de Start", "Missions partagées avec les collaborateurs", "Comptes individuels et gestion des accès", "20 missions par mois pour votre équipe"] },
-  { key: "business", name: "Business", monthly: 149, yearly: 1072.80, discount: 40, tagline: "Pour coordonner plusieurs équipes", people: "Missions illimitées · Vous + 10 collaborateurs", features: ["Toutes les fonctions de Pro", "Administrateurs et coordinateurs", "Gestion avancée des autorisations", "Pilotage multi-organisations"] },
-];
+export const OFFERS = PLAN_OFFERS;
 const COMPARISON = [
   ["Missions par mois", "3", "20", "Illimitées"],
   ["Collaborateurs en plus du propriétaire", "Aucun", "3", "10"],
@@ -27,6 +24,7 @@ const VOLUMES = [["1-3", "Jusqu’à 3 / mois"], ["4-10", "4 à 20 / mois"], ["2
 const euros = value => value.toLocaleString("fr-FR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 });
 export default function Pricing() {
   const { user } = useAuth();
+  useEffect(() => { window.scrollTo(0, 0); }, []);
   const [quota, setQuota] = useState(null), [config, setConfig] = useState(null);
   const [annual, setAnnual] = useState(false);
   const [selectedVolume, setSelectedVolume] = useState(null);
@@ -73,31 +71,34 @@ export default function Pricing() {
   }
   return <div className="min-h-screen bg-[#F9FAFB] text-gray-900">
     <header className="border-b bg-white"><div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5"><Link to="/" className="flex items-center gap-2 text-lg font-bold"><Zap className="text-blue-600"/>ShiftFlow</Link><Link to={user ? "/app/dashboard" : "/"} className="flex min-h-11 items-center gap-2 text-sm"><ArrowLeft size={16}/>Retour</Link></div></header>
-    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-16">
-      <div className="mx-auto max-w-2xl text-center"><p className="text-sm font-semibold text-blue-700">Un abonnement pour toutes vos organisations</p><h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-5xl">Moins de coordination.<br/>Plus de missions réussies.</h1><p className="mt-5 text-gray-600">Commencez avec 3 missions offertes. Choisissez ensuite le nombre de missions et d’accès adapté à votre activité.</p></div>
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-7">
+      <div className="text-center"><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Choisissez votre offre ShiftFlow</h1><p className="mt-2 text-sm text-gray-600">3 missions offertes, puis dès 29 €/mois. Un abonnement pour toutes vos organisations.</p></div>
       {orgId && <p className="mt-7 rounded-xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-900">Espace <strong>{user.organization.name}</strong>. {owner ? "Votre abonnement couvre toutes les organisations dont vous êtes propriétaire." : "Seul son propriétaire peut gérer la facturation. Vous pouvez aussi créer votre propre organisation."}</p>}
       {user?.billing_legacy_multiple && <p role="status" className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Plusieurs abonnements existants couvrent vos espaces. Leurs accès sont conservés. Contactez le support pour les regrouper ; aucun abonnement n’a été résilié automatiquement.</p>}
       {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {config?.ready === false && !paid && <p role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Les abonnements Whop sont en cours de configuration. Les achats seront disponibles après activation du paiement sécurisé.</p>}
       {paid && <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-sm text-emerald-900">Votre offre <strong>{OFFERS.find(o => o.key === quota.subscription_tier)?.name || (quota.subscription_tier === "team" ? "Team (offre historique)" : "Pro (offre historique)")}</strong> est active.</p>{owner && <button onClick={portal} disabled={!!loading} className="min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-emerald-800">Gérer mon abonnement</button>}</div>}
-      <div role="group" aria-label="Fréquence de facturation" className="mx-auto mt-8 grid max-w-sm grid-cols-2 rounded-2xl border bg-white p-1.5 shadow-sm">{[false, true].map(value => <button key={String(value)} aria-pressed={annual === value} disabled={!!loading || !!checkout} onClick={() => setAnnual(value)} className={`min-h-12 rounded-xl px-2 text-sm font-semibold ${annual === value ? "bg-gray-900 text-white" : "text-gray-600"}`}>{value ? "Annuel · jusqu’à −40 %" : "Mensuel"}</button>)}</div>
-      <fieldset className="mx-auto mt-6 max-w-2xl rounded-2xl border border-blue-100 bg-blue-50 p-4 text-center sm:p-5">
+      <div role="group" aria-label="Fréquence de facturation" className="mx-auto mt-4 grid max-w-sm grid-cols-2 rounded-2xl border bg-white p-1.5 shadow-sm">{[false, true].map(value => <button key={String(value)} aria-pressed={annual === value} disabled={!!loading || !!checkout} onClick={() => setAnnual(value)} className={`min-h-12 rounded-xl px-2 text-sm font-semibold ${annual === value ? "bg-gray-900 text-white" : "text-gray-600"}`}>{value ? "Annuel · jusqu’à −40 %" : "Mensuel"}</button>)}</div>
+      <div className="mt-6 grid items-stretch gap-5 md:grid-cols-3">{OFFERS.map(offer => <section id={offer.key} key={offer.key} data-testid={`pricing-card-${offer.key}`} className={`relative flex min-w-0 scroll-mt-8 flex-col rounded-2xl border bg-white p-5 ${offer.key === highlightedOffer ? "border-2 border-blue-600 shadow-sm" : "border-gray-200"}`}>
+        {recommendation?.tier === offer.key && <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">Recommandé pour vous</span>}
+        <div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold">{offer.name}</h2>{annual && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">−{offer.discount} %</span>}</div>
+        {recommendation?.tier === offer.key && <p className="mt-2 text-xs text-blue-700">{selectedVolume ? "Selon votre volume de missions sélectionné." : recommendation.reason}</p>}
+        <p className="mt-2 text-4xl font-bold tracking-tight">{euros(annual ? offer.yearly / 12 : offer.monthly)} €<span className="text-sm font-normal tracking-normal text-gray-500"> / mois</span></p>
+        <p className="mt-2 min-h-10 text-sm leading-relaxed text-gray-500">{annual ? `${euros(offer.yearly)} € facturés en une fois pour 12 mois. Renouvellement annuel.` : `${offer.monthly} € facturés chaque mois. Sans engagement annuel.`}</p>
+        {annual && <p className="mt-2 text-sm font-medium text-emerald-700">{euros(offer.monthly * 12 - offer.yearly)} € économisés par an</p>}
+        <button onClick={() => paid ? portal() : subscribe(`${offer.key}_${annual ? "yearly" : "monthly"}`)} disabled={!!loading || !!checkout || !owner || (!paid && (config?.ready !== true || (!!orgId && !quota)))} className={`mt-4 min-h-11 w-full rounded-xl px-3 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${offer.key === highlightedOffer ? "bg-blue-600 text-white" : "bg-gray-900 text-white"}`}>{loading ? "Ouverture…" : !owner ? "Géré par le propriétaire" : paid ? (quota.subscription_tier === offer.key ? "Gérer mon offre actuelle" : `Changer vers ${offer.name}`) : `Choisir ${offer.name}`}</button>
+        <p className="mt-3 border-t pt-3 text-sm font-semibold">{offer.people}</p><ul className="mt-3 flex-1 space-y-1.5 text-sm text-gray-600">{offer.features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="mt-0.5 shrink-0 text-blue-600"/>{feature}</li>)}</ul>
+
+      </section>)}</div>
+      <details className="mx-auto mt-4 max-w-2xl rounded-xl border bg-white p-3 text-center"><summary className="cursor-pointer text-sm font-medium text-blue-700">Besoin d’aide pour choisir ? Estimez votre activité</summary>
+      <fieldset className="mx-auto mt-3 max-w-2xl rounded-2xl border border-blue-100 bg-blue-50 p-4 text-center sm:p-5">
         <legend className="px-2 text-sm font-semibold text-blue-950">Quelle offre pour votre activité ?</legend>
         <p className="text-sm text-blue-900" role="status">{recommendation ? `${OFFERS.find(o => o.key === recommendation.tier).name} est recommandé pour vous. ${selectedVolume ? "Selon le volume choisi ci-dessous." : recommendation.reason}` : "Choisissez votre volume de missions pour afficher l’offre recommandée pour vous."}</p>
         {!savedRecommendation && !selectedVolume && <p className="mt-2 text-xs text-gray-600">{user ? "Aucun volume personnel exploitable n’est disponible pour cette recommandation." : "Connectez-vous pour retrouver votre recommandation d’inscription, ou estimez votre activité ici."}</p>}
         <div className="mt-3 flex flex-wrap justify-center gap-2">{VOLUMES.map(([value, label]) => <button type="button" key={value} aria-pressed={selectedVolume ? selectedVolume === value : savedRecommendation?.tier === pricingRecommendation({monthly_missions:value}).tier} onClick={() => setSelectedVolume(value)} className={`min-h-11 rounded-xl border px-3 py-2 text-sm font-medium ${((selectedVolume && selectedVolume === value) || (!selectedVolume && savedRecommendation?.tier === pricingRecommendation({monthly_missions:value}).tier)) ? "border-blue-600 bg-blue-600 text-white" : "border-blue-200 bg-white text-blue-900"}`}>{label}</button>)}</div>
         {selectedVolume && savedRecommendation && <button type="button" onClick={() => setSelectedVolume(null)} className="mt-3 min-h-11 text-xs font-medium text-blue-800 underline">Revenir à mes réponses d’inscription</button>}
       </fieldset>
-      <div className="mt-8 grid items-stretch gap-5 md:grid-cols-3">{OFFERS.map(offer => <section id={offer.key} key={offer.key} data-testid={`pricing-card-${offer.key}`} className={`relative flex min-w-0 scroll-mt-8 flex-col rounded-2xl border bg-white p-5 sm:p-6 ${offer.key === highlightedOffer ? "border-2 border-blue-600 shadow-sm" : "border-gray-200"}`}>
-        {recommendation?.tier === offer.key && <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">Recommandé pour vous</span>}
-        <p className="text-sm font-medium text-gray-500">{offer.tagline}</p><div className="mt-3 flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold">{offer.name}</h2>{annual && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">−{offer.discount} %</span>}</div>
-        {recommendation?.tier === offer.key && <p className="mt-2 text-xs text-blue-700">{selectedVolume ? "Selon votre volume de missions sélectionné." : recommendation.reason}</p>}
-        <p className="mt-5 text-4xl font-bold tracking-tight">{euros(annual ? offer.yearly / 12 : offer.monthly)} €<span className="text-sm font-normal tracking-normal text-gray-500"> / mois</span></p>
-        <p className="mt-3 min-h-12 text-sm leading-relaxed text-gray-500">{annual ? `${euros(offer.yearly)} € facturés en une fois pour 12 mois. Renouvellement annuel.` : `${offer.monthly} € facturés chaque mois. Sans engagement annuel.`}</p>
-        {annual && <p className="mt-2 text-sm font-medium text-emerald-700">{euros(offer.monthly * 12 - offer.yearly)} € économisés par an</p>}
-        <p className="mt-5 border-t pt-5 text-sm font-semibold">{offer.people}</p><ul className="mt-5 flex-1 space-y-3 text-sm text-gray-600">{offer.features.map(feature => <li key={feature} className="flex items-start gap-2"><Check size={18} className="mt-0.5 shrink-0 text-blue-600"/>{feature}</li>)}</ul>
-        <button onClick={() => paid ? portal() : subscribe(`${offer.key}_${annual ? "yearly" : "monthly"}`)} disabled={!!loading || !!checkout || !owner || (!paid && (config?.ready !== true || (!!orgId && !quota)))} className={`mt-7 min-h-12 rounded-xl px-3 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${offer.key === highlightedOffer ? "bg-blue-600 text-white" : "bg-gray-900 text-white"}`}>{loading ? "Ouverture…" : !owner ? "Géré par le propriétaire" : paid ? (quota.subscription_tier === offer.key ? "Gérer mon offre actuelle" : `Changer vers ${offer.name}`) : `Choisir ${offer.name}`}</button>
-      </section>)}</div>
+      </details>
       <p className="mt-5 text-center text-xs leading-relaxed text-gray-500">En confirmant votre abonnement dans Whop, vous acceptez les <Link to="/conditions" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">conditions de vente ShiftFlow</Link>. Consultez aussi notre <Link to="/confidentialite" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">politique de confidentialité</Link> et notre <Link to="/dpa" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">accord sur les données (DPA)</Link>. Aucun engagement n’est pris avant confirmation du paiement.</p>
       {paid && <p className="mt-3 text-center text-xs text-gray-500">Pour modifier votre formule ou votre périodicité, la gestion s’effectue dans le portail de votre prestataire de paiement, sans créer un deuxième abonnement. Si votre changement n’est pas proposé, contactez <a href="mailto:contact@shiftflow.io" className="text-blue-700 underline">le support ShiftFlow</a>.</p>}
       <section aria-labelledby="plan-comparison-title" className="mt-12 sm:mt-16">
