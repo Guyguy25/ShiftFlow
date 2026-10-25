@@ -258,6 +258,7 @@ def public_user(u: dict) -> dict:
             "role": u.get("role", "admin"),
             "avatar": u.get("avatar", ""),
             "onboarding_completed": bool(u.get("onboarding_completed")),
+            "onboarding_answers": u.get("onboarding_answers"),
             "subscription_status": u.get("subscription_status"),
             "created_at": u.get("created_at"),
             "subscription_tier": u.get("subscription_tier", "pro"),
