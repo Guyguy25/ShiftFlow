@@ -1,3 +1,4 @@
+import { readPageData, peekPageData } from "../lib/pageData";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Plus, AlertTriangle, CalendarClock, CheckCircle2, Send, TrendingUp, X, ArrowRight, Clock3, MessageCircle, Users, Activity } from "lucide-react";
@@ -15,21 +16,21 @@ const tile = "rounded-2xl border border-gray-200 bg-white p-4 sm:p-5";
 export default function Dashboard() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [data, setData] = useState(null);
-  const [whatsappStats, setWhatsappStats] = useState(null);
-  const [whatsappStatus, setWhatsappStatus] = useState(null);
-  const [quota, setQuota] = useState(null);
-  const [notifications, setNotifications] = useState([]);
+  const [data, setData] = useState(() => peekPageData("/dashboard/summary") ?? null);
+  const [whatsappStats, setWhatsappStats] = useState(() => peekPageData("/whatsapp/stats") ?? null);
+  const [whatsappStatus, setWhatsappStatus] = useState(() => peekPageData("/whatsapp/status") ?? null);
+  const [quota, setQuota] = useState(() => peekPageData("/plan/quota") ?? null);
+  const [notifications, setNotifications] = useState(() => peekPageData("/notifications/recent") ?? []);
   const [error, setError] = useState("");
   const scoped = path => workspacePath(user?.organization?.id, path);
 
   const load = useCallback(() => {
     setError("");
-    api.get("/dashboard/summary").then(r => setData(r.data)).catch(() => setError("Impossible de charger votre tableau de bord."));
-    api.get("/whatsapp/stats").then(r => setWhatsappStats(r.data)).catch(() => {});
-    api.get("/whatsapp/status").then(r => setWhatsappStatus(r.data)).catch(() => {});
-    api.get("/plan/quota").then(r => setQuota(r.data)).catch(() => {});
-    api.get("/notifications/recent").then(r => setNotifications(Array.isArray(r.data) ? r.data : [])).catch(() => setNotifications([]));
+    readPageData(api, "/dashboard/summary").then(r => setData(r.data)).catch(() => setError("Impossible de charger votre tableau de bord."));
+    readPageData(api, "/whatsapp/stats").then(r => setWhatsappStats(r.data)).catch(() => {});
+    readPageData(api, "/whatsapp/status").then(r => setWhatsappStatus(r.data)).catch(() => {});
+    readPageData(api, "/plan/quota").then(r => setQuota(r.data)).catch(() => {});
+    readPageData(api, "/notifications/recent").then(r => setNotifications(Array.isArray(r.data) ? r.data : [])).catch(() => setNotifications([]));
   }, []);
   useEffect(() => { load(); }, [load]);
 

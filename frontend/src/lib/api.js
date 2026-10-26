@@ -1,4 +1,5 @@
 import axios from "axios";
+import { clearPageData } from "./pageData";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
@@ -50,6 +51,7 @@ function scheduleWhatsAppRefreshUnlock() {
 }
 
 api.interceptors.request.use((config) => {
+  if (!["get", "head", "options"].includes((config.method || "get").toLowerCase())) clearPageData();
   // Bind workspace requests to the URL if another tab switches organizations.
   const match = typeof window !== "undefined" && window.location.pathname.match(/^\/app\/organisations\/([^/]+)/);
   if (match) {
@@ -74,6 +76,7 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => {
+    if (!["get", "head", "options"].includes((response.config?.method || "get").toLowerCase())) clearPageData();
     if (String(response?.config?.url || "").includes("/whatsapp/refresh")) {
       whatsappRefreshInFlight = false;
       paintWhatsAppRefreshButtons(Date.now() < whatsappRefreshUntil);

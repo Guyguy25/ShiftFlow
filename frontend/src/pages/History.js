@@ -1,16 +1,19 @@
+import { readPageData, peekPageData } from "../lib/pageData";
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { isMissionPast, missionTeamStatus, missionTimeStatus, todayKey, missionEndDate } from "../lib/missionPresentation";
 import ShiftFlowLoader from "../components/ShiftFlowLoader";
 
+const pastMissions = rows => rows.filter(m => isMissionPast(m, todayKey()) || m.status === "cancelled").sort((a, b) => missionEndDate(b).localeCompare(missionEndDate(a)));
+
 export default function History() {
-  const [missions, setMissions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [missions, setMissions] = useState(() => pastMissions(peekPageData("/missions") ?? []));
+  const [loading, setLoading] = useState(() => !peekPageData("/missions"));
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.get("/missions").then((r) => {
+    readPageData(api, "/missions").then((r) => {
       const today = todayKey();
       const past = r.data.filter(m => isMissionPast(m, today) || m.status === "cancelled");
       setMissions(past.sort((a, b) => missionEndDate(b).localeCompare(missionEndDate(a))));

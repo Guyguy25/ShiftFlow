@@ -1,3 +1,4 @@
+from mission_overviews import load_mission_overviews, summarize_mission
 from workspace_accounts import accounts
 from dotenv import load_dotenv
 from pathlib import Path
@@ -1146,30 +1147,14 @@ async def mission_with_shifts(mission: dict, include_slots: bool = False) -> dic
             for s in slots:
                 s["worker"] = workers.get(s["worker_id"])
             sh["slots"] = slots
-    # Cancelled shifts remain in history but no longer count toward staffing.
-    shifts = [sh for sh in shifts if not sh.get("deleted_at")]
-    active = [sh for sh in shifts if sh.get("status") != "cancelled"]
-    # aggregate: earliest date, total people & confirmed
-    if active:
-        mission["first_date"] = min(sh["date"] for sh in active)
-        mission["last_date"] = max(sh.get("end_date") or sh["date"] for sh in active)
-        mission["total_needed"] = sum(sh["people_needed"] for sh in active)
-        mission["total_confirmed"] = sum(sh.get("confirmed_count", 0) for sh in active)
-    else:
-        mission["first_date"] = None
-        mission["last_date"] = None
-        mission["total_needed"] = 0
-        mission["total_confirmed"] = 0
-    mission["shifts"] = shifts
-    return mission
+    return summarize_mission(mission, shifts)
 
 
 @api.get("/missions")
 async def list_missions(archived: bool = False, user=Depends(get_workspace_user)):
     query = {"agency_id": user["id"], "archived": True if archived else {"$ne": True}}
     missions = await db.missions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
-    for m in missions:
-        await mission_with_shifts(m, include_slots=False)
+    await load_mission_overviews(db, missions, compute_shift_estimate)
     return missions
 
 
@@ -1670,8 +1655,7 @@ async def dashboard_summary(user=Depends(get_workspace_user)):
         {"agency_id": user["id"], "archived": {"$ne": True}},
         {"_id": 0},
     ).to_list(2000)
-    for m in missions:
-        await mission_with_shifts(m, include_slots=False)
+    await load_mission_overviews(db, missions, compute_shift_estimate)
     workers_count = await db.workers.count_documents({"agency_id": user["id"]})
     today = now_utc().date().isoformat()
 

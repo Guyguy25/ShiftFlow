@@ -1,3 +1,4 @@
+import { readPageData, peekPageData } from "../lib/pageData";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Plus, CalendarClock, Copy, Archive, Search } from "lucide-react";
@@ -21,8 +22,8 @@ function TeamCount({ mission }) {
 }
 
 export default function Missions() {
-  const [missions, setMissions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [missions, setMissions] = useState(() => peekPageData("/missions") ?? []);
+  const [loading, setLoading] = useState(() => !peekPageData("/missions"));
   const [loadError, setLoadError] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
@@ -32,9 +33,9 @@ export default function Missions() {
   const nav = useNavigate();
 
   const load = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true);
+    if (!silent) setLoading(!peekPageData("/missions", { params: { archived: showArchived } }));
     try {
-      const { data } = await api.get("/missions", { params: { archived: showArchived, _ts: Date.now() } });
+      const { data } = await readPageData(api, "/missions", { params: { archived: showArchived } });
       setMissions(Array.isArray(data) ? data : []);
       setLoadError("");
     } catch {
@@ -49,7 +50,7 @@ export default function Missions() {
     const refreshIfVisible = () => {
       if (document.visibilityState === "visible") load({ silent: true });
     };
-    const interval = window.setInterval(refreshIfVisible, 3000);
+    const interval = window.setInterval(refreshIfVisible, 15000);
     window.addEventListener("focus", refreshIfVisible);
     document.addEventListener("visibilitychange", refreshIfVisible);
     return () => {

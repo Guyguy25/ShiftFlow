@@ -1,3 +1,4 @@
+import { readPageData } from "../lib/pageData";
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import * as Menu from "@radix-ui/react-dropdown-menu";
@@ -16,7 +17,7 @@ export default function WorkspaceSelector({ compact = false }) {
   useEffect(() => {
     let live = true;
     setSpaces([]);
-    if (user?.id) api.get("/organization").then(({ data }) => { if (live) setSpaces(data.spaces || []); }).catch(() => {});
+    if (user?.id) readPageData(api, "/organization").then(({ data }) => { if (live) setSpaces(data.spaces || []); }).catch(() => {});
     return () => { live = false; };
   }, [user?.id, org?.id, org?.name]);
   async function switchSpace(id) {

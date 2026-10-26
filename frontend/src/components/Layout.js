@@ -1,3 +1,4 @@
+import { readPageData } from "../lib/pageData";
 import WorkspaceSearch from "./WorkspaceSearch";
 import { workspacePath, unscopedPath } from "../lib/workspacePaths";
 import WorkspaceSelector from "./WorkspaceSelector";
@@ -56,7 +57,7 @@ export default function Layout({ children }) {
       return;
     }
     let cancelled = false;
-    api.get("/plan/quota", { params: { _ts: Date.now() } })
+    readPageData(api, "/plan/quota", { params: {} })
       .then(({ data }) => { if (!cancelled) setQuota(data); })
       .catch(() => {});
     return () => { cancelled = true; };

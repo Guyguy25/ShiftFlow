@@ -4,6 +4,7 @@ AST extraction avoids server.py's import-time production configuration and clien
 Run: python -m unittest discover -s backend/tests -p test_activation_isolated.py
 """
 import ast
+from mission_overviews import load_mission_overviews
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,8 @@ def load_function(name, **namespace):
     function = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == name)
     function.decorator_list = []
     function.args.defaults = []
+    namespace.setdefault("load_mission_overviews", load_mission_overviews)
+    namespace.setdefault("compute_shift_estimate", lambda shift: 0)
     exec(compile(ast.Module(body=[function], type_ignores=[]), "server.py", "exec"), namespace)
     return namespace[name]
 

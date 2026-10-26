@@ -1,3 +1,4 @@
+import { readPageData, peekPageData } from "../lib/pageData";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, List, MapPin, Plus, Search, XCircle } from "lucide-react";
@@ -32,16 +33,16 @@ export default function Calendar() {
   const today = dateKey(new Date());
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12));
   const [selected, setSelected] = useState(today);
-  const [missions, setMissions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [missions, setMissions] = useState(() => peekPageData("/missions") ?? []);
+  const [loading, setLoading] = useState(() => !peekPageData("/missions"));
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState(() => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 767px)").matches ? "agenda" : "month");
   const scoped = path => workspacePath(user?.organization?.id, path);
   const load = useCallback(async () => {
-    setLoading(true); setError(false);
-    try { const {data} = await api.get("/missions"); if (!Array.isArray(data)) throw new Error("Invalid calendar data"); setMissions(data); }
+    setLoading(!peekPageData("/missions")); setError(false);
+    try { const {data} = await readPageData(api, "/missions"); if (!Array.isArray(data)) throw new Error("Invalid calendar data"); setMissions(data); }
     catch { setError(true); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);

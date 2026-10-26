@@ -15,6 +15,7 @@ from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, patch
 
 from workspace_accounts import accounts
+from mission_overviews import summarize_mission
 import mongomock
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
 from fastapi.testclient import TestClient

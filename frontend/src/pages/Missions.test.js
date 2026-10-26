@@ -44,3 +44,16 @@ test("filters narrow the visible mission list", async () => {
   expect(host.querySelectorAll('[data-testid^="mission-row-future"]')).toHaveLength(2); // desktop and mobile
   expect(host.querySelector('[data-testid="mission-row-old"]')).toBeNull();
 });
+
+test("returning to missions shows the last list while the new request is still pending", async () => {
+  await act(async () => root.render(<Missions />));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  let finish;
+  api.get.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => root.render(<Missions />));
+  expect(host.textContent).toContain("Festival futur");
+  expect(host.textContent).not.toContain("Chargement");
+  await act(async () => finish({ data: [...fixtures, { id: "new", name: "Mission récente", shifts: [] }] }));
+  expect(host.textContent).toContain("Mission récente");
+});

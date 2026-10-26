@@ -1,3 +1,4 @@
+import { readPageData } from "../lib/pageData";
 import { unscopedPath } from "../lib/workspacePaths";
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -25,9 +26,9 @@ export default function GettingStarted({ children }) {
     if (!authenticated || signal.aborted) return;
     setError(null);
     const results = await Promise.allSettled([
-      api.get("/dashboard/summary", { signal }),
-      api.get("/whatsapp/status", { signal }),
-      api.get("/plan/quota", { signal }),
+      readPageData(api, "/dashboard/summary", { signal }),
+      readPageData(api, "/whatsapp/status", { signal }),
+      readPageData(api, "/plan/quota", { signal }),
     ]);
     if (signal.aborted) return;
     const summary = results[0].status === "fulfilled" ? results[0].value?.data : null;

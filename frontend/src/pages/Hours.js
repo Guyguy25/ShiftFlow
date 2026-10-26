@@ -1,3 +1,4 @@
+import { readPageData, peekPageData } from "../lib/pageData";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, formatApiError } from "../lib/api";
@@ -13,10 +14,10 @@ const ACTION_LABEL = { created: "Déclaration créée", submitted: "Heures soumi
 export default function Hours() {
   const [params] = useSearchParams();
   const [mission, setMission] = useState(params.get("mission") || "");
-  const [missions, setMissions] = useState(null);
+  const [missions, setMissions] = useState(() => peekPageData("/missions") ?? null);
   const [status, setStatus] = useState("");
-  const [data, setData] = useState(null);
-  const [settings, setSettings] = useState(null);
+  const [data, setData] = useState(() => peekPageData("/hours", { params: mission ? { mission_id: mission } : {} }) ?? null);
+  const [settings, setSettings] = useState(() => peekPageData("/hours/settings") ?? null);
   const [reasons, setReasons] = useState({});
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -26,13 +27,13 @@ export default function Hours() {
   const filters = { ...(mission ? { mission_id: mission } : {}), ...(status ? { status } : {}) };
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
-    try { const result = await api.get("/hours", { params: { ...(mission ? { mission_id: mission } : {}), ...(status ? { status } : {}) } }); if (sequence === loadSequence.current) setData(result.data); }
+    try { const result = await readPageData(api, "/hours", { params: { ...(mission ? { mission_id: mission } : {}), ...(status ? { status } : {}) } }); if (sequence === loadSequence.current) setData(result.data); }
     catch (err) { if (sequence === loadSequence.current) setError(formatApiError(err.response?.data?.detail)); }
   }, [mission, status]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    api.get("/missions").then(m => setMissions(m.data)).catch(err => setError(formatApiError(err.response?.data?.detail)));
-    api.get("/hours/settings").then(s => setSettings(s.data)).catch(err => setError(formatApiError(err.response?.data?.detail)));
+    readPageData(api, "/missions").then(m => setMissions(m.data)).catch(err => setError(formatApiError(err.response?.data?.detail)));
+    readPageData(api, "/hours/settings").then(s => setSettings(s.data)).catch(err => setError(formatApiError(err.response?.data?.detail)));
   }, []);
   const action = async task => {
     if (lock.current) return;
