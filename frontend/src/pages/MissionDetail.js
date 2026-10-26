@@ -6,7 +6,7 @@ import MissionFollowUp, { invitationStatusLabel } from "../components/MissionFol
 import MissionTeamSetup from "../components/MissionTeamSetup";
 import InvitationReview from "../components/InvitationReview";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CalendarClock, MapPin, Users, Copy, XCircle, ArrowUp, ArrowDown, Plus, CheckCircle2, AlertTriangle, CopyPlus, RefreshCw } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { trackActivation } from "../lib/activationTracking";
@@ -62,7 +62,8 @@ export function ShiftSelector({ mission, shift, workers, onSelected, existingSlo
       setReviewOpen(false);
       if (data.notifications?.failed) { trackActivation("invitation_send_error", "delivery_failed"); toast.error("La sélection est enregistrée, mais des invitations ont échoué. Reconnectez WhatsApp puis reprenez les invitations en attente."); }
       else reportDelivery(data, "Invitations traitées");
-      onSelected();
+      if (Number(data.notifications?.sent || 0) > 0) trackActivation("invitation_send_succeeded");
+      onSelected({ sent: data.notifications?.sent, failed: data.notifications?.failed });
     } catch (err) {
       const detail = formatApiError(err.response?.data?.detail) || err.message;
       if (/whatsapp/i.test(detail) && /connect|déconnect|pas connecté|not connected/i.test(detail)) {
@@ -419,6 +420,7 @@ export default function MissionDetail() {
   const canManage = canManageOperations(useAuth()?.user);
   const { id } = useParams();
   const nav = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [workers, setWorkers] = useState([]);
@@ -441,8 +443,17 @@ export default function MissionDetail() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { reloadWorkers(); }, [reloadWorkers]);
   useEffect(() => {
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "hidden") load().catch(() => {});
+    };
+    const timer = setInterval(refreshWhenVisible, 10000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [load]);
 
   if (!data) return <ShiftFlowLoader label="Chargement de la mission…" />;
@@ -480,7 +491,7 @@ export default function MissionDetail() {
   if (shouldOpenSelection && setupShift && m.status !== "cancelled") return <>
     <Toaster position="top-right" richColors />
     <MissionTeamSetup mission={m} shift={setupShift} workers={workers} loading={workersLoading} error={workersError} onReloadWorkers={reloadWorkers} onShiftChange={shiftId => nav(`/app/missions/${id}?step=select&shift=${encodeURIComponent(shiftId)}`)}>
-      <ShiftSelector key={setupShift.id} mission={m} shift={setupShift} workers={workers} onSelected={() => { nav(`/app/missions/${id}`); load(); }} />
+      <ShiftSelector key={setupShift.id} mission={m} shift={setupShift} workers={workers} onSelected={result => { nav(`/app/missions/${id}`, { state: { inviteResult: result } }); load(); }} />
     </MissionTeamSetup>
   </>;
 
@@ -489,6 +500,9 @@ export default function MissionDetail() {
       <Toaster position="top-right" richColors/>
       <p className="text-xs uppercase tracking-widest text-blue-700 font-bold">Mission</p>
       <h1 className="mt-2 text-[28px] sm:text-3xl font-display font-bold leading-tight break-words" data-testid="mission-title">{m.name}</h1>
+      {location.state?.inviteResult && <section role="status" data-testid="first-invitation-result" className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:p-5">
+        <div className="flex items-start gap-3"><CheckCircle2 size={24} className="shrink-0 text-blue-700" aria-hidden="true"/><div><h2 className="font-bold text-blue-950">{Number(location.state.inviteResult.sent || 0) > 0 ? "Vos premières demandes sont lancées !" : "Votre sélection est enregistrée"}</h2><p className="mt-1 text-sm leading-relaxed text-blue-900">{Number(location.state.inviteResult.sent || 0) > 0 ? `${location.state.inviteResult.sent} invitation(s) envoyée(s). ShiftFlow suit maintenant les réponses et peut contacter les suivants selon votre cascade.` : "Vérifiez les notifications ci-dessous avant de considérer vos demandes comme envoyées."}</p>{Number(location.state.inviteResult.failed || 0) > 0 && <p className="mt-2 text-sm font-semibold text-amber-800">{location.state.inviteResult.failed} notification(s) ont échoué. Reconnectez WhatsApp et relancez-les si nécessaire.</p>}<p className="mt-2 text-xs text-blue-800">Une invitation envoyée ne signifie pas encore qu’un intervenant a confirmé.</p></div></div>
+      </section>}
       <div className="mt-2 space-y-1 text-sm text-gray-600">
         <p className="flex items-center gap-2"><MapPin size={16}/>{m.location}</p>
         {m.first_date && <p className="flex items-center gap-2"><CalendarClock size={16}/>{m.first_date.split("-").reverse().join("/")}{m.last_date && m.last_date !== m.first_date ? ` – ${m.last_date.split("-").reverse().join("/")}` : ""}</p>}

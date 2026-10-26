@@ -7,7 +7,8 @@ InteractionName = Literal[
     "whatsapp_session_started", "whatsapp_session_error",
     "whatsapp_pair_requested", "whatsapp_pair_error",
     "invitation_review_opened", "invitation_send_attempted",
-    "invitation_send_error", "onboarding_guide_dismissed",
+    "invitation_send_error", "invitation_send_succeeded",
+    "activation_home_viewed", "activation_cta_clicked", "onboarding_guide_dismissed",
 ]
 ReasonName = Literal[
     "no_upcoming_mission", "just_exploring", "setup_too_long",
@@ -26,6 +27,9 @@ ALLOWED_DETAILS = {
     "invitation_review_opened": set(),
     "invitation_send_attempted": set(),
     "invitation_send_error": {"validation", "whatsapp_disconnected", "request_failed", "delivery_failed"},
+    "invitation_send_succeeded": set(),
+    "activation_home_viewed": set(),
+    "activation_cta_clicked": set(),
     "onboarding_guide_dismissed": set(),
 }
 REASON_LABELS = {

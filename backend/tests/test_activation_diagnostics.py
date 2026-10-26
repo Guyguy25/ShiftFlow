@@ -13,6 +13,11 @@ class DiagnosticValidationTests(unittest.TestCase):
         self.assertIsNone(safe_detail("whatsapp_pair_error", "+33612345678"))
         self.assertIsNone(safe_detail("mission_form_error", "name=Private"))
 
+    def test_new_activation_events_are_privacy_safe(self):
+        for event in ("activation_home_viewed", "activation_cta_clicked", "invitation_send_succeeded"):
+            self.assertEqual(InteractionIn(event=event).event, event)
+            self.assertIsNone(safe_detail(event, "phone=0612345678"))
+
     def test_keep_known_reason(self):
         self.assertEqual(safe_detail("mission_form_error", "validation"), "validation")
 
