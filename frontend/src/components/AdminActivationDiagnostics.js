@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 
 const LABELS = {
+  activation_home_viewed: "Accueil de démarrage consulté",
+  activation_cta_clicked: "Démarrage : action lancée",
   mission_form_opened: "Formulaire ouvert",
   mission_form_step: "Étape mission",
   mission_form_error: "Erreur mission",
@@ -11,6 +13,7 @@ const LABELS = {
   whatsapp_pair_error: "Erreur de code WhatsApp",
   invitation_review_opened: "Vérification de l'invitation",
   invitation_send_attempted: "Envoi tenté",
+  invitation_send_succeeded: "Invitation envoyée avec succès",
   invitation_send_error: "Erreur d'envoi",
   onboarding_guide_dismissed: "Guide masqué",
 };
