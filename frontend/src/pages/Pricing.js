@@ -22,6 +22,10 @@ const COMPARISON = [
 ];
 const VOLUMES = [["1-3", "Jusqu’à 3 / mois"], ["4-10", "4 à 20 / mois"], ["21+", "Plus de 20 / mois"]];
 const euros = value => value.toLocaleString("fr-FR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 });
+const missionCost = (offer, annual) => {
+  const referenceMissions = offer.missionsPerMonth ?? offer.exampleMissionsPerMonth;
+  return euros((annual ? offer.yearly / 12 : offer.monthly) / referenceMissions);
+};
 export default function Pricing() {
   const { user } = useAuth();
   useEffect(() => { window.scrollTo(0, 0); }, []);
@@ -84,6 +88,7 @@ export default function Pricing() {
         <div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold">{offer.name}</h2>{annual && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">−{offer.discount} %</span>}</div>
         {recommendation?.tier === offer.key && <p className="mt-2 text-xs text-blue-700">{selectedVolume ? "Selon votre volume de missions sélectionné." : recommendation.reason}</p>}
         <p className="mt-2 text-4xl font-bold tracking-tight">{euros(annual ? offer.yearly / 12 : offer.monthly)} €<span className="text-sm font-normal tracking-normal text-gray-500"> / mois</span></p>
+        <p data-testid={`pricing-per-mission-${offer.key}`} className="mt-1 text-xs leading-relaxed text-gray-600">{offer.missionsPerMonth ? <>Soit <strong className="font-semibold text-gray-800">{missionCost(offer, annual)} € par mission</strong> en utilisant les {offer.missionsPerMonth} missions incluses chaque mois.</> : <>Exemple : <strong className="font-semibold text-gray-800">{missionCost(offer, annual)} € par mission</strong> pour {offer.exampleMissionsPerMonth} missions/mois.</>}</p>
         <p className="mt-2 min-h-10 text-sm leading-relaxed text-gray-500">{annual ? `${euros(offer.yearly)} € facturés en une fois pour 12 mois. Renouvellement annuel.` : `${offer.monthly} € facturés chaque mois. Sans engagement annuel.`}</p>
         {annual && <p className="mt-2 text-sm font-medium text-emerald-700">{euros(offer.monthly * 12 - offer.yearly)} € économisés par an</p>}
         <button onClick={() => paid ? portal() : subscribe(`${offer.key}_${annual ? "yearly" : "monthly"}`)} disabled={!!loading || !!checkout || !owner || (!paid && (config?.ready !== true || (!!orgId && !quota)))} className={`mt-4 min-h-11 w-full rounded-xl px-3 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${offer.key === highlightedOffer ? "bg-blue-600 text-white" : "bg-gray-900 text-white"}`}>{loading ? "Ouverture…" : !owner ? "Géré par le propriétaire" : paid ? (quota.subscription_tier === offer.key ? "Gérer mon offre actuelle" : `Changer vers ${offer.name}`) : `Choisir ${offer.name}`}</button>
