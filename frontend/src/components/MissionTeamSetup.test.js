@@ -14,6 +14,7 @@ let root, host;
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   window.matchMedia = () => ({ matches: true });
+  window.scrollTo = jest.fn();
   jest.clearAllMocks();
   api.get.mockImplementation(url => Promise.resolve({ data: url === "/whatsapp/status" ? { connected: false, hasQR: true } : [{ id: "c1", name: "Camille Test", number: "33600000000" }] }));
   api.post.mockResolvedValue({ data: { created: 1 } });
@@ -53,4 +54,14 @@ test("imported team proceeds to the recipient selection instead of offering anot
   await act(async () => root.render(<MissionTeamSetup mission={mission} shift={shift} workers={[{ id: "w1" }]}><p>Choix des destinataires</p></MissionTeamSetup>));
   expect(host.textContent).toContain("Choix des destinataires");
   expect(host.textContent).not.toContain("Ajouter via WhatsApp");
+});
+
+test("finishing an in-place import resets the scroll and focuses the next step", async () => {
+  await act(async () => root.render(<MissionTeamSetup mission={mission} shift={shift} workers={[]} />));
+  document.documentElement.scrollTop = 520;
+  await act(async () => root.render(<MissionTeamSetup mission={mission} shift={shift} workers={[{ id: "w1" }]}><p>Choix des destinataires</p></MissionTeamSetup>));
+  expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+  expect(document.documentElement.scrollTop).toBe(0);
+  expect(document.activeElement.tagName).toBe("H1");
+  expect(document.activeElement.textContent).toContain("Préparez votre première demande");
 });
