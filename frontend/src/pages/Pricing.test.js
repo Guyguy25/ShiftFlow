@@ -13,6 +13,20 @@ afterEach(async()=>{await act(async()=>root.unmount());host.remove();});
 const render=async()=>{await act(async()=>root.render(<Pricing/>));};
 const card=tier=>host.querySelector(`[data-testid="pricing-card-${tier}"]`);
 test("three current monthly offers, independent billing and shared discovery",async()=>{await render();for(const [t,p] of [["start","29 €"],["pro","79 €"],["business","149 €"]])expect(card(t).textContent).toContain(p);expect(host.textContent).toContain("AXE Events");expect(host.textContent).toContain("partagées entre ses organisations");expect(host.textContent).not.toContain("747,60");});
+test.each([
+  ["start", "9,67", "7,73", "3"],
+  ["pro", "3,95", "2,96", "20"],
+  ["business", "4,97", "2,98", "30"],
+])("%s displays an accurate per-mission estimate for monthly and annual billing", async (tier, monthly, yearly, missions) => {
+  await render();
+  const note = () => card(tier).querySelector(`[data-testid="pricing-per-mission-${tier}"]`).textContent;
+  expect(note()).toContain(`${monthly} € par mission`);
+  expect(note()).toContain(missions);
+  expect(note()).toContain(tier === "business" ? "Exemple" : "missions incluses");
+  await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent.startsWith("Annuel")).click());
+  expect(note()).toContain(`${yearly} € par mission`);
+  expect(note()).toContain(missions);
+});
 test.each(["start","pro","business"])("%s monthly opens bound Whop checkout without an extra checkbox",async tier=>{api.post.mockResolvedValue({data:{session_id:"ch_test",reference:"ref"}});await render();expect(host.querySelector('input[type="checkbox"]')).toBeNull();await act(async()=>card(tier).querySelector("button").click());expect(api.post).toHaveBeenCalledWith("/whop/checkout",{offer_key:`${tier}_monthly`,legal_version:"2026-10-24"},{headers:{"X-Organization-ID":"org"}});expect(host.querySelector('[data-testid="modal"]').textContent).toContain("ch_test");});
 test.each([["start","278,40","20"],["pro","711","25"],["business","1 072,80","40"]])("%s annual displays charge and sends annual offer",async(tier,total,discount)=>{api.post.mockRejectedValue({response:{data:{detail:"Test"}}});await render();await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent.startsWith("Annuel")).click());expect(card(tier).textContent).toContain(total);expect(card(tier).textContent).toContain(`−${discount} %`);await act(async()=>card(tier).querySelector("button").click());expect(api.post).toHaveBeenCalledWith("/whop/checkout",expect.objectContaining({offer_key:`${tier}_yearly`}),expect.anything());expect(host.textContent).toContain("Test");});
 test("double click creates one checkout",async()=>{api.post.mockReturnValue(new Promise(()=>{}));await render();await act(async()=>{const b=card("start").querySelector("button");b.click();b.click();});expect(api.post).toHaveBeenCalledTimes(1);});
