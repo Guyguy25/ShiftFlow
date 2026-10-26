@@ -4,7 +4,7 @@ import ActivationHome from "./ActivationHome";
 import { trackActivation } from "../lib/activationTracking";
 
 jest.mock("react-router-dom", () => ({
-  Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
+  Link: ({ to, children, onClick, ...props }) => <a href={to} {...props} onClick={event => { event.preventDefault(); onClick?.(event); }}>{children}</a>,
 }), { virtual: true });
 jest.mock("../lib/activationTracking", () => ({ trackActivation: jest.fn() }));
 jest.mock("./FirstMissionHelp", () => () => <p>WhatsApp et contacts</p>);
@@ -40,5 +40,5 @@ test("returning account continues without repeating completed setup steps", asyn
   expect(host.querySelector('[role="progressbar"]').getAttribute("aria-valuenow")).toBe("75");
   expect(host.querySelector('[data-testid="activation-next"]').getAttribute("href")).toContain("step=select");
   expect(host.textContent).toContain("3/4");
-  expect(host.textContent).toContain("Une invitation envoyée ne signifie pas");
+  expect(host.textContent).toContain("Un envoi n'est pas encore une confirmation.");
 });
