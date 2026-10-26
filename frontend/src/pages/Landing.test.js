@@ -10,6 +10,7 @@ let host, root;
 beforeEach(() => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
   sessionStorage.clear();
+  localStorage.clear();
   host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
@@ -46,4 +47,15 @@ test("pending invitations remain accessible", async () => {
 test("landing remains visible while the session loads", async () => {
   await renderUser(null, true);
   expect(host.querySelector("h1").textContent).toContain("15 roads");
+});
+
+test("known sessions show the workspace action before the slow server response", async () => {
+  localStorage.setItem("shiftflow-session-known", "1");
+  await renderUser(null, true);
+  const link = host.querySelector('[data-testid="landing-cta-nav"]');
+  expect(link.textContent).toBe("Ouvrir mon espace");
+  expect(link.getAttribute("href")).toBe("/app");
+  expect(host.querySelector('[data-testid="landing-login-link"]')).toBeNull();
+  await renderUser(false, false);
+  expect(host.querySelector('[data-testid="landing-cta-nav"]').textContent).toBe("Essayer gratuitement");
 });

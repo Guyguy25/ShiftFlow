@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, markLoggedOut } from "../lib/api";
 
+import { saveSessionHint } from "../lib/sessionHint";
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -10,8 +12,10 @@ export function AuthProvider({ children }) {
   const refresh = useCallback(async () => {
     try {
       const { data } = await api.get("/auth/me");
+      saveSessionHint(Boolean(data));
       setUser(data);
     } catch (e) {
+      saveSessionHint(false);
       setUser(false);
     } finally {
       setLoading(false);
@@ -42,6 +46,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     markLoggedOut(false);
     const { data } = await api.post("/auth/login", { email, password });
+    saveSessionHint(Boolean(data.user));
     setUser(data.user);
     return data;
   };
@@ -49,11 +54,13 @@ export function AuthProvider({ children }) {
     markLoggedOut(false);
     const { data } = await api.post("/auth/register", payload);
     if (!payload.invitation_token) { try { localStorage.setItem(`shiftflow-welcome-${data.user.id}`, "pending"); } catch {} }
+    saveSessionHint(Boolean(data.user));
     setUser(data.user);
     return data;
   };
   const logout = async () => {
     markLoggedOut(true);
+    saveSessionHint(false);
     setUser(false);
     try {
       await api.post("/auth/logout");

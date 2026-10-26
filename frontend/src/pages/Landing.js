@@ -1,5 +1,6 @@
 import { YEARLY } from "../lib/billingConfig";
 import React from "react";
+import { hasSessionHint } from "../lib/sessionHint";
 import { useAuth } from "../context/AuthContext";
 import { workspacePath } from "../lib/workspacePaths";
 import { pendingInvitation } from "../lib/invitation";
@@ -16,11 +17,12 @@ function Brand() {
   return <Link to="/" aria-label="ShiftFlow, accueil" data-testid="landing-logo" className="inline-flex items-center gap-2 text-lg font-bold tracking-tight"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white"><Zap size={17} aria-hidden="true" /></span>ShiftFlow<span className="text-blue-600">.</span></Link>;
 }
 function useLandingAction() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const connected = Boolean(user) || (loading && hasSessionHint());
   return {
-    user,
-    to: user ? (pendingInvitation() ? "/invite" : user.needs_organization ? "/organizations/new" : workspacePath(user.organization?.id)) : "/register",
-    label: user ? "Ouvrir mon espace" : "Essayer gratuitement",
+    user: connected,
+    to: user ? (pendingInvitation() ? "/invite" : user.needs_organization ? "/organizations/new" : workspacePath(user.organization?.id)) : connected ? "/app" : "/register",
+    label: connected ? "Ouvrir mon espace" : "Essayer gratuitement",
   };
 }
 function Trial({ id, light = false }) {
