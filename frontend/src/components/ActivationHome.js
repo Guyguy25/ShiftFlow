@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect } from "react";
+import { trackActivation } from "../lib/activationTracking";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, CalendarClock, Users, MessageCircle, PlayCircle, ShieldCheck } from "lucide-react";
 import { activationSteps } from "../lib/activation";
@@ -8,6 +9,7 @@ import ActivationReasonPrompt from "./ActivationReasonPrompt";
 const icons = { mission: CalendarClock, workers: Users, whatsapp: MessageCircle, invite: ShieldCheck };
 
 export default function ActivationHome({ summary, whatsapp, quota, next }) {
+  useEffect(() => { trackActivation("activation_home_viewed"); }, []);
   const steps = activationSteps(summary, whatsapp, quota);
   const done = steps.filter(step => step.done).length;
   const fresh = !summary.missions_total;
@@ -31,7 +33,7 @@ export default function ActivationHome({ summary, whatsapp, quota, next }) {
           <p className="mt-2 text-sm leading-relaxed text-gray-600">{next.description}</p>
         </div>
       </div>
-      <Link data-onboarding={fresh ? "start" : "resume"} to={href} className="mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-center font-semibold text-white transition hover:bg-blue-700" data-testid="activation-next">
+      <Link onClick={() => trackActivation("activation_cta_clicked")} data-onboarding={fresh ? "start" : "resume"} to={href} className="mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3.5 text-center font-semibold text-white transition hover:bg-blue-700" data-testid="activation-next">
         {fresh && !quota?.trial_expired ? "Créer ma première mission" : next.label}<ArrowRight size={18} aria-hidden="true"/>
       </Link>
       <p className="mt-3 text-center text-xs text-gray-500">{fresh ? "Créer une mission n'envoie aucun message et ne déclenche aucun paiement." : "Vous gardez toujours le contrôle du premier envoi."}</p>
