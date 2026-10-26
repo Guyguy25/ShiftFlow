@@ -1,5 +1,5 @@
 import { counted } from "../lib/french";
-import React, { useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, MessageCircle, ArrowRight } from "lucide-react";
 import { WhatsAppImportModal } from "../pages/Workers";
@@ -10,10 +10,24 @@ export default function MissionTeamSetup({ mission, workers, loading, error, onR
   const [quotaError, setQuotaError] = useState(null);
   const returnTo = `/app/missions/${mission.id}?step=select&shift=${encodeURIComponent(shift.id)}`;
   const hasWorkers = workers.length > 0;
+  const headingRef = useRef(null);
+  const previous = useRef({ hasWorkers, connecting });
+  useLayoutEffect(() => {
+    const before = previous.current;
+    // Importing WhatsApp contacts changes this step in-place, with no URL change.
+    // Returning at the bottom of the contact picker hides the next instruction.
+    if (hasWorkers && !connecting && (!before.hasWorkers || before.connecting)) {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+      headingRef.current?.focus({ preventScroll: true });
+    }
+    previous.current = { hasWorkers, connecting };
+  }, [hasWorkers, connecting]);
   return <div className="max-w-2xl mx-auto pb-24" data-testid="mission-team-setup">
     <UpgradeModal open={!!quotaError} onClose={() => setQuotaError(null)} message={quotaError} />
     <p className="flex items-center gap-2 text-sm font-medium text-emerald-700"><CheckCircle2 size={18} aria-hidden="true" /> Mission enregistrée</p>
-    <h1 className="mt-3 text-[28px] sm:text-3xl font-display font-bold leading-tight">{hasWorkers ? "Préparez votre première demande" : "Ajoutons votre équipe"}</h1>
+    <h1 ref={headingRef} tabIndex={-1} className="mt-3 text-[28px] sm:text-3xl font-display font-bold leading-tight outline-none">{hasWorkers ? "Préparez votre première demande" : "Ajoutons votre équipe"}</h1>
     <p className="mt-2 text-sm text-gray-600 break-words">{mission.name} · {mission.location}</p>
     <ol className="mt-5 mb-5 flex gap-2 text-xs" aria-label="Préparation de votre équipe">
       {["Mission créée", "Ajouter l’équipe", "Vérifier l’envoi"].map((label, i) => <li key={label} aria-current={i === (hasWorkers ? 2 : 1) ? "step" : undefined} className={`flex-1 border-t-4 pt-2 ${i <= (hasWorkers ? 2 : 1) ? "border-blue-600 text-blue-700" : "border-gray-200 text-gray-500"}`}>{i + 1}. {label}</li>)}

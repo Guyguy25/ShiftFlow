@@ -1,0 +1,16 @@
+/* The panel opens above the mobile bottom bar without moving the page. */
+@keyframes shiftflow-mobile-create-open {
+  from { opacity: 0; transform: translate(-50%, 9px) scale(.97); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.mobile-create-menu {
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  animation: shiftflow-mobile-create-open 200ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-create-menu { animation: none; }
+  .mobile-create-trigger svg { transition: none; }
+}
