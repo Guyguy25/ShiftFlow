@@ -7,7 +7,8 @@ const ALLOWED = new Set([
   "whatsapp_session_started", "whatsapp_session_error",
   "whatsapp_pair_requested", "whatsapp_pair_error",
   "invitation_review_opened", "invitation_send_attempted",
-  "invitation_send_error", "onboarding_guide_dismissed",
+  "invitation_send_error", "invitation_send_succeeded",
+  "activation_home_viewed", "activation_cta_clicked", "onboarding_guide_dismissed",
 ]);
 const DETAILS = {
   mission_form_step: new Set(["schedule", "review"]),
