@@ -107,8 +107,8 @@ export default function MissionCreate() {
       <UpgradeModal open={!!upgrade} onClose={()=>{setUpgrade(null); nav("/app/missions");}} message={upgrade}/>
       <div className="text-[11px] sm:text-xs uppercase tracking-[0.16em] text-blue-700 font-bold">Nouvelle mission</div>
       <h1 ref={heading} tabIndex={-1} className="mt-2 text-3xl font-display font-bold tracking-tight outline-none">{["Commençons par votre mission", "De quelle équipe avez-vous besoin ?", "Votre mission est prête à être créée"][step]}</h1>
-      <p className="mt-3 text-sm text-gray-600">{["Un nom et un lieu pour commencer. WhatsApp viendra ensuite.", "Précisez quand et combien de personnes vous souhaitez mobiliser.", "Vérifiez les informations. Vous choisirez ensuite les intervenants."][step]}</p>
-      <ol className="mt-5 flex gap-2 text-xs" aria-label="Étapes de création">{["Mission", "Créneau", "Vérification"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined} className={`flex-1 border-t-4 pt-2 ${index <= step ? "border-blue-600 text-blue-700 font-semibold" : "border-gray-200 text-gray-500"}`}>{index + 1}. {label}</li>)}</ol>
+      <p className="mt-3 text-sm text-gray-600">{["Un nom et un lieu suffisent pour commencer. Rien ne sera envoyé maintenant.", "Date, horaires, effectif et rémunération : seulement le nécessaire pour proposer une vraie mission.", "Relisez votre mission avant de passer à la sélection des intervenants."][step]}</p>
+      <ol className="mt-5 flex gap-2 text-xs" aria-label="Étapes de création">{["Informations", "Équipe", "Validation"].map((label, index) => <li key={label} aria-current={step === index ? "step" : undefined} className={`flex-1 border-t-4 pt-2 ${index <= step ? "border-blue-600 text-blue-700 font-semibold" : "border-gray-200 text-gray-500"}`}>{index + 1}. {label}</li>)}</ol>
       <form onSubmit={submit} className="mt-5 sm:mt-8 space-y-4 sm:space-y-6">
         {step === 0 && <>
         <div className="bg-white rounded-2xl sm:rounded-xl border border-gray-200 p-4 sm:p-8 space-y-5">
@@ -117,7 +117,7 @@ export default function MissionCreate() {
             <label htmlFor="mc-name" className="text-sm font-medium text-gray-700">Nom de la mission *</label>
                   <input required id="mc-name" data-testid="mc-name" data-onboarding={!mission.name.trim() ? "name" : undefined} className={inputCls} value={mission.name} onChange={(e)=>setM("name", e.target.value)} placeholder="Montage Salon Nike"/>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
             <div>
               <label htmlFor="mc-location" className="text-sm font-medium text-gray-700">Lieu *</label>
                   <input required id="mc-location" data-testid="mc-location" data-onboarding={mission.name.trim() && !mission.location.trim() ? "location" : undefined} className={inputCls} value={mission.location} onChange={(e)=>setM("location", e.target.value)} placeholder="Lille Grand Palais"/>
@@ -180,7 +180,8 @@ export default function MissionCreate() {
               <div className="text-xs text-gray-600">En cas de refus ou absence, contacter automatiquement le prochain intervenant pour chaque shift.</div>
             </div>
           </label>
-          <p className="text-sm text-gray-600">Aucune demande ne part à la création. Vous choisirez vos contacts et vérifierez le message avant de confirmer l’envoi.</p>
+          <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-700" data-testid="mc-next-after-creation"><strong>Après la création :</strong> ajoutez vos intervenants, connectez WhatsApp et vérifiez les invitations. Vous gardez le contrôle du premier envoi.</div>
+          <p className="text-sm text-gray-600">Aucune demande ne part à la création. Les confirmations arrivent seulement après réponse des intervenants.</p>
           <p className="text-xs text-gray-500">Créer cette mission utilise une mission offerte ou un crédit disponible. Aucun paiement automatique. Les créneaux de ce même événement sont inclus.</p>
         </section>}
         {error && <div role="alert" className="text-sm text-red-600" data-testid="mc-error">{error}</div>}
