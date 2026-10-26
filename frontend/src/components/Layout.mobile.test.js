@@ -1,9 +1,41 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import Layout from "./Layout";
 import { readPageData, peekPageData } from "../lib/pageData";
 import { useAuth } from "../context/AuthContext";
+
+// The repository's Jest environment does not ship React Router itself; all
+// router-consuming component tests use virtual navigation mocks.
+jest.mock("react-router-dom", () => {
+  const React = require("react");
+  const Context = React.createContext(null);
+  function parse(path) {
+    const [pathname, search = ""] = String(path).split("?");
+    return { pathname, search: search ? "?" + search : "" };
+  }
+  function MemoryRouter({ children, initialEntries }) {
+    const [location, setLocation] = React.useState(() => parse(initialEntries[0]));
+    const navigate = path => setLocation(parse(path));
+    return React.createElement(Context.Provider, { value: { location, navigate } }, children);
+  }
+  function useLocation() { return React.useContext(Context).location; }
+  function useNavigate() { return React.useContext(Context).navigate; }
+  const Link = React.forwardRef(function Link({ to, children, onClick, className, ...props }, ref) {
+    const navigate = useNavigate();
+    return React.createElement("a", { ...props, href: to, ref, className, onClick: event => {
+      event.preventDefault();
+      onClick?.(event);
+      navigate(to);
+    } }, children);
+  });
+  function NavLink({ to, className, ...props }) {
+    const { pathname } = useLocation();
+    const target = parse(to).pathname;
+    return React.createElement(Link, { ...props, to, className: typeof className === "function" ? className({ isActive: pathname === target }) : className });
+  }
+  return { MemoryRouter, useLocation, useNavigate, Link, NavLink };
+}, { virtual: true });
 
 jest.mock("../lib/pageData", () => ({
   readPageData: jest.fn(),
@@ -29,7 +61,7 @@ function Position() {
 function TestApp({ initial = "/app/dashboard" }) {
   return <MemoryRouter initialEntries={[initial]}>
     <Position />
-    <Routes><Route path="*" element={<Layout><p>Contenu</p></Layout>} /></Routes>
+    <Layout><p>Contenu</p></Layout>
   </MemoryRouter>;
 }
 async function mount(initial) {
