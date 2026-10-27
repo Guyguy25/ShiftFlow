@@ -4,6 +4,7 @@ import Hours from "./pages/Hours";
 import PublicHours from "./pages/PublicHours";
 import React from "react";
 import "./App.css";
+import "./pages/LandingClaude.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";

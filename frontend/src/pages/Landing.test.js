@@ -21,7 +21,7 @@ async function renderUser(user, loading = false) {
 test("visitors can view the landing and start registration", async () => {
   await renderUser(false);
   expect(host.querySelector('[data-testid="landing-cta-nav"]').getAttribute("href")).toBe("/register");
-  expect(host.querySelector('[data-testid="hero-cta-primary"]').textContent).toContain("Essayer gratuitement");
+  expect(host.querySelector('[data-testid="hero-cta-primary"]').textContent).toContain("Essayer sur 3 missions offertes");
   expect(host.querySelector('[data-testid="landing-login-link"]')).not.toBeNull();
 });
 test("signed-in visitors can view the landing and reopen their workspace", async () => {
@@ -46,7 +46,7 @@ test("pending invitations remain accessible", async () => {
 });
 test("landing remains visible while the session loads", async () => {
   await renderUser(null, true);
-  expect(host.querySelector("h1").textContent).toContain("15 roads");
+  expect(host.querySelector("h1").textContent).toContain("désistement");
 });
 
 test("known sessions show the workspace action before the slow server response", async () => {
@@ -58,4 +58,16 @@ test("known sessions show the workspace action before the slow server response",
   expect(host.querySelector('[data-testid="landing-login-link"]')).toBeNull();
   await renderUser(false, false);
   expect(host.querySelector('[data-testid="landing-cta-nav"]').textContent).toBe("Essayer gratuitement");
+});
+
+test("Claude's workflow example consistently fills one outstanding place", async () => {
+  await renderUser(false);
+  expect(host.querySelector("#count").textContent).toContain("14/15 confirmés");
+  expect(host.querySelector('[data-testid="landing-hero-self-demo"]').getAttribute("href")).toBe("/demo");
+  expect(host.querySelector('[data-testid="hero-cta-secondary"]').getAttribute("href")).toBe("/test-accompagne#reserver");
+});
+test("public landing has no paid prices, but still links to pricing", async () => {
+  await renderUser(false);
+  expect(host.textContent).not.toMatch(/29\s*€|79\s*€|149\s*€/);
+  expect(host.querySelector('a[href="/pricing"]')).not.toBeNull();
 });

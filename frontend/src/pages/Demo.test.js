@@ -40,15 +40,12 @@ test("demo preserves the 14 confirmed roadies, replaces only the last place, and
   expect(host.querySelector("input").value).toContain("Montage de scène");
 });
 
-test("landing presents Claude-style animated cascade in both existing locations", async () => {
+test("landing presents Claude's workflow canvas and an honest 14/15 example", async () => {
   await act(async () => root.render(<Landing />));
-  const cards = Array.from(host.querySelectorAll('[data-testid="landing-mission-card"]'));
-  expect(cards).toHaveLength(2);
-  cards.forEach((card) => {
-    expect(card.textContent).toContain("Montage stand · 15 roads");
-    expect(card.textContent).toContain("Salut Camille");
-    expect(card.textContent).toContain("14/15 confirmés");
-    expect(card.querySelector('[role="progressbar"]').getAttribute("aria-valuenow")).toBe("14");
-    expect(card.querySelector('[data-testid="landing-mission-playback"]')).not.toBeNull();
-  });
+  const canvas = host.querySelector(".canvas");
+  expect(canvas).not.toBeNull();
+  expect(canvas.querySelectorAll("#flow .node")).toHaveLength(5);
+  expect(canvas.querySelector("#count").textContent).toContain("14/15 confirmés");
+  expect(canvas.querySelector("#bubble").textContent).toContain("Salut Camille");
+  expect(canvas.textContent).toContain("Exemple fictif");
 });
