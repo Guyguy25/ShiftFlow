@@ -3,7 +3,6 @@ import { useAuth } from "../context/AuthContext";
 import { hasSessionHint } from "../lib/sessionHint";
 import { pendingInvitation } from "../lib/invitation";
 import { workspacePath } from "../lib/workspacePaths";
-import "./LandingClaude.css";
 
 // Claude landing design, preserved as source HTML to avoid changing its visual structure.
 // The main application still handles auth, legal consent, tracking, and SEO.
