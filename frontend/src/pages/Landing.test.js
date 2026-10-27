@@ -21,7 +21,7 @@ async function renderUser(user, loading = false) {
 test("visitors can view the landing and start registration", async () => {
   await renderUser(false);
   expect(host.querySelector('[data-testid="landing-cta-nav"]').getAttribute("href")).toBe("/register");
-  expect(host.querySelector('[data-testid="hero-cta-primary"]').textContent).toContain("Essayer gratuitement");
+  expect(host.querySelector('[data-testid="hero-cta-primary"]').textContent).toContain("Essayer sur 3 missions offertes");
   expect(host.querySelector('[data-testid="landing-login-link"]')).not.toBeNull();
 });
 test("signed-in visitors can view the landing and reopen their workspace", async () => {
@@ -68,6 +68,6 @@ test("Claude's workflow example consistently fills one outstanding place", async
 });
 test("public landing has no paid prices, but still links to pricing", async () => {
   await renderUser(false);
-  expect(host.textContent).not.toMatch(/29\\s*€|79\\s*€|149\\s*€/);
+  expect(host.textContent).not.toMatch(/29\s*€|79\s*€|149\s*€/);
   expect(host.querySelector('a[href="/pricing"]')).not.toBeNull();
 });
