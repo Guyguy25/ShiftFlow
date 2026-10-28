@@ -28,55 +28,123 @@ export default function Landing() {
   const action = useLandingAction();
   const markup = useMemo(() => prepareMarkup(action), [action.connected, action.label, action.to]);
   useEffect(() => {
-    // Original workflow animation, industry tabs, illustrative calculator and reveal effects.
-/* ---- workflow animation ---- */
-const stopWorkflow = (function(){
-  const nodes=[...document.querySelectorAll('#flow .node')];
-  const links=[...document.querySelectorAll('#flow .link')];
-  const log=document.getElementById('log'), count=document.getElementById('count'), bar=document.getElementById('bar'), bubble=document.getElementById('bubble');
-  const set=(i,cls,sub)=>{const n=nodes[i];n.classList.remove('active','done','fail');if(cls)n.classList.add(cls);if(sub!==undefined)n.querySelector('.node-sub').textContent=sub};
-  const add=(t,html,c='')=>{const li=document.createElement('li');li.className=c;li.innerHTML=`<time class="mono">${t}</time><span>${html}</span>`;log.appendChild(li);while(log.children.length>5)log.removeChild(log.firstChild)};
-  const setCount=n=>{count.innerHTML=`${n}<em>/15 confirmés</em>`;bar.style.width=(n/15*100)+'%'};
-  const msg=(name)=>{bubble.firstChild.textContent=`Salut ${name} 👋 Montage stand vendredi au Grand Palais, 7 h – 13 h. Tu es dispo ? `};
-  const steps=[
-    ()=>{log.innerHTML='';nodes.forEach((_,i)=>set(i,null,['15 places','en attente','si refus','en attente','programmé'][i]));links.forEach(l=>l.classList.remove('on'));setCount(14);msg('Camille');set(0,'active','15 places');add('21:58','Mission prête · <b>1 place</b> à pourvoir')},
-    ()=>{set(0,'done');links[0].classList.add('on');set(1,'active','proposition envoyée');add('21:59','Proposition envoyée à <b>Camille</b>')},
-    ()=>{set(1,'fail','a refusé');add('22:04','Camille <b>a refusé</b>','ko')},
-    ()=>{links[1].classList.add('on');set(2,'active','cascade');add('22:04','Passage au suivant de la liste')},
-    ()=>{set(2,'done','fait');links[2].classList.add('on');set(3,'active','proposition envoyée');msg('Alex');add('22:04','Proposition envoyée à <b>Alex</b>')},
-    ()=>{set(3,'done','a accepté');setCount(15);add('22:11','Alex <b>a accepté</b> · équipe complète','ok')},
-    ()=>{links[3].classList.add('on');set(4,'done','jeudi 18 h');add('22:11','Rappels programmés pour <b>15 personnes</b>','ok')}
-  ];
-  let i=0; let timer=null; const run=()=>{steps[i]();i=(i+1)%steps.length;timer=window.setTimeout(run,i===0?3600:1500)};
-  if(typeof window.matchMedia === "function" && window.matchMedia('(prefers-reduced-motion: reduce)').matches){steps[0]()}else run();
-  return ()=>window.clearTimeout(timer);
-})();
+    // Public pages must be interactive even while the authentication request is pending.
+    // Keep each enhancement independent so one missing element cannot prevent the rest.
+    const landing = document.getElementById("claude-landing");
+    if (!landing) return;
+    const cleanup = [];
 
-/* ---- tabs ---- */
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
-  document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
-  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('show',p.dataset.p===t.dataset.t));
-}));
+    // Illustrative cascade (no real messages are sent).
+    const nodes = [...landing.querySelectorAll("#flow .node")];
+    const links = [...landing.querySelectorAll("#flow .link")];
+    const log = landing.querySelector("#log");
+    const count = landing.querySelector("#count");
+    const bar = landing.querySelector("#bar");
+    const bubble = landing.querySelector("#bubble");
+    if (nodes.length === 5 && links.length === 4 && log && count && bar && bubble) {
+      const set = (i, cls, sub) => {
+        const node = nodes[i];
+        node.classList.remove("active", "done", "fail");
+        if (cls) node.classList.add(cls);
+        if (sub !== undefined) node.querySelector(".node-sub").textContent = sub;
+      };
+      const add = (time, html, status = "") => {
+        const li = document.createElement("li");
+        li.className = status;
+        li.innerHTML = '<time class="mono">' + time + "</time><span>" + html + "</span>";
+        log.appendChild(li);
+        while (log.children.length > 5) log.removeChild(log.firstChild);
+      };
+      const setCount = (n) => {
+        count.innerHTML = n + "<em>/15 confirmés</em>";
+        bar.style.width = (n / 15 * 100) + "%";
+      };
+      const msg = (name) => {
+        if (bubble.firstChild) bubble.firstChild.textContent = "Salut " + name + " 👋 Montage stand vendredi au Grand Palais, 7 h – 13 h. Tu es dispo ? ";
+      };
+      const steps = [
+        () => { log.innerHTML = ""; nodes.forEach((_, i) => set(i, null, ["15 places", "en attente", "si refus", "en attente", "programmé"][i])); links.forEach(l => l.classList.remove("on")); setCount(14); msg("Camille"); set(0, "active", "15 places"); add("21:58", "Mission prête · <b>1 place</b> à pourvoir"); },
+        () => { set(0, "done"); links[0].classList.add("on"); set(1, "active", "proposition envoyée"); add("21:59", "Proposition envoyée à <b>Camille</b>"); },
+        () => { set(1, "fail", "a refusé"); add("22:04", "Camille <b>a refusé</b>", "ko"); },
+        () => { links[1].classList.add("on"); set(2, "active", "cascade"); add("22:04", "Passage au suivant de la liste"); },
+        () => { set(2, "done", "fait"); links[2].classList.add("on"); set(3, "active", "proposition envoyée"); msg("Alex"); add("22:04", "Proposition envoyée à <b>Alex</b>"); },
+        () => { set(3, "done", "a accepté"); setCount(15); add("22:11", "Alex <b>a accepté</b> · équipe complète", "ok"); },
+        () => { links[3].classList.add("on"); set(4, "done", "jeudi 18 h"); add("22:11", "Rappels programmés pour <b>15 personnes</b>", "ok"); },
+      ];
+      let step = 0;
+      let timer;
+      const run = () => {
+        steps[step]();
+        step = (step + 1) % steps.length;
+        timer = window.setTimeout(run, step === 0 ? 3600 : 1500);
+      };
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) steps[0]();
+      else run();
+      cleanup.push(() => window.clearTimeout(timer));
+    }
 
-/* ---- calculator ---- */
-(function(){
-  const m=document.getElementById('m'),p=document.getElementById('p'),d=document.getElementById('d');
-  const $=id=>document.getElementById(id);
-  const upd=()=>{
-    const M=+m.value,P=+p.value,D=Math.min(+d.value,P);
-    const a1=M*P,a2=M*D,a3=M*P,t=a1+a2+a3;
-    $('mo').textContent=M;$('po').textContent=P;$('do').textContent=+d.value;
-    $('a1').textContent=a1;$('a2').textContent=a2;$('a3').textContent=a3;$('tot').textContent=t;
-    const h=Math.floor(t/60),mn=t%60;$('h').textContent=h?`${h} h${mn?' '+String(mn).padStart(2,'0'):''}`:`${mn} min`;
-  };
-  [m,p,d].forEach(x=>x.addEventListener('input',upd));upd();
-})();
+    // Event delegation is removed on cleanup (including React StrictMode remounts).
+    const onTabClick = (event) => {
+      const tab = event.target.closest?.(".tab");
+      if (!tab || !landing.contains(tab)) return;
+      landing.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t === tab)));
+      landing.querySelectorAll(".panel").forEach(p => p.classList.toggle("show", p.dataset.p === tab.dataset.t));
+    };
+    landing.addEventListener("click", onTabClick);
+    cleanup.push(() => landing.removeEventListener("click", onTabClick));
 
-/* ---- reveal on scroll ---- */
-const io=typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
-document.querySelectorAll('.reveal').forEach(el=>io ? io.observe(el) : el.classList.add('in'));
-return ()=>{stopWorkflow();io?.disconnect()};
+    const m = landing.querySelector("#m");
+    const p = landing.querySelector("#p");
+    const d = landing.querySelector("#d");
+    const outputIds = ["mo", "po", "do", "a1", "a2", "a3", "tot", "h"];
+    const outputs = Object.fromEntries(outputIds.map(id => [id, landing.querySelector("#" + id)]));
+    if (m && p && d && Object.values(outputs).every(Boolean)) {
+      const update = () => {
+        const missions = +m.value;
+        const people = +p.value;
+        const refusals = Math.min(+d.value, people);
+        const proposals = missions * people;
+        const replacements = missions * refusals;
+        const reminders = proposals;
+        const total = proposals + replacements + reminders;
+        outputs.mo.textContent = missions;
+        outputs.po.textContent = people;
+        outputs.do.textContent = +d.value;
+        outputs.a1.textContent = proposals;
+        outputs.a2.textContent = replacements;
+        outputs.a3.textContent = reminders;
+        outputs.tot.textContent = total;
+        const hours = Math.floor(total / 60);
+        const minutes = total % 60;
+        outputs.h.textContent = hours ? hours + " h" + (minutes ? " " + String(minutes).padStart(2, "0") : "") : minutes + " min";
+      };
+      [m, p, d].forEach(input => input.addEventListener("input", update));
+      update();
+      cleanup.push(() => [m, p, d].forEach(input => input.removeEventListener("input", update)));
+    }
 
+    // A missing/blocked script must NEVER leave marketing copy invisible.
+    // CSS keeps .reveal visible by default; the observer adds only decoration.
+    const reveals = [...landing.querySelectorAll(".reveal")];
+    if (typeof IntersectionObserver === "function") {
+      try {
+        const observer = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("in");
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.12 });
+        reveals.forEach(element => observer.observe(element));
+        cleanup.push(() => observer.disconnect());
+      } catch {
+        reveals.forEach(element => element.classList.add("in"));
+      }
+    } else {
+      reveals.forEach(element => element.classList.add("in"));
+    }
+    return () => cleanup.forEach(fn => fn());
   }, [markup]);
   return <div id="claude-landing" dangerouslySetInnerHTML={{ __html: markup }} />;
 }
