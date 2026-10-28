@@ -258,11 +258,17 @@ section{padding:110px 0}
 #claude-landing footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 #claude-landing footer nav{position:static;background:none;border:0;backdrop-filter:none;display:flex;gap:22px}
 #claude-landing footer a:hover{color:var(--text)}
-#claude-landing /* reveal */
-.reveal{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
-#claude-landing .reveal.in{opacity:1;transform:none}
-@media(prefers-reduced-motion:reduce){#claude-landing *{animation:none!important;transition:none!important}
+/* Public/SEO markup stays visible even if JavaScript, an API, or an observer fails.
+   Reveal is progressive enhancement, never a prerequisite for seeing content. */
 #claude-landing .reveal{opacity:1;transform:none}
+#claude-landing .reveal.in{animation:sf-claude-reveal .6s ease both}
+@keyframes sf-claude-reveal{
+  from{opacity:.65;transform:translateY(12px)}
+  to{opacity:1;transform:none}
+}
+@media(prefers-reduced-motion:reduce){
+  #claude-landing *{animation:none!important;transition:none!important}
+  #claude-landing .reveal{opacity:1;transform:none}
 }
 
 
