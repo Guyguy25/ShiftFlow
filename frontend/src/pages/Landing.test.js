@@ -71,3 +71,41 @@ test("public landing has no paid prices, but still links to pricing", async () =
   expect(host.textContent).not.toMatch(/29\s*€|79\s*€|149\s*€/);
   expect(host.querySelector('a[href="/pricing"]')).not.toBeNull();
 });
+
+test("logged-out visitors can use tabs and the calculator while auth is loading", async () => {
+  await renderUser(null, true);
+  const tabs = host.querySelectorAll('.tab');
+  const panels = host.querySelectorAll('.panel');
+  expect(tabs).toHaveLength(3);
+  expect(panels[0].classList.contains('show')).toBe(true);
+
+  await act(async () => {
+    tabs[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+  expect(tabs[0].getAttribute("aria-selected")).toBe("false");
+  expect(panels[1].classList.contains("show")).toBe(true);
+  expect(panels[0].classList.contains("show")).toBe(false);
+
+  const slider = host.querySelector("#m");
+  await act(async () => {
+    slider.value = "12";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelector("#mo").textContent).toBe("12");
+  expect(host.querySelector("#tot").textContent).toBe("396");
+});
+
+test("public content remains usable when the reveal observer cannot initialize", async () => {
+  const previous = global.IntersectionObserver;
+  global.IntersectionObserver = jest.fn(() => { throw new Error("observer unavailable"); });
+  try {
+    await renderUser(false);
+    expect(host.querySelector("h1").textContent).toContain("désistement");
+    expect(host.querySelectorAll(".reveal").length).toBeGreaterThan(5);
+    expect(host.querySelectorAll(".reveal:not(.in)")).toHaveLength(0);
+    expect(host.querySelector("#calculateur")).not.toBeNull();
+  } finally {
+    global.IntersectionObserver = previous;
+  }
+});
