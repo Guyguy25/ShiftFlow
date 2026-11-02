@@ -1,33 +1,46 @@
 import InviteRegister from "./InviteRegister";
 import { pendingInvitation } from "../lib/invitation";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Zap, ArrowRight, ArrowLeft, Eye, EyeOff, Check, Building2, BarChart3, PenLine, ShieldCheck, CreditCard, Timer, CornerDownLeft, Pencil } from "lucide-react";
 import GoogleAuthButton from "../components/GoogleAuthButton";
 import { useAuth } from "../context/AuthContext";
 import { API, api, markLoggedOut, formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
 import { DRAFT_KEY, readDraft, newDraftToken, draftSnapshot, sendDraft } from "../lib/registrationDraft";
 import SignupCelebration from "../components/SignupCelebration";
+import RegisterPreview from "../components/RegisterPreview";
 import { registrationSavings } from "../lib/registrationSavings";
+import { questions, SCREENS, isAnswered } from "../constants/registrationQuestions";
+import { suggestEmail, passwordChecks, passwordScore } from "../lib/emailSuggestion";
+import "./Register.css";
 
-const titles = ["Créez votre compte", "Parlons de vos événements", "Votre bilan avant de commencer"];
+export const AUTO_ADVANCE_MS = 320;
+const LETTERS = "ABCDEFGHIJ";
+const byKey = Object.fromEntries(questions.map(q => [q.key, q]));
+const QUESTION_COUNT = SCREENS.filter(id => byKey[id]).length;
+const SECTIONS = [{ label: "Compte", step: 0 }, { label: "Activité", step: 1 }, { label: "Bilan", step: 2 }];
+const stepOf = id => (id === "account" ? 0 : id === "recap" ? 2 : 1);
+const fmt = value => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
 
 export default function Register() {
   const [invitation] = useState(pendingInvitation);
   return invitation ? <InviteRegister token={invitation}/> : <OrganizationRegister/>;
 }
+
 function OrganizationRegister() {
   const nav = useNavigate();
   const { register, refresh } = useAuth();
   const [initial] = useState(readDraft);
   const [token] = useState(() => initial?.token || newDraftToken());
-  // Credentials are never restored from storage; a reload returns to step one.
-  const [step, setStep] = useState(0);
-  const [form, setForm] = useState({ email: initial?.form?.email || "", password: "", agency_name: "" });
+  // Les identifiants ne sont jamais restaurés : un rechargement revient au premier écran.
+  const [index, setIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [form, setForm] = useState({ email: initial?.form?.email || "", password: "", agency_name: initial?.form?.agency_name || "" });
   const [answers, setAnswers] = useState({ annual_events: initial?.answers?.annual_events || 30, people_per_mission: initial?.answers?.people_per_mission || 15, ...initial?.answers });
   const [googleCredential, setGoogleCredential] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [touched, setTouched] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const finished = useRef(false);
@@ -35,9 +48,18 @@ function OrganizationRegister() {
   const latest = useRef(null);
   const queue = useRef(Promise.resolve());
   const previousStep = useRef(null);
+  const advanceTimer = useRef(null);
+  const indexRef = useRef(0);
+  indexRef.current = index;
+
+  const screen = SCREENS[index];
+  const step = stepOf(screen);
+  const question = byKey[screen];
   const savings = registrationSavings(answers.annual_events, answers.people_per_mission);
-  const safeFormKey = JSON.stringify({ email: form.email });
+  const safeFormKey = JSON.stringify({ email: form.email, agency_name: form.agency_name });
   const answersKey = JSON.stringify(answers);
+
+  // Brouillon : localStorage immédiat + serveur (debounce, immédiat à chaque changement d'étape).
   useEffect(() => {
     const snapshot = draftSnapshot(token, step, JSON.parse(safeFormKey), JSON.parse(answersKey));
     latest.current = snapshot;
@@ -47,10 +69,7 @@ function OrganizationRegister() {
     const timer = setTimeout(() => {
       queue.current = queue.current.catch(() => {}).then(async () => {
         if (finished.current || (!stepChanged && latest.current !== snapshot)) return;
-        try {
-          await sendDraft(snapshot);
-        } catch {
-        }
+        try { await sendDraft(snapshot); } catch {}
       });
     }, stepChanged ? 0 : 800);
     return () => clearTimeout(timer);
@@ -66,13 +85,34 @@ function OrganizationRegister() {
     window.addEventListener("pagehide", flush);
     return () => window.removeEventListener("pagehide", flush);
   }, []);
-  useEffect(() => { heading.current?.focus(); }, [step]);
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    const field = SCREENS[index] === "agency" ? document.querySelector('[name="agency_name"]') : null;
+    (field || heading.current)?.focus({ preventScroll: true });
+  }, [index]);
+  useEffect(() => () => clearTimeout(advanceTimer.current), []);
+
+  const goTo = useCallback(target => {
+    clearTimeout(advanceTimer.current);
+    setError("");
+    setDirection(target >= indexRef.current ? 1 : -1);
+    setIndex(Math.max(0, Math.min(SCREENS.length - 1, target)));
+  }, []);
+
+  // Reprise : on saute directement au premier écran sans réponse.
+  function resumeIndex() {
+    const open = SCREENS.findIndex((id, i) => i > 0 && ((id === "agency" && !form.agency_name.trim()) || (byKey[id] && !isAnswered(id, answers))));
+    return open === -1 ? 1 : open;
+  }
+
   function validateCredentials() {
     if (googleCredential) return true;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       setError("Indiquez une adresse email valide."); return false;
     }
-    if (form.password.length < 8 || !/[0-9]/.test(form.password) || !Array.from(form.password).some(c => c.toLowerCase() !== c.toUpperCase())) {
+    const checks = passwordChecks(form.password);
+    if (!checks.length || !checks.letter || !checks.digit) {
       setError("Choisissez un mot de passe de 8 caractères minimum, avec une lettre et un chiffre."); return false;
     }
     return true;
@@ -80,7 +120,7 @@ function OrganizationRegister() {
   function googleSelected(credential) {
     setGoogleCredential(credential);
     setForm(previous => ({ ...previous, password: "" }));
-    setStep(1);
+    goTo(resumeIndex());
   }
   function attribution() {
     try {
@@ -94,12 +134,26 @@ function OrganizationRegister() {
       return { meta_consent: true, meta_attribution: meta, meta_fbp: cookie("_fbp"), meta_fbc: cookie("_fbc") || (meta?.fbclid ? `fb.1.${Math.floor(captured / 1000)}.${meta.fbclid}` : null) };
     } catch { return {}; }
   }
-  async function submit(event) {
-    event.preventDefault(); setError("");
-    if (!validateCredentials()) { setStep(0); return; }
-    if (step === 1 && questions.some(q => !answers[q.key]?.length)) { setError("Répondez à chaque question pour préparer votre bilan."); return; }
-    if (step < 2) { setStep(step + 1); return; }
-    if (!form.agency_name.trim()) { setError("Indiquez le nom de votre organisation."); return; }
+
+  function choose(q, value) {
+    clearTimeout(advanceTimer.current);
+    setError("");
+    if (q.multi) {
+      setAnswers(a => {
+        const list = a[q.key] || [];
+        return { ...a, [q.key]: list.includes(value) ? list.filter(x => x !== value) : [...list, value] };
+      });
+      return;
+    }
+    setAnswers(a => ({ ...a, [q.key]: value }));
+    const from = indexRef.current;
+    advanceTimer.current = setTimeout(() => { if (indexRef.current === from) goTo(from + 1); }, AUTO_ADVANCE_MS);
+  }
+
+  async function createAccount() {
+    if (!form.agency_name.trim()) { goTo(SCREENS.indexOf("agency")); setError("Indiquez le nom de votre organisation."); return; }
+    const missing = questions.find(q => !isAnswered(q.key, answers));
+    if (missing) { goTo(SCREENS.indexOf(missing.key)); setError("Répondez à cette question pour préparer votre bilan."); return; }
     if (loading) return;
     setLoading(true);
     const acceptedAt = new Date().toISOString();
@@ -124,67 +178,201 @@ function OrganizationRegister() {
       nav(sessionStorage.getItem("shiftflow_pending_invitation") ? "/invite" : "/app/dashboard");
     } catch (err) {
       const message = formatApiError(err.response?.data?.detail) || "Impossible de créer le compte. Réessayez.";
-      if (googleCredential) { setGoogleCredential(""); setStep(0); }
+      if (googleCredential) { setGoogleCredential(""); goTo(0); }
       setError(message);
     } finally { setLoading(false); }
   }
-  return <div className="flex-1 bg-[#F7F9FC]">
-    <header className="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-5 py-4">
-      <Link to="/" className="flex items-center gap-2 font-display font-bold"><span className="rounded-lg bg-blue-600 p-2"><Zap size={18} className="text-white" /></span>ShiftFlow</Link>
-      <Link to="/login" className="text-sm font-medium text-blue-700">Se connecter</Link>
-    </header>
-    <main className="mx-auto max-w-xl px-5 py-8 sm:py-14" data-testid="register-page">
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-9">
-        <div className="flex justify-between text-xs font-semibold text-gray-500"><span>{["Votre compte", "Votre activité", "Votre estimation"][step]}</span><span>Étape {step + 1} sur 3</span></div>
-        <div className="mt-3 flex gap-2" role="progressbar" aria-label="Inscription" aria-valuemin={1} aria-valuemax={3} aria-valuenow={step + 1} data-testid="register-progress">{titles.map((_, i) => <span key={i} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-blue-600" : "bg-gray-100"}`} />)}</div>
-        <h1 ref={heading} tabIndex={-1} className={`mt-8 font-display text-3xl font-bold tracking-tight outline-none ${step === 2 ? "text-center" : ""}`}>{titles[step]}</h1>
-        {step === 0 && <>
-          <p className="mt-3 text-sm leading-relaxed text-gray-500">3 missions offertes. Sans carte bancaire.</p>
-          <GoogleAuthButton onCredential={googleSelected} />
-          <div className="my-6 flex items-center gap-4 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />ou avec votre email<span className="h-px flex-1 bg-gray-200" /></div>
-        </>}
-        <form onSubmit={submit} noValidate className="mt-6" data-testid="register-form">
-          {step === 0 && <div className="space-y-5">
-            <label className="block text-sm font-medium text-gray-700">Email<input type="email" name="email" autoComplete="username" required maxLength={254} value={form.email} onChange={e => { setForm({ ...form, email: e.target.value }); setGoogleCredential(""); }} placeholder="vous@entreprise.fr" className="mt-2 h-12 w-full rounded-lg border border-gray-300 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500" data-testid="register-email-input" /></label>
-            <label className="block text-sm font-medium text-gray-700">Mot de passe<span className="relative mt-2 block"><input type={showPassword ? "text" : "password"} name="password" autoComplete="new-password" required minLength={8} maxLength={128} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} aria-describedby="password-help" className="h-12 w-full rounded-lg border border-gray-300 pl-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500" data-testid="register-password-input" /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"} className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-gray-500">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
-            <p id="password-help" className="text-xs text-gray-500">8 caractères minimum, avec une lettre et un chiffre.</p>
-          </div>}
-          {step === 1 && <div className="space-y-9 py-3">
-            <p className="text-sm text-gray-500">Prenons 3 à 5 minutes pour comprendre votre fonctionnement. Vos réponses nous aident à identifier vos besoins et à améliorer ShiftFlow.</p>
-            {questions.map(q => <fieldset key={q.key}><legend className="text-sm font-semibold text-gray-800">{q.label}</legend><div className="mt-3 grid gap-2">{q.options.map(option => <button key={option} type="button" aria-pressed={q.multi ? (answers[q.key] || []).includes(option) : answers[q.key] === option} onClick={() => setAnswers(a => ({ ...a, [q.key]: q.multi ? ((a[q.key] || []).includes(option) ? a[q.key].filter(x => x !== option) : [...(a[q.key] || []), option]) : option }))} className={`rounded-lg border px-4 py-3 text-left text-sm ${ (q.multi ? (answers[q.key] || []).includes(option) : answers[q.key] === option) ? "border-blue-600 bg-blue-50 text-blue-800" : "border-gray-200 hover:border-blue-300"}`}>{option}</button>)}</div></fieldset>)}
-            <label className="block text-sm font-semibold">Racontez une situation récente où la coordination a été compliquée (facultatif)<textarea maxLength={1500} value={answers.context || ""} onChange={e => setAnswers({ ...answers, context: e.target.value })} placeholder="Que s’est-il passé ? Comment avez-vous géré la situation ?" className="mt-3 min-h-28 w-full rounded-lg border p-3 font-normal" /></label>
-            {googleCredential && <p className="text-sm text-emerald-700">Compte Google sélectionné</p>}
-            <Slider id="annual_events" label="Combien d’événements organisez-vous en moyenne par an ?" value={answers.annual_events} max={300} unit="événements / an" onChange={value => setAnswers({ ...answers, annual_events: value })} />
-            <Slider id="people_per_mission" label="Combien de personnes mobilisez-vous en moyenne par mission ?" value={answers.people_per_mission} max={150} unit="personnes / mission" onChange={value => setAnswers({ ...answers, people_per_mission: value })} />
-          </div>}
-          {step === 2 && <><div className="mb-6 rounded-xl bg-blue-50 p-4 text-sm leading-relaxed"><p className="font-semibold">Votre priorité : {answers.priority}</p><p className="mt-2">Aujourd’hui : {(answers.channels || []).join(", ")}. Difficulté principale : {answers.biggest_problem}.</p><p className="mt-2">Objectif souhaité : {answers.goal}. Ce bilan reprend vos réponses ; l’estimation ci-dessous reste indicative.</p></div><SignupCelebration savings={savings} /><label className="mt-6 block text-sm font-semibold text-gray-800">Nom de votre organisation<input name="agency_name" autoComplete="organization" value={form.agency_name} onChange={event => setForm({ ...form, agency_name: event.target.value })} placeholder="Ex. AXE Events" required maxLength={120} className="mt-2 h-12 w-full rounded-xl border border-gray-300 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"/><span className="mt-2 block text-xs font-normal text-gray-500">Votre espace de travail sera créé à ce nom. Vous pourrez le modifier dans les paramètres.</span></label></>}
-          {error && <p className="mt-5 text-sm text-red-600" role="alert">{error}</p>}
-          <button type="submit" disabled={loading} className="mt-7 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50" data-testid={step === 2 ? "register-submit-btn" : "register-next-btn"}>{loading ? "Création du compte…" : step === 2 ? "Commencer" : "Continuer"}<ArrowRight size={17} /></button>
-          {step === 2 && <p className="mt-3 text-center text-xs leading-relaxed text-gray-500">En cliquant sur « Commencer », vous acceptez les <Link to="/conditions" target="_blank" className="underline">Conditions générales</Link> et reconnaissez avoir pris connaissance de la <Link to="/confidentialite" target="_blank" className="underline">Politique de confidentialité</Link>.</p>}
-          {step > 0 && <button type="button" disabled={loading} onClick={() => { if (step === 1) setGoogleCredential(""); setError(""); setStep(step - 1); }} className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm text-gray-500"><ArrowLeft size={16} />Retour</button>}
+
+  function next() {
+    setError("");
+    if (screen === "account") { setTouched(true); if (validateCredentials()) goTo(resumeIndex()); return; }
+    if (!validateCredentials()) { goTo(0); return; }
+    if (screen === "agency" && !form.agency_name.trim()) { setError("Indiquez le nom de votre organisation."); return; }
+    if (question && !isAnswered(question.key, answers)) { setError(question.multi ? "Choisissez au moins une réponse." : "Choisissez une réponse pour continuer."); return; }
+    if (screen === "recap") { createAccount(); return; }
+    goTo(index + 1);
+  }
+  const nextRef = useRef(next);
+  nextRef.current = next;
+
+  // Raccourcis clavier façon Typeform : A, B, C… ou 1, 2, 3… pour répondre, Entrée pour valider.
+  useEffect(() => {
+    const onKey = event => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      const tag = event.target?.tagName;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || event.target?.isContentEditable) return;
+      if (event.key === "Enter" && !["BUTTON", "A"].includes(tag)) { event.preventDefault(); nextRef.current(); return; }
+      if (!question || event.repeat) return;
+      const key = event.key.toUpperCase();
+      const position = /^[1-9]$/.test(key) ? Number(key) - 1 : LETTERS.indexOf(key);
+      if (key.length === 1 && position >= 0 && position < question.options.length) { event.preventDefault(); choose(question, question.options[position].value); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const questionNumber = question ? SCREENS.filter((id, i) => byKey[id] && i <= index).length : 0;
+  const progress = Math.round((index / (SCREENS.length - 1)) * 100);
+  const remaining = Math.max(0, SCREENS.length - 1 - index);
+  const suggestion = screen === "account" && !googleCredential ? suggestEmail(form.email) : null;
+  const checks = passwordChecks(form.password);
+  const score = passwordScore(form.password);
+  const canContinue = screen === "agency" ? Boolean(form.agency_name.trim()) : question ? isAnswered(question.key, answers) : true;
+
+  return <div className="flex-1 bg-[#F7F9FC] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(420px,44%)]">
+    <div className="flex min-h-full flex-col">
+      <header className="flex items-center justify-between gap-4 px-5 py-4 sm:px-8">
+        <Link to="/" className="flex items-center gap-2 font-display font-bold"><span className="rounded-lg bg-blue-600 p-2"><Zap size={18} className="text-white" /></span>ShiftFlow</Link>
+        <p className="text-sm text-gray-500">Déjà inscrit ? <Link to="/login" className="font-medium text-blue-700">Se connecter</Link></p>
+      </header>
+      <div className="h-1 w-full bg-gray-200/70"><div className="sf-progress-fill h-full bg-gradient-to-r from-blue-600 to-violet-500" style={{ width: `${progress}%` }} /></div>
+
+      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col px-5 py-8 sm:py-12" data-testid="register-page">
+        <div className="flex items-center justify-between gap-3 text-xs font-semibold text-gray-400">
+          <ol className="flex items-center gap-2" role="progressbar" aria-label="Inscription" aria-valuemin={1} aria-valuemax={3} aria-valuenow={step + 1} aria-valuetext={`Étape ${step + 1} sur 3 : ${SECTIONS[step].label}`} data-testid="register-progress">
+            {SECTIONS.map((section, i) => <li key={section.label} className={`flex items-center gap-2 ${i === step ? "text-blue-700" : i < step ? "text-gray-600" : ""}`}>
+              <span className={`grid h-5 w-5 place-items-center rounded-full text-[10px] ${i < step ? "bg-blue-600 text-white" : i === step ? "bg-blue-100 text-blue-700 ring-2 ring-blue-600/30" : "bg-gray-100"}`}>{i < step ? <Check size={11} strokeWidth={3} /> : i + 1}</span>
+              <span className={i === step ? "" : "hidden sm:inline"}>{section.label}</span>
+              {i < 2 && <span className="h-px w-4 bg-gray-200 sm:w-6" />}
+            </li>)}
+          </ol>
+          {screen !== "recap" && <span className="flex items-center gap-1 whitespace-nowrap"><Timer size={13} />{remaining <= 3 ? "Presque fini" : `≈ ${Math.max(1, Math.round(remaining * 6 / 60))} min`}</span>}
+        </div>
+
+        <form onSubmit={event => { event.preventDefault(); next(); }} noValidate className="mt-8 flex flex-1 flex-col" data-testid="register-form">
+          <div key={screen} className="sf-screen" data-dir={direction > 0 ? "forward" : "back"}>
+            {question && <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600"><question.icon size={14} />{question.eyebrow}<span className="text-gray-400">· {questionNumber}/{QUESTION_COUNT}</span></p>}
+
+            {screen === "account" && <>
+              <h1 ref={heading} tabIndex={-1} className="font-display text-3xl font-bold tracking-tight outline-none sm:text-4xl">Créez votre compte</h1>
+              <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-600">
+                <li className="flex items-center gap-1.5"><Check size={15} className="text-emerald-600" />3 missions offertes</li>
+                <li className="flex items-center gap-1.5"><CreditCard size={15} className="text-emerald-600" />Sans carte bancaire</li>
+                <li className="flex items-center gap-1.5"><Timer size={15} className="text-emerald-600" />Prêt en 1 minute</li>
+              </ul>
+              <div className="mt-7"><GoogleAuthButton onCredential={googleSelected} /></div>
+              <div className="my-6 flex items-center gap-4 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />ou avec votre email<span className="h-px flex-1 bg-gray-200" /></div>
+              <div className="space-y-5">
+                <label className="block text-sm font-medium text-gray-700">Email professionnel
+                  <input type="email" name="email" autoComplete="username" required maxLength={254} autoFocus value={form.email}
+                    onChange={e => { setForm({ ...form, email: e.target.value }); setGoogleCredential(""); setError(""); }}
+                    placeholder="vous@entreprise.fr" className="sf-input mt-2" data-testid="register-email-input" /></label>
+                {suggestion && <button type="button" onClick={() => setForm({ ...form, email: suggestion })} className="sf-pop -mt-3 text-left text-sm text-amber-700" data-testid="register-email-suggestion">Vouliez-vous dire <span className="font-semibold underline">{suggestion}</span> ?</button>}
+                <label className="block text-sm font-medium text-gray-700">Mot de passe
+                  <span className="relative mt-2 block"><input type={showPassword ? "text" : "password"} name="password" autoComplete="new-password" required minLength={8} maxLength={128} value={form.password}
+                    onChange={e => { setForm({ ...form, password: e.target.value }); setError(""); }} aria-describedby="password-help" className="sf-input pr-12" data-testid="register-password-input" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"} className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-gray-500">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
+                <div id="password-help" aria-live="polite">
+                  <div className="flex gap-1.5" aria-hidden="true">{[0, 1, 2, 3].map(i => <span key={i} className={`h-1 flex-1 rounded-full transition-colors duration-300 ${i < score ? ["bg-rose-400", "bg-amber-400", "bg-emerald-500", "bg-emerald-600"][score - 1] : "bg-gray-200"}`} />)}</div>
+                  <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                    {[["length", "8 caractères minimum"], ["letter", "Une lettre"], ["digit", "Un chiffre"]].map(([key, label]) => <li key={key} className={`flex items-center gap-1 transition-colors ${checks[key] ? "text-emerald-700" : touched && form.password ? "text-rose-600" : "text-gray-500"}`}><Check size={12} strokeWidth={3} className={checks[key] ? "" : "opacity-30"} />{label}</li>)}
+                  </ul>
+                </div>
+              </div>
+            </>}
+
+            {screen === "agency" && <>
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600"><Building2 size={14} />Votre espace</p>
+              <h1 ref={heading} tabIndex={-1} className="mt-3 font-display text-3xl font-bold tracking-tight outline-none sm:text-4xl">Comment s’appelle votre organisation ?</h1>
+              <p className="mt-3 text-sm text-gray-500">{googleCredential ? <span className="mr-1 font-medium text-emerald-700">Compte Google sélectionné.</span> : null}Votre espace de travail sera créé à ce nom. Vous pourrez le modifier ensuite.</p>
+              <input name="agency_name" autoComplete="organization" value={form.agency_name} onChange={event => { setForm({ ...form, agency_name: event.target.value }); setError(""); }}
+                placeholder="Ex. AXE Events" required maxLength={120} className="sf-input mt-7 h-14 text-lg" data-testid="register-agency-input" />
+            </>}
+
+            {question && <>
+              <h1 ref={heading} tabIndex={-1} className="mt-3 font-display text-2xl font-bold leading-tight tracking-tight outline-none sm:text-3xl">{question.label}</h1>
+              {question.hint && <p className="mt-2 text-sm text-gray-500">{question.hint}</p>}
+              <fieldset className="mt-6">
+                <legend className="sr-only">{question.label}</legend>
+                <div className={`grid gap-2.5 ${question.options.length >= 5 && question.options.every(o => o.icon) ? "sm:grid-cols-2" : ""}`}>
+                  {question.options.map((option, i) => {
+                    const selected = question.multi ? (answers[question.key] || []).includes(option.value) : answers[question.key] === option.value;
+                    const Icon = option.icon;
+                    return <button key={option.value} type="button" aria-pressed={selected} onClick={() => choose(question, option.value)}
+                      className={`sf-option group ${selected ? "sf-option-on" : ""}`} style={{ animationDelay: `${i * 35}ms` }} data-testid="register-option">
+                      <kbd className="sf-key">{LETTERS[i]}</kbd>
+                      {Icon && <Icon size={18} className={selected ? "text-blue-600" : "text-gray-400 group-hover:text-blue-500"} />}
+                      <span className="flex-1">{option.value}</span>
+                      <span className={`sf-check ${selected ? "sf-check-on" : ""}`}><Check size={12} strokeWidth={3} /></span>
+                    </button>;
+                  })}
+                </div>
+              </fieldset>
+            </>}
+
+            {screen === "volume" && <>
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600"><BarChart3 size={14} />Votre volume</p>
+              <h1 ref={heading} tabIndex={-1} className="mt-3 font-display text-2xl font-bold leading-tight tracking-tight outline-none sm:text-3xl">Quelle est la taille de votre activité ?</h1>
+              <p className="mt-2 text-sm text-gray-500">Approximatif, c’est parfait. On calcule le temps que vous pourriez récupérer.</p>
+              <div className="mt-8 space-y-8">
+                <Slider id="annual_events" label="Événements par an" value={answers.annual_events} max={300} unit="événements / an" onChange={value => setAnswers(a => ({ ...a, annual_events: value }))} />
+                <Slider id="people_per_mission" label="Personnes mobilisées par mission" value={answers.people_per_mission} max={150} unit="personnes / mission" onChange={value => setAnswers(a => ({ ...a, people_per_mission: value }))} />
+              </div>
+              <div className="mt-8 flex items-center justify-between gap-4 rounded-2xl bg-gradient-to-br from-blue-600 to-violet-600 p-5 text-white shadow-lg shadow-blue-600/20 lg:hidden" aria-live="polite">
+                <p className="text-sm text-blue-100">Temps récupérable estimé</p>
+                <p className="font-display text-3xl font-bold tabular-nums">{fmt(savings.hours)} h<span className="text-base font-medium text-blue-100">/an</span></p>
+              </div>
+            </>}
+
+            {screen === "context" && <>
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600"><PenLine size={14} />Dernière question · facultative</p>
+              <h1 ref={heading} tabIndex={-1} className="mt-3 font-display text-2xl font-bold leading-tight tracking-tight outline-none sm:text-3xl">Racontez une situation récente où la coordination a été compliquée</h1>
+              <p className="mt-2 text-sm text-gray-500">Deux lignes suffisent. Ça nous aide à rendre ShiftFlow vraiment utile pour vous.</p>
+              <textarea name="context" maxLength={1500} value={answers.context || ""} onChange={e => setAnswers(a => ({ ...a, context: e.target.value }))}
+                placeholder="Que s’est-il passé ? Comment avez-vous géré la situation ?" className="sf-input mt-6 min-h-36 py-3" />
+              <p className="mt-1 text-right text-xs text-gray-400">{(answers.context || "").length}/1500</p>
+            </>}
+
+            {screen === "recap" && <>
+              <h1 ref={heading} tabIndex={-1} className="mb-6 text-center font-display text-3xl font-bold tracking-tight outline-none sm:text-4xl">Votre bilan avant de commencer</h1>
+              <SignupCelebration savings={savings} />
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <RecapCard label="Votre priorité" value={answers.priority} />
+                <RecapCard label="Objectif souhaité" value={answers.goal} />
+                <RecapCard label="Difficulté principale" value={answers.biggest_problem} />
+                <RecapCard label="Aujourd’hui" value={(answers.channels || []).join(", ")} />
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+                <span className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-bold text-white">{form.agency_name.trim().slice(0, 1).toUpperCase()}</span>
+                  <span className="min-w-0"><span className="block text-xs text-gray-500">Espace de travail</span><span className="block truncate font-semibold" data-testid="register-recap-agency">{form.agency_name.trim()}</span></span></span>
+                <button type="button" onClick={() => goTo(SCREENS.indexOf("agency"))} className="flex items-center gap-1 text-sm font-medium text-blue-700"><Pencil size={14} />Modifier</button>
+              </div>
+            </>}
+          </div>
+
+          {error && <p className="sf-shake mt-5 text-sm text-red-600" role="alert">{error}</p>}
+
+          <div className="mt-auto pt-8">
+            <div className="flex items-center gap-3">
+              {index > 0 && <button type="button" disabled={loading} onClick={() => { if (index === 1) setGoogleCredential(""); goTo(index - 1); }} aria-label="Retour" className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900"><ArrowLeft size={18} /></button>}
+              <button type="submit" disabled={loading} className={`sf-cta ${canContinue ? "" : "opacity-60"}`} data-testid={screen === "recap" ? "register-submit-btn" : "register-next-btn"}>
+                {loading ? <><span className="sf-spinner" />Création de votre espace…</> : screen === "recap" ? <>Créer mon espace<ArrowRight size={17} /></> : screen === "context" && !answers.context?.trim() ? <>Passer et voir mon bilan<ArrowRight size={17} /></> : <>Continuer<ArrowRight size={17} /></>}
+              </button>
+            </div>
+            {question && <p className="mt-3 hidden items-center justify-center gap-1.5 text-xs text-gray-400 sm:flex">Astuce : tapez <kbd className="sf-key">A</kbd>, <kbd className="sf-key">B</kbd>… pour répondre{question.multi ? <>, puis <kbd className="sf-key"><CornerDownLeft size={10} /></kbd></> : ""}</p>}
+            {screen === "recap" && <p className="mt-3 text-center text-xs leading-relaxed text-gray-500">En cliquant sur « Créer mon espace », vous acceptez les <Link to="/conditions" target="_blank" className="underline">Conditions générales</Link> et reconnaissez avoir pris connaissance de la <Link to="/confidentialite" target="_blank" className="underline">Politique de confidentialité</Link>.</p>}
+            {screen === "account" && <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-gray-500"><ShieldCheck size={14} className="mt-0.5 shrink-0" />Votre email et vos réponses peuvent être conservés 7 jours pour reprendre l’inscription. Le mot de passe et la connexion Google restent uniquement en mémoire pendant ce parcours.</p>}
+          </div>
         </form>
-      </section>
-      {step !== 2 && <p className="mt-5 text-center text-xs leading-relaxed text-gray-500">Votre email et vos réponses peuvent être conservés 7 jours pour reprendre l’inscription. Le mot de passe et la connexion Google restent uniquement en mémoire pendant ce parcours.</p>}
-    </main>
-  </div>;
-}
-function Slider({ id, label, value, max, unit, onChange }) {
-  return <div>
-    <label htmlFor={id} className="block text-sm font-medium leading-relaxed text-gray-700">{label}</label>
-    <p className="mt-3 text-blue-700"><output htmlFor={id} className="font-display text-3xl font-bold">{value}</output><span className="ml-2 text-xs text-gray-500">{unit}</span></p>
-    <input id={id} name={id} type="range" min={1} max={max} step={1} value={value} onChange={e => onChange(Number(e.target.value))} aria-valuetext={`${value} ${unit}`} className="mt-4 h-6 w-full cursor-pointer accent-blue-600" />
-    <div className="mt-1 flex justify-between text-xs text-gray-400"><span>1</span><span>{max}</span></div>
+      </main>
+    </div>
+    <div className="hidden lg:block"><RegisterPreview agency={form.agency_name.trim()} answers={answers} savings={savings} screen={screen} /></div>
   </div>;
 }
 
-const questions = [
- {key: "role", label: "Quel est votre rôle ?", options: ["Dirigeant / fondateur", "Responsable des opérations", "Chef de projet / coordinateur", "Autre rôle"]},
- {key: "channels", label: "Comment contactez-vous vos équipes aujourd’hui ? Plusieurs réponses possibles.", multi: true, options: ["WhatsApp", "Appels téléphoniques", "SMS", "Email", "Logiciel dédié", "Autre"]},
- {key: "planning", label: "Où centralisez-vous votre planning ?", options: ["Excel / Google Sheets", "Papier", "Dans les conversations", "Logiciel de planning", "Aucun planning centralisé"]},
- {key: "biggest_problem", label: "Quel est votre plus gros problème de coordination ?", options: ["Obtenir les disponibilités et confirmations", "Remplacer les absents au dernier moment", "Éviter les oublis et erreurs de planning", "Relancer sans cesse les équipes", "Suivre les heures effectuées", "Tout fonctionne bien pour le moment", "Autre problème"]},
- {key: "frequency", label: "À quelle fréquence rencontrez-vous ce problème ?", options: ["À chaque mission", "Plusieurs fois par mois", "Quelques fois par an", "Rarement / jamais"]},
- {key: "impact", label: "Combien de temps consacrez-vous à la coordination chaque semaine ?", options: ["Moins de 2 heures", "2 à 5 heures", "5 à 10 heures", "Plus de 10 heures", "Je ne sais pas"]},
- {key: "priority", label: "Qu’aimeriez-vous améliorer en premier ?", options: ["Réduire les relances", "Sécuriser les effectifs", "Centraliser les informations", "Fiabiliser le suivi des heures"]},
- {key: "goal", label: "Quel résultat vous ferait dire que ShiftFlow vous est utile ?", options: ["Passer moins de temps à organiser", "Avoir une équipe confirmée plus tôt", "Gérer les imprévus plus sereinement", "Disposer d’un suivi fiable"]},
- {key: "timeline", label: "Quand souhaitez-vous faire évoluer votre organisation ?", options: ["Pour ma prochaine mission", "Dans le mois", "Dans les 3 prochains mois", "Je me renseigne seulement"]}
-];
+function RecapCard({ label, value }) {
+  if (!value) return null;
+  return <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3"><p className="text-xs font-medium text-blue-700/80">{label}</p><p className="mt-0.5 text-sm font-semibold text-gray-900">{value}</p></div>;
+}
+
+function Slider({ id, label, value, max, unit, onChange }) {
+  const fill = ((value - 1) / (max - 1)) * 100;
+  return <div>
+    <div className="flex items-end justify-between gap-4">
+      <label htmlFor={id} className="text-sm font-medium text-gray-700">{label}</label>
+      <p className="text-blue-700"><output htmlFor={id} className="font-display text-3xl font-bold tabular-nums">{value}</output><span className="ml-1.5 text-xs text-gray-500">{unit}</span></p>
+    </div>
+    <input id={id} name={id} type="range" min={1} max={max} step={1} value={value} onChange={e => onChange(Number(e.target.value))} aria-valuetext={`${value} ${unit}`} className="sf-range mt-4" style={{ "--fill": `${fill}%` }} />
+    <div className="mt-1 flex justify-between text-xs text-gray-400"><span>1</span><span>{max}</span></div>
+  </div>;
+}
