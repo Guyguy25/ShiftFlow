@@ -149,3 +149,11 @@ test("Google follows the activity and savings steps without requesting a passwor
   expect(refresh).toHaveBeenCalled();
   expect(mockNavigate).toHaveBeenCalledWith("/app/dashboard");
 });
+
+test("a previous attempt is never shown again", async () => {
+  localStorage.setItem("draft-test", JSON.stringify({ token: "b".repeat(64), form: { email: "old@example.com", agency_name: "Hello" }, answers: { role: "Responsable des opérations" }, updatedAt: Date.now() }));
+  await act(async () => root.render(<Register />));
+  expect($('[name="email"]').value).toBe("");
+  expect(host.textContent).not.toContain("Hello");
+  expect(localStorage.getItem("draft-test")).toBeNull();
+});

@@ -7,7 +7,7 @@ import GoogleAuthButton from "../components/GoogleAuthButton";
 import { useAuth } from "../context/AuthContext";
 import { API, api, markLoggedOut, formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
-import { DRAFT_KEY, readDraft, newDraftToken, draftSnapshot, sendDraft } from "../lib/registrationDraft";
+import { DRAFT_KEY, newDraftToken, draftSnapshot, sendDraft } from "../lib/registrationDraft";
 import SignupCelebration from "../components/SignupCelebration";
 import RegisterPreview from "../components/RegisterPreview";
 import { registrationSavings } from "../lib/registrationSavings";
@@ -31,13 +31,14 @@ export default function Register() {
 function OrganizationRegister() {
   const nav = useNavigate();
   const { register, refresh } = useAuth();
-  const [initial] = useState(readDraft);
-  const [token] = useState(() => initial?.token || newDraftToken());
-  // Les identifiants ne sont jamais restaurés : un rechargement revient au premier écran.
+  // Chaque visite repart de zéro : aucune réponse précédente n'est réaffichée.
+  // Le brouillon serveur sert uniquement à mesurer les abandons du parcours.
+  const [token] = useState(newDraftToken);
+  useEffect(() => { try { localStorage.removeItem(DRAFT_KEY); } catch {} }, []);
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [form, setForm] = useState({ email: initial?.form?.email || "", password: "", agency_name: initial?.form?.agency_name || "" });
-  const [answers, setAnswers] = useState({ annual_events: initial?.answers?.annual_events || 30, people_per_mission: initial?.answers?.people_per_mission || 15, ...initial?.answers });
+  const [form, setForm] = useState({ email: "", password: "", agency_name: "" });
+  const [answers, setAnswers] = useState({ annual_events: 30, people_per_mission: 15 });
   const [googleCredential, setGoogleCredential] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState(false);
@@ -65,7 +66,6 @@ function OrganizationRegister() {
   useEffect(() => {
     const snapshot = draftSnapshot(token, step, JSON.parse(safeFormKey), JSON.parse(answersKey));
     latest.current = snapshot;
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(snapshot)); } catch {}
     const stepChanged = previousStep.current !== step;
     previousStep.current = step;
     const timer = setTimeout(() => {
@@ -353,7 +353,7 @@ function OrganizationRegister() {
             </div>
             {question && <p className="mt-3 hidden items-center justify-center gap-1.5 text-xs text-gray-400 sm:flex">Astuce : tapez <kbd className="sf-key">A</kbd>, <kbd className="sf-key">B</kbd>… pour répondre{question.multi ? <>, puis <kbd className="sf-key"><CornerDownLeft size={10} /></kbd></> : ""}</p>}
             {screen === "recap" && <p className="mt-3 text-center text-xs leading-relaxed text-gray-500">En cliquant sur « Créer mon espace », vous acceptez les <Link to="/conditions" target="_blank" className="underline">Conditions générales</Link> et reconnaissez avoir pris connaissance de la <Link to="/confidentialite" target="_blank" className="underline">Politique de confidentialité</Link>.</p>}
-            {screen === "account" && <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-gray-500"><ShieldCheck size={14} className="mt-0.5 shrink-0" />Votre email et vos réponses peuvent être conservés 7 jours pour reprendre l’inscription. Le mot de passe et la connexion Google restent uniquement en mémoire pendant ce parcours.</p>}
+            {screen === "account" && <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-gray-500"><ShieldCheck size={14} className="mt-0.5 shrink-0" />Si vous n’allez pas au bout, votre email et vos réponses peuvent être conservés 7 jours. Le mot de passe et la connexion Google restent uniquement en mémoire pendant ce parcours.</p>}
           </div>
         </form>
       </main>
