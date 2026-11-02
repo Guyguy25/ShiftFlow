@@ -1,57 +1,57 @@
 import React from "react";
-import { Check, Clock, Link2, Sparkles, Users, Zap } from "lucide-react";
+import { Check, User, AlertTriangle, MessageCircle, BarChart3, Target } from "lucide-react";
 
 const fmt = value => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value);
-const initials = name => (name || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "SF";
-const OLD_CHANNELS = ["WhatsApp", "Appels téléphoniques", "SMS", "Email"];
+const initials = name => (name || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+const slug = name => (name || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-// Aperçu « live » de l'espace de travail, construit au fil des réponses
-// (pattern Linear / Attio / Notion). Purement décoratif : aria-hidden.
-export default function RegisterPreview({ agency, answers, savings, screen }) {
-  const people = Math.max(1, Math.min(150, answers.people_per_mission || 15));
-  const dots = Math.min(people, 30);
-  const confirmed = Math.round(dots * 0.7);
-  const channels = (answers.channels || []).filter(c => OLD_CHANNELS.includes(c));
+// Aperçu épuré de l'espace qui se remplit au fil des réponses.
+// L'estimation n'apparaît qu'une fois le volume renseigné. Décoratif : aria-hidden.
+export default function RegisterPreview({ agency, answers, savings, volumeSeen }) {
+  const rows = [
+    { key: "role", icon: User, label: "Rôle", value: answers.role },
+    { key: "biggest_problem", icon: AlertTriangle, label: "Défi principal", value: answers.biggest_problem },
+    { key: "channels", icon: MessageCircle, label: "Canaux actuels", value: (answers.channels || []).join(", ") },
+    { key: "volume", icon: BarChart3, label: "Volume", value: volumeSeen ? `${fmt(savings.annualEvents)} événements / an · ${fmt(savings.peoplePerMission)} pers.` : "" },
+    { key: "priority", icon: Target, label: "Priorité", value: answers.priority },
+  ];
+  const filled = rows.filter(r => r.value).length + (agency ? 1 : 0);
   return <div className="sf-preview" aria-hidden="true" data-testid="register-preview">
-    <div className="sf-preview-glow" />
-    <p className="relative text-xs font-semibold uppercase tracking-[.18em] text-blue-200/80">Aperçu de votre espace</p>
-    <div className="sf-preview-window">
-      <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
-        <span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-        <span className="ml-3 truncate text-[11px] text-white/40">app.shiftflow.io/{(agency || "votre-agence").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "votre-agence"}</span>
-      </div>
-      <div className="flex">
-        <aside className="hidden w-36 shrink-0 border-r border-white/10 p-3 xl:block">
-          <div className="flex items-center gap-2">
-            <span key={initials(agency)} className="sf-pop grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 text-[11px] font-bold text-white">{initials(agency)}</span>
-            <span className={`truncate text-xs font-semibold ${agency ? "text-white" : "text-white/40"}`}>{agency || "Votre agence"}</span>
+    <div className="w-full max-w-sm">
+      <p className="text-center text-xs font-medium text-gray-400">Votre espace se prépare</p>
+
+      <div className="sf-preview-card mt-4">
+        <div className="flex items-center gap-3 border-b border-gray-100 p-5">
+          {agency
+            ? <span key={initials(agency)} className="sf-pop grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-bold text-white">{initials(agency)}</span>
+            : <span className="h-11 w-11 shrink-0 rounded-xl border-2 border-dashed border-gray-200" />}
+          <div className="min-w-0 flex-1">
+            {agency ? <p className="truncate font-display text-lg font-bold text-gray-900">{agency}</p> : <span className="sf-skeleton block h-4 w-32" />}
+            {agency ? <p className="mt-0.5 truncate text-xs text-gray-400">app.shiftflow.io/{slug(agency)}</p> : <span className="sf-skeleton mt-2 block h-3 w-44" />}
           </div>
-          {["Tableau de bord", "Missions", "Équipe", "Historique"].map((item, i) => <p key={item} className={`mt-2 rounded-md px-2 py-1.5 text-[11px] ${i === 1 ? "bg-white/10 text-white" : "text-white/40"}`}>{item}</p>)}
-        </aside>
-        <div className="min-w-0 flex-1 space-y-3 p-4">
-          <div className="rounded-xl bg-white p-4 text-gray-900 shadow-lg">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><p className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">Prochaine mission</p><p className="mt-1 truncate font-display text-base font-bold">Montage stand · Lille Grand Palais</p></div>
-              <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">{confirmed}/{dots}{people > dots ? "+" : ""}</span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-1.5">{Array.from({ length: dots }, (_, i) => <span key={i} className={`sf-dot ${i < confirmed ? "bg-emerald-500" : "bg-amber-300"}`} style={{ animationDelay: `${i * 18}ms` }} />)}</div>
-            <p className="mt-3 flex items-center gap-1.5 text-[11px] text-gray-500"><Users size={12} />{fmt(people)} personnes · relances automatiques en cascade</p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-white/70"><Link2 size={12} />Un seul lien de confirmation</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {channels.length ? channels.map(c => <span key={c} className="sf-pop rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/50 line-through decoration-rose-400/80">{c}</span>) : <span className="text-[11px] text-white/35">Fini les messages éparpillés</span>}
-              {channels.length > 0 && <span className="sf-pop rounded-full bg-blue-500 px-2 py-0.5 text-[11px] font-semibold text-white"><Check size={10} className="mr-1 inline" />ShiftFlow</span>}
-            </div>
-          </div>
-          {answers.priority && <div key={answers.priority} className="sf-pop flex items-center gap-2 rounded-xl border border-violet-300/20 bg-violet-400/10 p-3 text-[11px] text-violet-100"><Sparkles size={13} />Focus : {answers.priority}</div>}
         </div>
+
+        <ul className="divide-y divide-gray-50 px-5 py-2">
+          {rows.map(({ key, icon: Icon, label, value }) => <li key={key} className="flex items-start gap-3 py-3">
+            <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full transition-colors duration-300 ${value ? "bg-blue-50 text-blue-600" : "bg-gray-50 text-gray-300"}`}>{value ? <Check size={13} strokeWidth={3} /> : <Icon size={13} />}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400">{label}</p>
+              {value ? <p key={value} className="sf-fade mt-0.5 text-sm font-medium leading-snug text-gray-800">{value}</p> : <span className="sf-skeleton mt-1.5 block h-3 w-3/5" />}
+            </div>
+          </li>)}
+        </ul>
+
+        {volumeSeen && <div className="sf-fade border-t border-gray-100 p-5">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-gray-400">Temps récupérable estimé</p>
+          <p className="mt-1 font-display text-3xl font-bold tabular-nums text-gray-900">{fmt(savings.hours)} h<span className="text-base font-medium text-gray-400"> / an</span></p>
+          <p className="mt-1 text-xs text-gray-500">Soit environ {fmt(savings.value)} € de temps valorisé, d’après votre volume.</p>
+        </div>}
+      </div>
+
+      <div className="mt-5 flex items-center justify-center gap-2 text-xs text-gray-400">
+        <span className="h-1 w-24 overflow-hidden rounded-full bg-gray-200"><span className="block h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${(filled / (rows.length + 1)) * 100}%` }} /></span>
+        {filled}/{rows.length + 1}
       </div>
     </div>
-    <div className="relative mt-6 grid grid-cols-2 gap-3">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="flex items-center gap-1.5 text-[11px] text-white/50"><Clock size={12} />Temps libéré</p><p className="mt-1 font-display text-3xl font-bold tabular-nums text-white">{fmt(savings.hours)}<span className="text-lg text-white/60"> h/an</span></p></div>
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><p className="flex items-center gap-1.5 text-[11px] text-white/50"><Zap size={12} />Temps valorisé</p><p className="mt-1 font-display text-3xl font-bold tabular-nums text-white">{fmt(savings.value)}<span className="text-lg text-white/60"> €</span></p></div>
-    </div>
-    <p className="relative mt-3 text-[11px] text-white/35">{screen === "volume" ? "Bougez les curseurs : l’estimation se met à jour en direct." : "Estimation indicative, affinée par vos réponses."}</p>
   </div>;
 }

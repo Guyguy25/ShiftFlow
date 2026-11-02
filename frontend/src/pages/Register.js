@@ -53,6 +53,8 @@ function OrganizationRegister() {
   indexRef.current = index;
 
   const screen = SCREENS[index];
+  const [volumeSeen, setVolumeSeen] = useState(false);
+  useEffect(() => { if (index >= SCREENS.indexOf("volume")) setVolumeSeen(true); }, [index]);
   const step = stepOf(screen);
   const question = byKey[screen];
   const savings = registrationSavings(answers.annual_events, answers.people_per_mission);
@@ -356,7 +358,7 @@ function OrganizationRegister() {
         </form>
       </main>
     </div>
-    <div className="hidden lg:block"><RegisterPreview agency={form.agency_name.trim()} answers={answers} savings={savings} screen={screen} /></div>
+    <div className="hidden lg:block"><RegisterPreview agency={form.agency_name.trim()} answers={answers} savings={savings} volumeSeen={volumeSeen} /></div>
   </div>;
 }
 
