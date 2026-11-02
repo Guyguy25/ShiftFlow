@@ -705,6 +705,16 @@ class RegistrationFields(BaseModel):
 
 
 class RegistrationAnswers(BaseModel):
+    role: str = Field(default="", max_length=1500)
+    planning: str = Field(default="", max_length=1500)
+    biggest_problem: str = Field(default="", max_length=1500)
+    frequency: str = Field(default="", max_length=1500)
+    impact: str = Field(default="", max_length=1500)
+    priority: str = Field(default="", max_length=1500)
+    goal: str = Field(default="", max_length=1500)
+    timeline: str = Field(default="", max_length=1500)
+    context: str = Field(default="", max_length=1500)
+    channels: List[str] = Field(default_factory=list, max_length=6)
     annual_events: int = Field(default=30, ge=1, le=300)
     people_per_mission: int = Field(default=15, ge=1, le=150)
     team_size: str = Field(default="", max_length=80)

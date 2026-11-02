@@ -37,6 +37,9 @@ async function next() {
   await act(async () => host.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
 }
 
+async function qualify() {
+  await act(async () => { host.querySelectorAll("fieldset").forEach(field => field.querySelector("button").click()); });
+}
 test("email flow has exactly two credentials, two sliders, and creates the account only at the end", async () => {
   await act(async () => root.render(<Register />));
   expect([...host.querySelectorAll("input")].map(x => x.name)).toEqual(["email", "password"]);
@@ -47,6 +50,9 @@ test("email flow has exactly two credentials, two sliders, and creates the accou
   await input('#annual_events', "40", "change");
   await input('#people_per_mission', "15", "change");
   await next();
+  expect(host.querySelector('[role="alert"]').textContent).toContain("Répondez");
+  await qualify();
+  await next();
   expect(register).not.toHaveBeenCalled();
   expect(host.querySelectorAll("input")).toHaveLength(1);
   await input('[name="agency_name"]', "Camille Events");
@@ -54,7 +60,7 @@ test("email flow has exactly two credentials, two sliders, and creates the accou
   expect(host.textContent).toMatch(/2[\s\u202f]*800\s*€/);
   expect(host.textContent).toContain("Estimation indicative");
   await next();
-  expect(register).toHaveBeenCalledWith(expect.objectContaining({ email: "camille@example.com", password: "Secret123", agency_name: "Camille Events", onboarding_answers: { annual_events: 40, people_per_mission: 15 }, legal_acceptance: expect.objectContaining({ scope: "account" }) }));
+  expect(register).toHaveBeenCalledWith(expect.objectContaining({ email: "camille@example.com", password: "Secret123", agency_name: "Camille Events", onboarding_answers: expect.objectContaining({ annual_events: 40, people_per_mission: 15, channels: ["WhatsApp"] }), legal_acceptance: expect.objectContaining({ scope: "account" }) }));
   expect(mockNavigate).toHaveBeenCalledWith("/app/dashboard");
 });
 
@@ -71,11 +77,12 @@ test("Google follows the activity and savings steps without requesting a passwor
   await act(async () => [...host.querySelectorAll("button")].find(x => x.textContent === "Continuer avec Google").click());
   expect(host.textContent).toContain("Compte Google sélectionné");
   expect(api.post).not.toHaveBeenCalled();
+  await qualify();
   await next();
   await input('[name="agency_name"]', "Google Events");
   await next();
   expect(register).not.toHaveBeenCalled();
-  expect(api.post).toHaveBeenCalledWith("/auth/google", expect.objectContaining({ credential: "google-test-credential", registration: expect.objectContaining({ onboarding_answers: { annual_events: 30, people_per_mission: 15 } }) }));
+  expect(api.post).toHaveBeenCalledWith("/auth/google", expect.objectContaining({ credential: "google-test-credential", registration: expect.objectContaining({ onboarding_answers: expect.objectContaining({ annual_events: 30, people_per_mission: 15, channels: ["WhatsApp"] }) }) }));
   expect(refresh).toHaveBeenCalled();
   expect(mockNavigate).toHaveBeenCalledWith("/app/dashboard");
 });

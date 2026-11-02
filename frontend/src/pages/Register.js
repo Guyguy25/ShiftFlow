@@ -11,7 +11,7 @@ import { DRAFT_KEY, readDraft, newDraftToken, draftSnapshot, sendDraft } from ".
 import SignupCelebration from "../components/SignupCelebration";
 import { registrationSavings } from "../lib/registrationSavings";
 
-const titles = ["Créez votre compte", "Parlons de vos événements", "Bienvenue chez ShiftFlow !"];
+const titles = ["Créez votre compte", "Parlons de vos événements", "Votre bilan avant de commencer"];
 
 export default function Register() {
   const [invitation] = useState(pendingInvitation);
@@ -25,7 +25,7 @@ function OrganizationRegister() {
   // Credentials are never restored from storage; a reload returns to step one.
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({ email: initial?.form?.email || "", password: "", agency_name: "" });
-  const [answers, setAnswers] = useState({ annual_events: initial?.answers?.annual_events || 30, people_per_mission: initial?.answers?.people_per_mission || 15 });
+  const [answers, setAnswers] = useState({ annual_events: initial?.answers?.annual_events || 30, people_per_mission: initial?.answers?.people_per_mission || 15, ...initial?.answers });
   const [googleCredential, setGoogleCredential] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -97,6 +97,7 @@ function OrganizationRegister() {
   async function submit(event) {
     event.preventDefault(); setError("");
     if (!validateCredentials()) { setStep(0); return; }
+    if (step === 1 && questions.some(q => !answers[q.key]?.length)) { setError("Répondez à chaque question pour préparer votre bilan."); return; }
     if (step < 2) { setStep(step + 1); return; }
     if (!form.agency_name.trim()) { setError("Indiquez le nom de votre organisation."); return; }
     if (loading) return;
@@ -149,11 +150,14 @@ function OrganizationRegister() {
             <p id="password-help" className="text-xs text-gray-500">8 caractères minimum, avec une lettre et un chiffre.</p>
           </div>}
           {step === 1 && <div className="space-y-9 py-3">
+            <p className="text-sm text-gray-500">Prenons 3 à 5 minutes pour comprendre votre fonctionnement. Vos réponses nous aident à identifier vos besoins et à améliorer ShiftFlow.</p>
+            {questions.map(q => <fieldset key={q.key}><legend className="text-sm font-semibold text-gray-800">{q.label}</legend><div className="mt-3 grid gap-2">{q.options.map(option => <button key={option} type="button" aria-pressed={q.multi ? (answers[q.key] || []).includes(option) : answers[q.key] === option} onClick={() => setAnswers(a => ({ ...a, [q.key]: q.multi ? ((a[q.key] || []).includes(option) ? a[q.key].filter(x => x !== option) : [...(a[q.key] || []), option]) : option }))} className={`rounded-lg border px-4 py-3 text-left text-sm ${ (q.multi ? (answers[q.key] || []).includes(option) : answers[q.key] === option) ? "border-blue-600 bg-blue-50 text-blue-800" : "border-gray-200 hover:border-blue-300"}`}>{option}</button>)}</div></fieldset>)}
+            <label className="block text-sm font-semibold">Racontez une situation récente où la coordination a été compliquée (facultatif)<textarea maxLength={1500} value={answers.context || ""} onChange={e => setAnswers({ ...answers, context: e.target.value })} placeholder="Que s’est-il passé ? Comment avez-vous géré la situation ?" className="mt-3 min-h-28 w-full rounded-lg border p-3 font-normal" /></label>
             {googleCredential && <p className="text-sm text-emerald-700">Compte Google sélectionné</p>}
             <Slider id="annual_events" label="Combien d’événements organisez-vous en moyenne par an ?" value={answers.annual_events} max={300} unit="événements / an" onChange={value => setAnswers({ ...answers, annual_events: value })} />
             <Slider id="people_per_mission" label="Combien de personnes mobilisez-vous en moyenne par mission ?" value={answers.people_per_mission} max={150} unit="personnes / mission" onChange={value => setAnswers({ ...answers, people_per_mission: value })} />
           </div>}
-          {step === 2 && <><SignupCelebration savings={savings} /><label className="mt-6 block text-sm font-semibold text-gray-800">Nom de votre organisation<input name="agency_name" autoComplete="organization" value={form.agency_name} onChange={event => setForm({ ...form, agency_name: event.target.value })} placeholder="Ex. AXE Events" required maxLength={120} className="mt-2 h-12 w-full rounded-xl border border-gray-300 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"/><span className="mt-2 block text-xs font-normal text-gray-500">Votre espace de travail sera créé à ce nom. Vous pourrez le modifier dans les paramètres.</span></label></>}
+          {step === 2 && <><div className="mb-6 rounded-xl bg-blue-50 p-4 text-sm leading-relaxed"><p className="font-semibold">Votre priorité : {answers.priority}</p><p className="mt-2">Aujourd’hui : {(answers.channels || []).join(", ")}. Difficulté principale : {answers.biggest_problem}.</p><p className="mt-2">Objectif souhaité : {answers.goal}. Ce bilan reprend vos réponses ; l’estimation ci-dessous reste indicative.</p></div><SignupCelebration savings={savings} /><label className="mt-6 block text-sm font-semibold text-gray-800">Nom de votre organisation<input name="agency_name" autoComplete="organization" value={form.agency_name} onChange={event => setForm({ ...form, agency_name: event.target.value })} placeholder="Ex. AXE Events" required maxLength={120} className="mt-2 h-12 w-full rounded-xl border border-gray-300 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"/><span className="mt-2 block text-xs font-normal text-gray-500">Votre espace de travail sera créé à ce nom. Vous pourrez le modifier dans les paramètres.</span></label></>}
           {error && <p className="mt-5 text-sm text-red-600" role="alert">{error}</p>}
           <button type="submit" disabled={loading} className="mt-7 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50" data-testid={step === 2 ? "register-submit-btn" : "register-next-btn"}>{loading ? "Création du compte…" : step === 2 ? "Commencer" : "Continuer"}<ArrowRight size={17} /></button>
           {step === 2 && <p className="mt-3 text-center text-xs leading-relaxed text-gray-500">En cliquant sur « Commencer », vous acceptez les <Link to="/conditions" target="_blank" className="underline">Conditions générales</Link> et reconnaissez avoir pris connaissance de la <Link to="/confidentialite" target="_blank" className="underline">Politique de confidentialité</Link>.</p>}
@@ -172,3 +176,15 @@ function Slider({ id, label, value, max, unit, onChange }) {
     <div className="mt-1 flex justify-between text-xs text-gray-400"><span>1</span><span>{max}</span></div>
   </div>;
 }
+
+const questions = [
+ {key: "role", label: "Quel est votre rôle ?", options: ["Dirigeant / fondateur", "Responsable des opérations", "Chef de projet / coordinateur", "Autre rôle"]},
+ {key: "channels", label: "Comment contactez-vous vos équipes aujourd’hui ? Plusieurs réponses possibles.", multi: true, options: ["WhatsApp", "Appels téléphoniques", "SMS", "Email", "Logiciel dédié", "Autre"]},
+ {key: "planning", label: "Où centralisez-vous votre planning ?", options: ["Excel / Google Sheets", "Papier", "Dans les conversations", "Logiciel de planning", "Aucun planning centralisé"]},
+ {key: "biggest_problem", label: "Quel est votre plus gros problème de coordination ?", options: ["Obtenir les disponibilités et confirmations", "Remplacer les absents au dernier moment", "Éviter les oublis et erreurs de planning", "Relancer sans cesse les équipes", "Suivre les heures effectuées", "Tout fonctionne bien pour le moment", "Autre problème"]},
+ {key: "frequency", label: "À quelle fréquence rencontrez-vous ce problème ?", options: ["À chaque mission", "Plusieurs fois par mois", "Quelques fois par an", "Rarement / jamais"]},
+ {key: "impact", label: "Combien de temps consacrez-vous à la coordination chaque semaine ?", options: ["Moins de 2 heures", "2 à 5 heures", "5 à 10 heures", "Plus de 10 heures", "Je ne sais pas"]},
+ {key: "priority", label: "Qu’aimeriez-vous améliorer en premier ?", options: ["Réduire les relances", "Sécuriser les effectifs", "Centraliser les informations", "Fiabiliser le suivi des heures"]},
+ {key: "goal", label: "Quel résultat vous ferait dire que ShiftFlow vous est utile ?", options: ["Passer moins de temps à organiser", "Avoir une équipe confirmée plus tôt", "Gérer les imprévus plus sereinement", "Disposer d’un suivi fiable"]},
+ {key: "timeline", label: "Quand souhaitez-vous faire évoluer votre organisation ?", options: ["Pour ma prochaine mission", "Dans le mois", "Dans les 3 prochains mois", "Je me renseigne seulement"]}
+];
