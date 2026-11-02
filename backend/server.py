@@ -706,12 +706,12 @@ class RegistrationFields(BaseModel):
 
 class RegistrationAnswers(BaseModel):
     role: str = Field(default="", max_length=1500)
-    planning: str = Field(default="", max_length=1500)
-    biggest_problem: str = Field(default="", max_length=1500)
+    planning: List[str] = Field(default_factory=list, max_length=8)
+    biggest_problem: List[str] = Field(default_factory=list, max_length=8)
     frequency: str = Field(default="", max_length=1500)
     impact: str = Field(default="", max_length=1500)
-    priority: str = Field(default="", max_length=1500)
-    goal: str = Field(default="", max_length=1500)
+    priority: List[str] = Field(default_factory=list, max_length=8)
+    goal: List[str] = Field(default_factory=list, max_length=8)
     timeline: str = Field(default="", max_length=1500)
     context: str = Field(default="", max_length=1500)
     channels: List[str] = Field(default_factory=list, max_length=6)
@@ -721,6 +721,13 @@ class RegistrationAnswers(BaseModel):
     monthly_missions: str = Field(default="", max_length=80)
     current_tool: str = Field(default="", max_length=80)
     main_pain: List[str] = Field(default_factory=list, max_length=7)
+
+    @field_validator("planning", "biggest_problem", "priority", "goal", mode="before")
+    @classmethod
+    def multi_choice(cls, value):
+        # Ces questions acceptent plusieurs réponses ; une réponse texte seule reste valide.
+        items = value if isinstance(value, list) else [value] if value else []
+        return [str(item)[:200] for item in items if item]
 
     @field_validator("main_pain")
     @classmethod

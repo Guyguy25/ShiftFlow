@@ -118,7 +118,7 @@ test("single-choice answers auto-advance and keyboard shortcuts select options",
   await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "b", bubbles: true })));
   expect([...host.querySelectorAll('[aria-pressed="true"]')].map(x => x.textContent)).toEqual([expect.stringContaining("Responsable des opérations")]);
   await act(async () => new Promise(resolve => setTimeout(resolve, AUTO_ADVANCE_MS + 50)));
-  expect(heading()).toContain("plus gros problème");
+  expect(heading()).toContain("principaux problèmes");
 });
 
 test("suggests a fix for a mistyped email domain", async () => {
@@ -156,4 +156,36 @@ test("a previous attempt is never shown again", async () => {
   expect($('[name="email"]').value).toBe("");
   expect(host.textContent).not.toContain("Hello");
   expect(localStorage.getItem("draft-test")).toBeNull();
+});
+
+test("several needs can be selected, and an exclusive answer clears the others", async () => {
+  await act(async () => root.render(<Register />));
+  await input('[name="email"]', "camille@example.com");
+  await input('[name="password"]', "Secret123");
+  await next();
+  await input('[name="agency_name"]', "Camille Events");
+  await next();
+  await click($('[data-testid="register-option"]'));
+  await next();
+  expect(heading()).toContain("problèmes");
+  const option = text => [...host.querySelectorAll('[data-testid="register-option"]')].find(x => x.textContent.includes(text));
+  await click(option("Remplacer les absents"));
+  await click(option("Relancer sans cesse"));
+  expect(heading()).toContain("problèmes");
+  expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(2);
+  await click(option("Tout fonctionne bien"));
+  expect([...host.querySelectorAll('[aria-pressed="true"]')].map(x => x.textContent)).toEqual([expect.stringContaining("Tout fonctionne bien")]);
+  await click(option("Remplacer les absents"));
+  await click(option("Suivre les heures"));
+  expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(2);
+  await next();
+  await answerQuestions();
+  await next();
+  await answerQuestions();
+  await next();
+  await next();
+  expect(register).toHaveBeenCalledWith(expect.objectContaining({ onboarding_answers: expect.objectContaining({
+    biggest_problem: ["Remplacer les absents au dernier moment", "Suivre les heures effectuées"],
+    planning: ["Excel / Google Sheets"], priority: ["Réduire les relances"], goal: ["Passer moins de temps à organiser"], role: "Dirigeant / fondateur",
+  }) }));
 });

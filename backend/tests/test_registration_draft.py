@@ -63,3 +63,11 @@ class DraftTest(IsolatedAsyncioTestCase):
         for overrides in ({"token": "guess"}, {"step": 7}, {"fields": {"name": "x" * 255}}, {"answers": {"main_pain": ["x" * 121]}}):
             with self.assertRaises(ValidationError):
                 self.payload(**overrides)
+
+
+class MultiChoiceAnswersTest(IsolatedAsyncioTestCase):
+    def test_multi_choice_answers_accept_lists_and_legacy_strings(self):
+        answers = namespace["RegistrationAnswers"](biggest_problem=["Relancer sans cesse les équipes", "Suivre les heures effectuées"], priority="Réduire les relances")
+        self.assertEqual(answers.biggest_problem, ["Relancer sans cesse les équipes", "Suivre les heures effectuées"])
+        self.assertEqual(answers.priority, ["Réduire les relances"])
+        self.assertEqual(answers.goal, [])

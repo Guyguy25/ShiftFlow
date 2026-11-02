@@ -11,7 +11,7 @@ import { DRAFT_KEY, newDraftToken, draftSnapshot, sendDraft } from "../lib/regis
 import SignupCelebration from "../components/SignupCelebration";
 import RegisterPreview from "../components/RegisterPreview";
 import { registrationSavings } from "../lib/registrationSavings";
-import { questions, SCREENS, isAnswered } from "../constants/registrationQuestions";
+import { questions, SCREENS, isAnswered, asList } from "../constants/registrationQuestions";
 import { suggestEmail, passwordChecks, passwordScore } from "../lib/emailSuggestion";
 import "./Register.css";
 
@@ -141,9 +141,12 @@ function OrganizationRegister() {
     clearTimeout(advanceTimer.current);
     setError("");
     if (q.multi) {
+      // Une option « exclusive » (ex. « Tout fonctionne bien ») désélectionne les autres, et inversement.
+      const exclusive = new Set(q.options.filter(o => o.exclusive).map(o => o.value));
       setAnswers(a => {
-        const list = a[q.key] || [];
-        return { ...a, [q.key]: list.includes(value) ? list.filter(x => x !== value) : [...list, value] };
+        const list = asList(a[q.key]);
+        if (list.includes(value)) return { ...a, [q.key]: list.filter(x => x !== value) };
+        return { ...a, [q.key]: exclusive.has(value) ? [value] : [...list.filter(x => !exclusive.has(x)), value] };
       });
       return;
     }
@@ -288,7 +291,7 @@ function OrganizationRegister() {
                 <legend className="sr-only">{question.label}</legend>
                 <div className={`grid gap-2.5 ${question.options.length >= 5 && question.options.every(o => o.icon) ? "sm:grid-cols-2" : ""}`}>
                   {question.options.map((option, i) => {
-                    const selected = question.multi ? (answers[question.key] || []).includes(option.value) : answers[question.key] === option.value;
+                    const selected = question.multi ? asList(answers[question.key]).includes(option.value) : answers[question.key] === option.value;
                     const Icon = option.icon;
                     return <button key={option.value} type="button" aria-pressed={selected} onClick={() => choose(question, option.value)}
                       className={`sf-option group ${selected ? "sf-option-on" : ""}`} style={{ animationDelay: `${i * 35}ms` }} data-testid="register-option">
@@ -329,10 +332,10 @@ function OrganizationRegister() {
               <h1 ref={heading} tabIndex={-1} className="mb-6 text-center font-display text-3xl font-bold tracking-tight outline-none sm:text-4xl">Votre bilan avant de commencer</h1>
               <SignupCelebration savings={savings} />
               <div className="grid gap-2.5 sm:grid-cols-2">
-                <RecapCard label="Votre priorité" value={answers.priority} />
-                <RecapCard label="Objectif souhaité" value={answers.goal} />
-                <RecapCard label="Difficulté principale" value={answers.biggest_problem} />
-                <RecapCard label="Aujourd’hui" value={(answers.channels || []).join(", ")} />
+                <RecapCard label={["Votre priorité", "Vos priorités"]} value={answers.priority} />
+                <RecapCard label={["Objectif souhaité", "Objectifs souhaités"]} value={answers.goal} />
+                <RecapCard label={["Difficulté principale", "Difficultés principales"]} value={answers.biggest_problem} />
+                <RecapCard label={["Aujourd’hui", "Aujourd’hui"]} value={answers.channels} />
               </div>
               <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
                 <span className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 text-sm font-bold text-white">{form.agency_name.trim().slice(0, 1).toUpperCase()}</span>
@@ -363,8 +366,13 @@ function OrganizationRegister() {
 }
 
 function RecapCard({ label, value }) {
-  if (!value) return null;
-  return <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3"><p className="text-xs font-medium text-blue-700/80">{label}</p><p className="mt-0.5 text-sm font-semibold text-gray-900">{value}</p></div>;
+  const items = asList(value);
+  if (!items.length) return null;
+  return <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+    <p className="text-xs font-medium text-blue-700/80">{label[items.length > 1 ? 1 : 0]}</p>
+    {items.length === 1 ? <p className="mt-0.5 text-sm font-semibold text-gray-900">{items[0]}</p>
+      : <ul className="mt-1.5 flex flex-wrap gap-1.5">{items.map(item => <li key={item} className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold text-gray-800 ring-1 ring-blue-100">{item}</li>)}</ul>}
+  </div>;
 }
 
 function Slider({ id, label, value, max, unit, onChange }) {

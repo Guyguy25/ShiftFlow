@@ -13,11 +13,11 @@ export const questions = [
     { value: "Chef de projet / coordinateur", icon: ClipboardList },
     { value: "Autre rôle", icon: User },
   ] },
-  { key: "biggest_problem", icon: AlertTriangle, eyebrow: "Votre quotidien", label: "Quel est votre plus gros problème de coordination ?", options: [
+  { key: "biggest_problem", icon: AlertTriangle, eyebrow: "Votre quotidien", multi: true, label: "Quels sont vos principaux problèmes de coordination ?", hint: "Plusieurs réponses possibles.", options: [
     "Obtenir les disponibilités et confirmations", "Remplacer les absents au dernier moment", "Éviter les oublis et erreurs de planning",
-    "Relancer sans cesse les équipes", "Suivre les heures effectuées", "Tout fonctionne bien pour le moment", "Autre problème",
+    "Relancer sans cesse les équipes", "Suivre les heures effectuées", { value: "Tout fonctionne bien pour le moment", exclusive: true }, "Autre problème",
   ] },
-  { key: "frequency", icon: Repeat, eyebrow: "Votre quotidien", label: "À quelle fréquence rencontrez-vous ce problème ?", options: [
+  { key: "frequency", icon: Repeat, eyebrow: "Votre quotidien", label: "À quelle fréquence rencontrez-vous ces difficultés ?", options: [
     "À chaque mission", "Plusieurs fois par mois", "Quelques fois par an", "Rarement / jamais",
   ] },
   { key: "impact", icon: Clock, eyebrow: "Votre quotidien", label: "Combien de temps consacrez-vous à la coordination chaque semaine ?", options: [
@@ -27,14 +27,14 @@ export const questions = [
     { value: "WhatsApp", icon: MessageCircle }, { value: "Appels téléphoniques", icon: Phone }, { value: "SMS", icon: MessageSquare },
     { value: "Email", icon: Mail }, { value: "Logiciel dédié", icon: Monitor }, { value: "Autre", icon: MoreHorizontal },
   ] },
-  { key: "planning", icon: CalendarDays, eyebrow: "Vos outils", label: "Où centralisez-vous votre planning ?", options: [
+  { key: "planning", icon: CalendarDays, eyebrow: "Vos outils", multi: true, label: "Où gérez-vous votre planning ?", hint: "Plusieurs réponses possibles.", options: [
     { value: "Excel / Google Sheets", icon: Sheet }, { value: "Papier", icon: FileText }, { value: "Dans les conversations", icon: MessagesSquare },
-    { value: "Logiciel de planning", icon: CalendarDays }, { value: "Aucun planning centralisé", icon: CircleSlash },
+    { value: "Logiciel de planning", icon: CalendarDays }, { value: "Aucun planning centralisé", icon: CircleSlash, exclusive: true },
   ] },
-  { key: "priority", icon: Target, eyebrow: "Vos objectifs", label: "Qu’aimeriez-vous améliorer en premier ?", options: [
+  { key: "priority", icon: Target, eyebrow: "Vos objectifs", multi: true, label: "Qu’aimeriez-vous améliorer ?", hint: "Plusieurs réponses possibles.", options: [
     "Réduire les relances", "Sécuriser les effectifs", "Centraliser les informations", "Fiabiliser le suivi des heures",
   ] },
-  { key: "goal", icon: Flag, eyebrow: "Vos objectifs", label: "Quel résultat vous ferait dire que ShiftFlow vous est utile ?", options: [
+  { key: "goal", icon: Flag, eyebrow: "Vos objectifs", multi: true, label: "Quels résultats vous feraient dire que ShiftFlow vous est utile ?", hint: "Plusieurs réponses possibles.", options: [
     "Passer moins de temps à organiser", "Avoir une équipe confirmée plus tôt", "Gérer les imprévus plus sereinement", "Disposer d’un suivi fiable",
   ] },
   { key: "timeline", icon: Rocket, eyebrow: "Vos objectifs", label: "Quand souhaitez-vous faire évoluer votre organisation ?", options: [
@@ -48,6 +48,10 @@ export const SCREENS = [
   "account", "agency", "role", "biggest_problem", "frequency", "impact",
   "channels", "planning", "volume", "priority", "goal", "timeline", "context", "recap",
 ];
+
+// Questions à choix multiples : leurs réponses sont des listes.
+export const MULTI_KEYS = questions.filter(q => q.multi).map(q => q.key);
+export const asList = value => (Array.isArray(value) ? value : value ? [value] : []);
 
 export const isAnswered = (key, answers) => {
   const value = answers[key];
