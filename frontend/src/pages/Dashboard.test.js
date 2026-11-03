@@ -36,3 +36,22 @@ test("dashboard shows useful sections and does not mark distant missions urgent"
   expect(host.querySelector('[data-testid="kpi-pending"]')).toBeNull();
   expect(host.querySelector('a[href="/app/organisations/org-demo/missions/m"]')).toBeTruthy();
 });
+
+test("a mission happening today is shown first and flagged as urgent", async () => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayMission = { id: "t", name: "Montage salon", first_date: today, last_date: today, status: "in_progress", location: "Lille", total_needed: 4, total_confirmed: 1, shifts: [{ date: today, start_time: "07:30", end_time: "17:00", people_needed: 4, confirmed_count: 1 }] };
+  api.get.mockImplementation(url => Promise.resolve({ data:
+    url === "/dashboard/summary" ? { upcoming: [mission], ongoing: [todayMission], past: [] } :
+    url === "/whatsapp/status" ? { connected: true } :
+    url === "/notifications/recent" ? [{ id: "a", kind: "invite", status: "sent", mission_id: "t", sent_at: new Date().toISOString() }] : {}
+  }));
+  await act(async () => root.render(<Dashboard />));
+  const focus = host.querySelector('[data-testid="dashboard-next-mission"]').textContent;
+  expect(focus).toContain("Montage salon");
+  expect(focus).toContain("07:30");
+  expect(host.querySelector('[data-testid="dashboard-actions"]').textContent).toContain("Montage salon");
+  expect(host.querySelector('[data-testid="dashboard-headline"]').textContent).toContain("1 mission à compléter en urgence");
+  expect(host.querySelector('[data-testid="dashboard-activity"]').textContent).toContain("Invitation · Montage salon");
+  expect(host.querySelector('[data-testid="dashboard-planning"]').textContent).toContain("Montage salon");
+});
