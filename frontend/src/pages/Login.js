@@ -1,18 +1,43 @@
 import GoogleAuthButton from "../components/GoogleAuthButton";
-import React, { useState } from "react";
+import MicrosoftAuthButton, { readMicrosoftReturn, clearMicrosoftReturn } from "../components/MicrosoftAuthButton";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Zap, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { formatApiError } from "../lib/api";
+import { api, formatApiError, markLoggedOut } from "../lib/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
+  const [microsoftReturn] = useState(readMicrosoftReturn);
+  const [error, setError] = useState(microsoftReturn.error || "");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [microsoftBusy, setMicrosoftBusy] = useState(Boolean(microsoftReturn.credential));
+  const { login, refresh } = useAuth();
   const navigate = useNavigate();
+
+  // Retour de Microsoft : connexion, ou suite vers l'inscription si aucun compte n'existe.
+  useEffect(() => {
+    clearMicrosoftReturn();
+    const credential = microsoftReturn.credential;
+    if (!credential) return;
+    let live = true;
+    (async () => {
+      try {
+        markLoggedOut(false);
+        await api.post("/auth/microsoft", { credential });
+        await refresh();
+        if (live) navigate(sessionStorage.getItem("shiftflow_pending_invitation") ? "/invite" : "/app/dashboard");
+      } catch (err) {
+        if (!live) return;
+        if (err.response?.status === 404) { navigate({ pathname: "/register", hash: `microsoft=${encodeURIComponent(credential)}` }, { replace: true }); return; }
+        setError(formatApiError(err.response?.data?.detail) || "La connexion Microsoft a échoué.");
+        setMicrosoftBusy(false);
+      }
+    })();
+    return () => { live = false; };
+  }, [microsoftReturn, navigate, refresh]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -41,6 +66,8 @@ export default function Login() {
           <h1 className="text-2xl font-display font-bold">Connexion</h1>
           <p className="text-sm text-gray-500 mt-1">Accédez à votre tableau de bord.</p>
           <GoogleAuthButton />
+          <MicrosoftAuthButton mode="login" />
+          {microsoftBusy && <p className="mt-3 text-center text-sm text-gray-500" role="status">Connexion Microsoft…</p>}
           <form onSubmit={submit} className="mt-6 space-y-4" autoComplete="on">
             <div>
               <label htmlFor="login-email" className="text-sm font-medium text-gray-700">Email</label>

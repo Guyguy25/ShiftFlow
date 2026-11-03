@@ -16,7 +16,7 @@ from typing import List, Optional, Literal
 import bcrypt
 import jwt
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Form, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from profile_data import validate_avatar
@@ -57,6 +57,11 @@ DEFAULT_CC = os.environ.get("DEFAULT_COUNTRY_CODE", "+33").strip()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 # Public OAuth client identifier; deployments may override or disable it via the environment.
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "864934647730-ao3eo3ebu3fe894a8qitikh2aher5mgs.apps.googleusercontent.com").strip()
+MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "167ea0f8-6c48-471c-85e1-05c4e8041343").strip()
+# Secret jamais stocké dans le code : variable d'environnement uniquement.
+MICROSOFT_CLIENT_SECRET = os.environ.get("MICROSOFT_CLIENT_SECRET", "").strip()
+# « common » = comptes pro/scolaires de toute organisation + comptes Microsoft personnels.
+MICROSOFT_TENANT = os.environ.get("MICROSOFT_TENANT", "common").strip() or "common"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -846,6 +851,137 @@ async def google_auth(payload: GoogleAuthIn, request: Request, response: Respons
                 "legal_acceptance": {"version": payload.legal_version, "accepted_at": iso(now_utc()), "scope": "account"},
             }})
             return result
+    await record_visit(db.users, user["id"], now_utc())
+    user = await ensure_trial_model(user)
+    access = create_access_token(user["id"], user["email"])
+    set_auth_cookies(response, access, create_refresh_token(user["id"]))
+    return {"user": await public_account(user), "access_token": access}
+
+
+# ---------------- Microsoft ----------------
+def microsoft_redirect_uri():
+    return os.environ.get("MICROSOFT_REDIRECT_URI", "").strip() or f"{FRONTEND_URL}/api/auth/microsoft/callback"
+
+
+def microsoft_enabled():
+    return bool(MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET and (FRONTEND_URL or os.environ.get("MICROSOFT_REDIRECT_URI")))
+
+
+def microsoft_back(mode, **fragment):
+    from urllib.parse import urlencode
+    page = "/register" if mode in ("register", "invite") else "/login"
+    return RedirectResponse(f"{FRONTEND_URL}{page}#{urlencode(fragment)}", status_code=303)
+
+
+class MicrosoftAuthIn(BaseModel):
+    credential: str = Field(min_length=1, max_length=4000)
+    registration: Optional[dict] = None
+    legal_version: Optional[str] = None
+
+
+@api.get("/auth/microsoft/config")
+async def microsoft_config(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return {"enabled": microsoft_enabled()}
+
+
+@api.get("/auth/microsoft/start")
+async def microsoft_start(mode: Literal["login", "register", "invite"] = "login"):
+    from microsoft_auth import authorize_url, pkce_pair
+    if not microsoft_enabled():
+        return microsoft_back(mode, microsoft_error="La connexion Microsoft n'est pas encore configurée.")
+    state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    verifier, challenge = pkce_pair()
+    proof = jwt.encode({"type": "microsoft_oauth", "state": state, "nonce": nonce, "verifier": verifier, "mode": mode,
+                        "exp": now_utc() + timedelta(minutes=10)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    response = RedirectResponse(authorize_url(MICROSOFT_TENANT, MICROSOFT_CLIENT_ID, microsoft_redirect_uri(), state, nonce, challenge), status_code=303)
+    # Lax : le cookie revient sur la redirection GET de Microsoft, jamais sur une requête intersite.
+    response.set_cookie("microsoft_oauth", proof, httponly=True, secure=True, samesite="lax", max_age=600, path="/api/auth/microsoft")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@api.get("/auth/microsoft/callback")
+async def microsoft_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    from microsoft_auth import exchange_code, verify_id_token, identity_from_claims
+    try:
+        proof = jwt.decode(request.cookies.get("microsoft_oauth", ""), JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if proof.get("type") != "microsoft_oauth":
+            raise ValueError("Invalid proof")
+    except Exception:
+        return microsoft_back("login", microsoft_error="Session Microsoft expirée. Réessayez.")
+    mode = proof.get("mode", "login")
+
+    def fail(message):
+        response = microsoft_back(mode, microsoft_error=message)
+        response.delete_cookie("microsoft_oauth", path="/api/auth/microsoft", secure=True, httponly=True, samesite="lax")
+        return response
+
+    if error:
+        return fail("Connexion Microsoft annulée." if error == "access_denied" else "Microsoft a refusé la connexion. Réessayez.")
+    if not code or not secrets.compare_digest(state, proof.get("state", "")):
+        return fail("Connexion Microsoft invalide. Réessayez.")
+    try:
+        token = await exchange_code(MICROSOFT_TENANT, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, microsoft_redirect_uri(), code, proof["verifier"])
+        identity = identity_from_claims(await verify_id_token(token, MICROSOFT_CLIENT_ID, proof["nonce"]))
+    except Exception:
+        logger.exception("Microsoft sign-in failed")
+        return fail("Connexion Microsoft impossible. Réessayez ou utilisez votre email.")
+    if not identity["email"]:
+        return fail("Ce compte Microsoft ne communique pas d'adresse email. Utilisez votre email et un mot de passe.")
+    # Jeton court, à usage unique, consommé par POST /auth/microsoft (comme le credential Google).
+    credential = jwt.encode({"type": "microsoft_identity", "jti": secrets.token_urlsafe(24), **identity,
+                             "exp": now_utc() + timedelta(minutes=15)}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    response = microsoft_back(mode, microsoft=credential)
+    response.delete_cookie("microsoft_oauth", path="/api/auth/microsoft", secure=True, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@api.post("/auth/microsoft")
+async def microsoft_auth(payload: MicrosoftAuthIn, request: Request, response: Response):
+    from pymongo.errors import DuplicateKeyError
+    try:
+        identity = jwt.decode(payload.credential, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if identity.get("type") != "microsoft_identity" or not identity.get("sub") or not identity.get("email"):
+            raise ValueError("Invalid identity")
+    except Exception:
+        raise HTTPException(401, "Connexion Microsoft invalide ou expirée. Réessayez.")
+    email = identity["email"].strip().lower()
+    user = await db.users.find_one({"microsoft_sub": identity["sub"]})
+    if not user and not identity.get("email_verified"):
+        raise HTTPException(403, "Microsoft n'a pas pu confirmer cette adresse email. Utilisez votre email et un mot de passe.")
+    if not user:
+        user = await db.users.find_one({"email": email})
+        if user:
+            if user.get("microsoft_sub"):
+                raise HTTPException(409, "Ce compte utilise déjà un autre mode de connexion. Connectez-vous avec votre mot de passe.")
+            linked = await db.users.update_one({"id": user["id"], "microsoft_sub": {"$exists": False}}, {"$set": {"microsoft_sub": identity["sub"]}})
+            if not linked.matched_count:
+                raise HTTPException(409, "Ce compte a changé. Rechargez la page pour réessayer.")
+        elif not payload.registration or payload.legal_version not in ("2026-10-23", "2026-10-24"):
+            raise HTTPException(404, "Aucun compte ShiftFlow n'est associé à ce compte Microsoft. Créez votre compte pour continuer.")
+    # Un jeton ne sert qu'une fois (vérifié après les contrôles pour permettre de compléter l'inscription).
+    try:
+        await db.microsoft_auth_nonces.insert_one({"_id": identity["jti"], "expires_at": datetime.fromtimestamp(identity["exp"], timezone.utc)})
+    except DuplicateKeyError:
+        raise HTTPException(401, "Connexion Microsoft déjà utilisée. Réessayez.")
+    if not user:
+        from pydantic import ValidationError
+        try:
+            registration = RegisterIn(**{**payload.registration, "name": payload.registration.get("name") or identity.get("name", ""), "email": email, "password": secrets.token_urlsafe(40) + "A1"})
+        except ValidationError:
+            raise HTTPException(400, "Vérifiez les informations de votre inscription.")
+        try:
+            result = await register(registration, request, response)
+        except DuplicateKeyError:
+            raise HTTPException(409, "Un compte existe déjà. Revenez à la page de connexion.")
+        await db.users.update_one({"id": result["user"]["id"]}, {"$set": {
+            "microsoft_sub": identity["sub"], "signup_method": "microsoft",
+            "legal_acceptance": {"version": payload.legal_version, "accepted_at": iso(now_utc()), "scope": "account"},
+        }})
+        return result
     await record_visit(db.users, user["id"], now_utc())
     user = await ensure_trial_model(user)
     access = create_access_token(user["id"], user["email"])
@@ -1993,6 +2129,8 @@ async def seed_admin_and_demo():
 async def on_startup():
     await db.google_auth_nonces.create_index("expires_at", expireAfterSeconds=0)
     await db.users.create_index("google_sub", unique=True, sparse=True)
+    await db.microsoft_auth_nonces.create_index("expires_at", expireAfterSeconds=0)
+    await db.users.create_index("microsoft_sub", unique=True, sparse=True)
     await db.registration_drafts.create_index("expires_at", expireAfterSeconds=0)
     await db.registration_limits.create_index("expires_at", expireAfterSeconds=0)
     await db.users.create_index("email", unique=True)

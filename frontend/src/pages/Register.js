@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Zap, ArrowRight, ArrowLeft, Eye, EyeOff, Check, Building2, BarChart3, PenLine, ShieldCheck, CreditCard, Timer, CornerDownLeft, Pencil } from "lucide-react";
 import GoogleAuthButton from "../components/GoogleAuthButton";
+import MicrosoftAuthButton, { readMicrosoftReturn, clearMicrosoftReturn } from "../components/MicrosoftAuthButton";
 import { useAuth } from "../context/AuthContext";
 import { API, api, markLoggedOut, formatApiError } from "../lib/api";
 import { LEGAL_VERSION } from "../constants/legal";
@@ -39,10 +40,13 @@ function OrganizationRegister() {
   const [direction, setDirection] = useState(1);
   const [form, setForm] = useState({ email: "", password: "", agency_name: "" });
   const [answers, setAnswers] = useState({ annual_events: 30, people_per_mission: 15 });
-  const [googleCredential, setGoogleCredential] = useState("");
+  // Retour de Microsoft : jeton d'identité (comme le credential Google) ou message d'erreur.
+  const [microsoftReturn] = useState(readMicrosoftReturn);
+  const [googleCredential, setGoogleCredential] = useState(microsoftReturn.credential || "");
+  const [provider, setProvider] = useState(microsoftReturn.credential ? "microsoft" : "google");
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(microsoftReturn.error || "");
   const [loading, setLoading] = useState(false);
   const finished = useRef(false);
   const heading = useRef(null);
@@ -119,7 +123,12 @@ function OrganizationRegister() {
     }
     return true;
   }
+  useEffect(() => {
+    clearMicrosoftReturn();
+    if (microsoftReturn.credential) goTo(SCREENS.indexOf("agency"));
+  }, [microsoftReturn, goTo]);
   function googleSelected(credential) {
+    setProvider("google");
     setGoogleCredential(credential);
     setForm(previous => ({ ...previous, password: "" }));
     goTo(resumeIndex());
@@ -169,7 +178,7 @@ function OrganizationRegister() {
     try {
       if (googleCredential) {
         markLoggedOut(false);
-        const { data } = await api.post("/auth/google", { credential: googleCredential, registration: payload, legal_version: LEGAL_VERSION });
+        const { data } = await api.post(`/auth/${provider}`, { credential: googleCredential, registration: payload, legal_version: LEGAL_VERSION });
         try { localStorage.setItem(`shiftflow-welcome-${data.user.id}`, "pending"); } catch {}
         await refresh();
       } else {
@@ -255,7 +264,7 @@ function OrganizationRegister() {
                 <li className="flex items-center gap-1.5"><CreditCard size={15} className="text-emerald-600" />Sans carte bancaire</li>
                 <li className="flex items-center gap-1.5"><Timer size={15} className="text-emerald-600" />Prêt en 1 minute</li>
               </ul>
-              <div className="mt-7"><GoogleAuthButton onCredential={googleSelected} /></div>
+              <div className="mt-7"><GoogleAuthButton onCredential={googleSelected} /><MicrosoftAuthButton mode="register" /></div>
               <div className="my-6 flex items-center gap-4 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />ou avec votre email<span className="h-px flex-1 bg-gray-200" /></div>
               <div className="space-y-5">
                 <label className="block text-sm font-medium text-gray-700">Email professionnel
@@ -279,7 +288,7 @@ function OrganizationRegister() {
             {screen === "agency" && <>
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600"><Building2 size={14} />Votre espace</p>
               <h1 ref={heading} tabIndex={-1} className="mt-3 font-display text-3xl font-bold tracking-tight outline-none sm:text-4xl">Comment s’appelle votre organisation ?</h1>
-              <p className="mt-3 text-sm text-gray-500">{googleCredential ? <span className="mr-1 font-medium text-emerald-700">Compte Google sélectionné.</span> : null}Votre espace de travail sera créé à ce nom. Vous pourrez le modifier ensuite.</p>
+              <p className="mt-3 text-sm text-gray-500">{googleCredential ? <span className="mr-1 font-medium text-emerald-700">Compte {provider === "microsoft" ? "Microsoft" : "Google"} sélectionné.</span> : null}Votre espace de travail sera créé à ce nom. Vous pourrez le modifier ensuite.</p>
               <input name="agency_name" autoComplete="organization" value={form.agency_name} onChange={event => { setForm({ ...form, agency_name: event.target.value }); setError(""); }}
                 placeholder="Ex. AXE Events" required maxLength={120} className="sf-input mt-7 h-14 text-lg" data-testid="register-agency-input" />
             </>}

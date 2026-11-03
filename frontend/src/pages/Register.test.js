@@ -189,3 +189,27 @@ test("several needs can be selected, and an exclusive answer clears the others",
     planning: ["Excel / Google Sheets"], priority: ["Réduire les relances"], goal: ["Passer moins de temps à organiser"], role: "Dirigeant / fondateur",
   }) }));
 });
+
+test("returning from Microsoft skips the password and signs up with the Microsoft identity", async () => {
+  window.history.replaceState(null, "", "/register#microsoft=ms-token");
+  await act(async () => root.render(<Register />));
+  expect(window.location.hash).toBe("");
+  expect(host.textContent).toContain("Compte Microsoft sélectionné");
+  await input('[name="agency_name"]', "Microsoft Events");
+  await next();
+  await answerQuestions();
+  await next();
+  await answerQuestions();
+  await next();
+  await next();
+  expect(register).not.toHaveBeenCalled();
+  expect(api.post).toHaveBeenCalledWith("/auth/microsoft", expect.objectContaining({ credential: "ms-token", registration: expect.objectContaining({ agency_name: "Microsoft Events" }) }));
+  expect(mockNavigate).toHaveBeenCalledWith("/app/dashboard");
+});
+
+test("a Microsoft error is shown on the account screen", async () => {
+  window.history.replaceState(null, "", "/register#microsoft_error=Connexion%20Microsoft%20annul%C3%A9e.");
+  await act(async () => root.render(<Register />));
+  expect(host.querySelector('[role="alert"]').textContent).toBe("Connexion Microsoft annulée.");
+  expect(host.querySelector('[name="email"]')).not.toBeNull();
+});
