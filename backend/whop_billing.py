@@ -171,7 +171,7 @@ async def fulfill_payment(db,payment_id,expected_org=None):
         if payment.get('status') not in ('paid','succeeded') or payment.get('refunded_amount',0) or payment.get('currency','').lower() != 'eur': return None
         # Initial price must exactly match the displayed offer. A known membership
         # may renew or change plan with a provider-calculated prorated amount.
-        if initial and amount != quoted_offer['amount']: return None
+        if initial and amount not in (0, quoted_offer['amount']): return None
         if not initial:
             allowed = offer['amount']
             if bound.get('subscription_tier') == 'team' and bound.get('billing_catalog_version') != 2:
@@ -180,14 +180,16 @@ async def fulfill_payment(db,payment_id,expected_org=None):
             if not 0 < amount <= allowed: return None
         if not membership_id or not re.fullmatch(r'mem_[A-Za-z0-9]+',membership_id): return None
         member=await api('GET','/memberships/'+membership_id)
-        if member.get('status') != 'active' or identifier(member.get('plan')) != plan_id or provider_company(member) != os.environ.get('WHOP_COMPANY_ID'): return None
+        if (member.get('status') not in (('active', 'trialing') if initial and amount == 0 else ('active',))
+                or identifier(member.get('plan')) != plan_id
+                or provider_company(member) != os.environ.get('WHOP_COMPANY_ID')): return None
         _, source=await billing_source(db,org_id)
         target_id=bound['id'] if bound else source['id']
         current=await accounts(db).collection(target_id).find_one({'id':target_id})
         if await db.whop_processed_payments.find_one({'_id':payment_id}):
             if record and current and current.get('whop_membership_id') == membership_id:
                 await db.whop_checkouts.update_one({'_id':ref},{'$set':{'fulfilled':True,'membership_id':membership_id,'payment_id':payment_id}})
-            await track_subscription(db,record,payment,membership_id,owner_id)
+            if amount > 0: await track_subscription(db,record,payment,membership_id,owner_id)
             return org_id
         if not current or current.get('whop_refunded_payment_id') == payment_id: return None
         if current.get('stripe_subscription_id') or (current.get('whop_membership_id') and current['whop_membership_id'] != membership_id):
@@ -200,14 +202,114 @@ async def fulfill_payment(db,payment_id,expected_org=None):
         await db.whop_processed_payments.update_one({'_id':payment_id},{'$setOnInsert':{'organization_id':org_id}},upsert=True)
         if record:
             await db.whop_checkouts.update_one({'_id':ref},{'$set':{'fulfilled':True,'membership_id':membership_id,'payment_id':payment_id}})
-        await track_subscription(db,record,payment,membership_id,owner_id)
+        if amount > 0: await track_subscription(db,record,payment,membership_id,owner_id)
         return org_id
     finally: await release(db,owner_id,lock)
+
+
+async def activate_quoted_membership(db, member):
+    """Restore an initial Whop membership confirmed as active, even with a €0 trial.
+
+    A membership alone is never enough: its company, plan and one-time checkout
+    configuration must match a checkout initiated by an authenticated owner.
+    Unrelated Whop members and unverified plan upgrades are not auto-linked.
+    """
+    membership_id = member.get('id')
+    session_id = member.get('checkout_configuration_id')
+    plan_id = identifier(member.get('plan'))
+    if (not isinstance(membership_id, str) or not re.fullmatch(r'mem_[A-Za-z0-9]+', membership_id)
+            or not isinstance(session_id, str) or not re.fullmatch(r'ch_[A-Za-z0-9]+', session_id)
+            or member.get('status') not in ('active', 'trialing')
+            or provider_company(member) != os.environ.get('WHOP_COMPANY_ID')):
+        return None
+    quote = await db.whop_checkouts.find_one({'session_id': session_id, 'plan_id': plan_id,
+                                              'fulfilled': {'$ne': True}})
+    offer = CATALOG.get((quote or {}).get('offer_key'))
+    if not quote or not offer or offer['plan_id'] != plan_id:
+        return None
+    if await accounts(db).find_one({'whop_membership_id': membership_id}):
+        return None
+    owner_id = await billing_owner_id(db, quote['organization_id'])
+    if quote.get('billing_owner_id') != owner_id:
+        return None
+    lock = await acquire(db, owner_id)
+    try:
+        if await accounts(db).find_one({'whop_membership_id': membership_id}):
+            return None
+        _, source = await billing_source(db, quote['organization_id'])
+        if not source:
+            return None
+        target_id = source['id']
+        current = await accounts(db).collection(target_id).find_one({'id': target_id}) or {}
+        # A separate active paid subscription cannot be overwritten by a free
+        # membership. Explicit support trials may migrate to Whop.
+        if (current.get('stripe_subscription_id') or current.get('whop_membership_id')
+                or (current.get('plan') == 'pro' and current.get('payment_provider') != 'manual')):
+            return None
+        await accounts(db).update_one({'id': target_id}, {'$set': {
+            'plan': 'pro', 'subscription_tier': offer['tier'],
+            'billing_catalog_version': 2, 'payment_provider': 'whop',
+            'subscription_status': member['status'],
+            'whop_membership_id': membership_id, 'whop_plan_id': plan_id}})
+        await db.whop_checkouts.update_one({'_id': quote['_id']},
+                                            {'$set': {'fulfilled': True, 'membership_id': membership_id,
+                                                      'fulfilled_via': 'verified_membership'}})
+        return quote['organization_id']
+    finally:
+        await release(db, owner_id, lock)
+
+
+async def reconcile_checkout_memberships(db, organization_id):
+    """Recover missed webhooks and €0 checkouts without relying on browser input.
+
+    Only searches if there is an unfulfilled, recent checkout from this owner.
+    Throttles provider calls across all owner workspaces; provider failure leaves
+    the existing entitlement unchanged.
+    """
+    if not ready():
+        return False
+    owner_id = await billing_owner_id(db, organization_id)
+    _, source = await billing_source(db, organization_id)
+    if source and source.get('plan') == 'pro' and source.get('payment_provider') != 'manual':
+        return False
+    pending = await db.whop_checkouts.find({
+        'billing_owner_id': owner_id, 'fulfilled': {'$ne': True},
+        'created_at': {'$gte': time.time() - 14 * 86400}
+    }, {'session_id': 1}).to_list(100)
+    session_ids = {item.get('session_id') for item in pending}
+    if not session_ids:
+        return False
+    try:
+        await db.whop_reconcile_checks.update_one({
+            '_id': owner_id,
+            '$or': [{'checked_at': {'$lt': time.time() - 90}},
+                    {'checked_at': {'$exists': False}}]
+        }, {'$set': {'checked_at': time.time()}}, upsert=True)
+    except DuplicateKeyError:
+        return False
+    after = None
+    for _ in range(3):
+        path = '/memberships?company_id=' + os.environ['WHOP_COMPANY_ID'] + '&first=100'
+        if after:
+            from urllib.parse import quote
+            path += '&after=' + quote(after, safe='')
+        page = await api('GET', path)
+        for member in page.get('data') or []:
+            if member.get('checkout_configuration_id') in session_ids:
+                if await sync_membership(db, member.get('id', '')):
+                    return True
+        info = page.get('page_info') or {}
+        if not info.get('has_next_page') or not info.get('end_cursor'):
+            break
+        after = info['end_cursor']
+    return False
 
 async def sync_membership(db,membership_id):
     if not re.fullmatch(r'mem_[A-Za-z0-9]+',membership_id): return
     current=await accounts(db).find_one({'whop_membership_id':membership_id})
-    if not current: return
+    if not current:
+        member=await api('GET','/memberships/'+membership_id)
+        return await activate_quoted_membership(db,member)
     lock_owner=await billing_owner_id(db,current['id'])
     lock=await acquire(db,lock_owner)
     try:
@@ -215,7 +317,7 @@ async def sync_membership(db,membership_id):
         if provider_company(member) != os.environ.get('WHOP_COMPANY_ID'): raise HTTPException(400,'Organisation Whop incorrecte.')
         plan_id=identifier(member.get('plan'))
         offer=next((v for v in CATALOG.values() if v['plan_id']==plan_id),None)
-        active=member.get('status')=='active' and bool(offer) and current.get('subscription_status') != 'refunded'
+        active=member.get('status') in ('active', 'trialing') and bool(offer) and current.get('subscription_status') != 'refunded'
         tier=current.get('subscription_tier','pro')
         changed_to_new_catalog = False
         if active and RANK[offer['tier']] < RANK.get(tier,0):
