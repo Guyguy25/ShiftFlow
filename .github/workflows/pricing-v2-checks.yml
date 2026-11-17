@@ -27,6 +27,7 @@ jobs:
         run: |
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_pricing_v2.py -v
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_billing.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_comp_trials.py -v
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_owner_subscription.py -v
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_organizations.py -v
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_mission_billing.py -v

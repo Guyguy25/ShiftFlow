@@ -302,6 +302,15 @@ async def get_current_user(request: Request) -> dict:
 
 
 async def public_account(user):
+    # Refresh the entitlement during login and /auth/me, so users do not need
+    # to visit Pricing first to see their newly activated complimentary Pro.
+    if user.get('plan') != 'pro':
+        try:
+            from whop_billing import reconcile_checkout_memberships
+            if await reconcile_checkout_memberships(db, user['id']):
+                user = await mission_billing.account(db, user['id'])
+        except Exception:
+            logger.warning('Whop trial reconciliation unavailable during auth', exc_info=True)
     return public_user(await organizations.decorate(db, user))
 
 
@@ -2230,6 +2239,14 @@ async def submit_onboarding(payload: OnboardingIn, user=Depends(get_current_user
 
 @api.get("/plan/quota")
 async def get_quota(user=Depends(get_workspace_user)):
+    # A €0 Whop trial can create an active membership without a payment event.
+    # Recover it against the original owner-bound checkout, with provider throttling.
+    if user.get('plan') != 'pro':
+        try:
+            from whop_billing import reconcile_checkout_memberships
+            await reconcile_checkout_memberships(db, user['id'])
+        except Exception:
+            logger.warning('Whop entitlement reconciliation unavailable', exc_info=True)
     plan = await _get_plan(user["id"])
     missions = await _active_missions_count(user["id"])
     missions_used = await _missions_created_count(user["id"])

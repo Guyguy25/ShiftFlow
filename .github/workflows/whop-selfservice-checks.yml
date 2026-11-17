@@ -6,6 +6,7 @@ on:
       - "backend/whop_routes.py"
       - "backend/server.py"
       - "backend/tests/test_whop_selfservice.py"
+      - "backend/tests/test_whop_comp_trials.py"
       - ".github/workflows/whop-selfservice-checks.yml"
 jobs:
   verify:
@@ -25,4 +26,5 @@ jobs:
         run: |
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_selfservice.py -v
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_billing.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_comp_trials.py -v
           PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_owner_subscription.py -v
