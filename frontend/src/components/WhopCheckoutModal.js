@@ -70,10 +70,11 @@ export default function WhopCheckoutModal({ checkout, onClose }) {
           onReady={() => { setFrameReady(true); setError(""); }}
           onError={() => { setFrameReady(true); setError("Le formulaire de paiement n’a pas pu se charger. Fermez cette fenêtre puis réessayez."); }}
           onComplete={result => {
-            // Free trials can complete with an active membership and no pay_ receipt.
-            // Never grant access here: the server still validates Whop's membership.
-            if (!result) return;
-            if (/^pay_[A-Za-z0-9]+$/.test(result.paymentId || "")) receipt.current = result.paymentId;
+            // Whop can complete a complimentary subscription without a pay_ receipt.
+            // Other callback result types (setup / waitlist) must not trigger verification.
+            if (result?.result !== "payment") return;
+            if (result.paymentId && !/^pay_[A-Za-z0-9]+$/.test(result.paymentId)) return;
+            receipt.current = result.paymentId || "";
             setStatus("confirming");
           }}/>
       </div>}
