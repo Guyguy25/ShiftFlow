@@ -302,6 +302,15 @@ async def get_current_user(request: Request) -> dict:
 
 
 async def public_account(user):
+    # Refresh the entitlement during login and /auth/me, so users do not need
+    # to visit Pricing first to see their newly activated complimentary Pro.
+    if user.get('plan') != 'pro':
+        try:
+            from whop_billing import reconcile_checkout_memberships
+            if await reconcile_checkout_memberships(db, user['id']):
+                user = await mission_billing.account(db, user['id'])
+        except Exception:
+            logger.warning('Whop trial reconciliation unavailable during auth', exc_info=True)
     return public_user(await organizations.decorate(db, user))
 
 
