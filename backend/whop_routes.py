@@ -32,7 +32,11 @@ async def checkout(payload:CheckoutIn,request:Request,user=Depends(s.get_workspa
 async def status(payload:StatusIn,user=Depends(s.get_workspace_owner)):
     record=await s.db.whop_checkouts.find_one({'_id':payload.reference,'organization_id':user['id']})
     if not record: raise HTTPException(404,'Paiement introuvable.')
-    if payload.payment_id: await billing.fulfill_payment(s.db,payload.payment_id,expected_org=user['id'])
+    if payload.payment_id:
+        result = await billing.fulfill_payment(s.db,payload.payment_id,expected_org=user['id'])
+        if not result: await billing.reconcile_checkout_memberships(s.db,user['id'])
+    else:
+        await billing.reconcile_checkout_memberships(s.db,user['id'])
     record=await s.db.whop_checkouts.find_one({'_id':payload.reference,'organization_id':user['id']})
     current=await accounts(s.db).find_one({'id':user['id']})
     active=current and current.get('plan')=='pro' and current.get('whop_membership_id')==record.get('membership_id')
@@ -40,6 +44,7 @@ async def status(payload:StatusIn,user=Depends(s.get_workspace_owner)):
 
 @router.get('/subscription')
 async def subscription(user=Depends(s.get_workspace_owner)):
+    await billing.reconcile_checkout_memberships(s.db,user['id'])
     return await billing.subscription(s.db, user)
 
 @router.post('/cancel')
@@ -61,7 +66,11 @@ async def webhook(request:Request):
     if await s.db.whop_events.find_one({'_id':event_id,'processed':True}): return {'ok':True}
     kind=event.get('type','');data=event.get('data') or {}
     if kind in ('payment.succeeded','payment.refunded','payment.failed'):
-        if kind=='payment.succeeded': await billing.fulfill_payment(s.db,data.get('id',''))
+        if kind=='payment.succeeded':
+            result=await billing.fulfill_payment(s.db,data.get('id',''))
+            if not result:
+                member=billing.identifier(data.get('membership'))
+                if member: await billing.sync_membership(s.db,member)
         elif kind=='payment.refunded': await billing.refund_payment(s.db,data.get('id',''))
         else:
             member=billing.identifier(data.get('membership'))
