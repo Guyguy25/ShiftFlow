@@ -1,8 +1,23 @@
 """Tenant data stays local; subscription entitlements follow the workspace owner."""
+from datetime import datetime, timezone
+
+def manual_entitlement_valid(account):
+    """A support-granted free Pro offer must expire without a cron job."""
+    if (account or {}).get('payment_provider') != 'manual':
+        return True
+    raw = account.get('support_pro_until')
+    if not isinstance(raw, str):
+        return False
+    try:
+        expiry = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        return expiry.tzinfo is not None and expiry.astimezone(timezone.utc) > datetime.now(timezone.utc)
+    except ValueError:
+        return False
+
 BILLING_FIELDS = ('plan', 'subscription_tier', 'subscription_status', 'payment_provider',
                   'whop_membership_id', 'whop_plan_id', 'whop_last_payment_id',
                   'whop_last_payment_at', 'whop_refunded_payment_id',
-                  'stripe_subscription_id', 'stripe_customer_id', 'billing_catalog_version')
+                  'stripe_subscription_id', 'stripe_customer_id', 'billing_catalog_version', 'support_pro_until')
 
 
 def collection(db, identifier):
@@ -28,7 +43,7 @@ async def billing_source(db, identifier):
     ids = [o['id'] for o in orgs if o['id'] != owner_id]
     candidates = ([personal] if personal else []) + await db.organization_accounts.find(
         {'$or': [{'owner_id': owner_id}, {'free_pool_id': owner_id}, {'id': {'$in': ids}}]}).sort('id', 1).to_list(None)
-    paid = [c for c in candidates if c.get('plan') == 'pro']
+    paid = [c for c in candidates if c.get('plan') == 'pro' and manual_entitlement_valid(c)]
     if paid:
         selected = dict(max(paid, key=lambda c: {'start':0,'pro':1,'team':1,'business':2}.get(c.get('subscription_tier','pro'),0)))
         # Preserve separately purchased legacy capacity until billing consolidation.
@@ -50,6 +65,8 @@ async def effective_account(db, raw):
     if not source: return raw
     result = {k: v for k, v in raw.items() if k not in BILLING_FIELDS}
     result.update({k: source[k] for k in BILLING_FIELDS if k in source})
+    if source.get('payment_provider') == 'manual' and not manual_entitlement_valid(source):
+        result.update(plan='free', subscription_status='expired')
     result.update(billing_owner_id=owner_id, billing_account_id=source['id'],
                   billing_collaborator_limit=source.get('_shared_capacity',0),
                   billing_legacy_multiple=source.get('_multiple_subscriptions',False))
