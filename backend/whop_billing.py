@@ -177,7 +177,7 @@ async def fulfill_payment(db,payment_id,expected_org=None):
             if bound.get('subscription_tier') == 'team' and bound.get('billing_catalog_version') != 2:
                 if plan_id == CATALOG['start_monthly']['plan_id']: allowed = 9900
                 if plan_id == CATALOG['start_yearly']['plan_id']: allowed = 83160
-            if not 0 < amount <= allowed: return None
+            if not 0 < amount <= allowed and not (amount == 0 and bound.get('whop_last_payment_id') == payment_id): return None
         if not membership_id or not re.fullmatch(r'mem_[A-Za-z0-9]+',membership_id): return None
         member=await api('GET','/memberships/'+membership_id)
         if (member.get('status') not in (('active', 'trialing') if initial and amount == 0 else ('active',))
