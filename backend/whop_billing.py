@@ -309,6 +309,7 @@ async def sync_membership(db,membership_id):
     current=await accounts(db).find_one({'whop_membership_id':membership_id})
     if not current:
         member=await api('GET','/memberships/'+membership_id)
+        if member.get('id') != membership_id: return None
         return await activate_quoted_membership(db,member)
     lock_owner=await billing_owner_id(db,current['id'])
     lock=await acquire(db,lock_owner)
