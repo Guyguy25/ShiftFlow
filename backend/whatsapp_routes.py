@@ -26,6 +26,10 @@ MESSAGE_TEMPLATE_ALLOWED = {
     "{prenom}",
     "{nom}",
     "{mission}",
+    "{creneau}",
+    "{competences}",
+    "{periode}",
+    "{statut_projet}",
     "{date}",
     "{heure_debut}",
     "{heure_fin}",
@@ -35,11 +39,11 @@ MESSAGE_TEMPLATE_ALLOWED = {
     "{agence}",
     "{lien}",
 }
-MESSAGE_TEMPLATE_REQUIRED = {"{prenom}", "{mission}", "{date}", "{lien}"}
+MESSAGE_TEMPLATE_REQUIRED = {"{prenom}", "{mission}", "{lien}"}
 DEFAULT_INVITE_TEMPLATE = (
     "Bonjour {prenom} 👋\n\n"
-    "{agence} vous propose la mission « {mission} » le {date}, de {heure_debut} à {heure_fin}, à {lieu}.\n"
-    "Rémunération : {remuneration}.\n\n"
+    "{agence} vous propose la mission « {mission} » ({statut_projet}), poste « {creneau} », {periode}, à {lieu}.\n"
+    "{competences}Rémunération : {remuneration}.\n\n"
     "Pour accepter ou refuser : {lien}"
 )
 DEFAULT_TEMPLATES = {
@@ -47,7 +51,8 @@ DEFAULT_TEMPLATES = {
     "followup": "Bonjour {prenom}, avez-vous pu consulter la mission « {mission} » du {date} ? Merci de répondre : {lien}",
     "cancellation": "Bonjour {prenom}, {agence} vous informe que le créneau de « {mission} » du {date} est annulé. Détails : {lien}",
     "removal": "Bonjour {prenom}, {agence} vous informe de votre retrait du créneau de « {mission} » du {date}. Détails : {lien}",
-    "change": "Bonjour {prenom}, le créneau de « {mission} » a été modifié : {date}, {heure_debut}–{heure_fin}, {lieu}, {remuneration}. Détails : {lien}",
+    "change": "Bonjour {prenom}, le créneau « {creneau} » de « {mission} » a été modifié : {periode}, {lieu}, {remuneration}. {competences}Détails : {lien}",
+    "validation": "Bonjour {prenom}, le projet « {mission} » est désormais VALIDÉ ! Votre créneau « {creneau} » est prévu {periode} à {lieu}. Détails : {lien}",
 }
 
 
@@ -111,7 +116,7 @@ def validate_invite_template(raw_template: str) -> str:
             detail=f"Variable inconnue : {', '.join(unknown)}.",
         )
 
-    missing = [token for token in ("{prenom}", "{mission}", "{date}", "{lien}") if token not in template]
+    missing = [token for token in ("{prenom}", "{mission}", "{lien}") if token not in template]
     if missing:
         raise HTTPException(
             status_code=400,
@@ -142,23 +147,55 @@ def active_invite_template(agency: dict) -> str:
         return DEFAULT_INVITE_TEMPLATE
 
 
+def message_date(value: str, agency: dict) -> str:
+    """Dates stay ISO in storage; outgoing messages use organization preference."""
+    raw = str(value or "")
+    if agency.get("whatsapp_date_format") == "iso":
+        return raw
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").strftime("%d-%m-%Y")
+    except ValueError:
+        return raw
+
+
+def shift_period(shift: dict, agency: dict) -> str:
+    start = message_date(shift.get("date"), agency)
+    end = message_date(shift.get("end_date") or shift.get("date"), agency)
+    begin_time = str(shift.get("start_time") or "")
+    end_time = str(shift.get("end_time") or "")
+    if shift.get("end_date") and shift["end_date"] != shift.get("date"):
+        return f"du {start} à {begin_time} au {end} à {end_time}"
+    return f"le {start} de {begin_time} à {end_time}"
+
+
 def render_invite_template(template: str, worker: dict, shift: dict, mission: dict, agency: dict, url: str) -> str:
     template = re.sub(r"\{tarif\}\s*€\s*/\s*h\b", "{remuneration}", template)
+    skills = str(shift.get("skill_required") or "").strip()
+    competency_text = f"Compétences requises : {skills}.\n" if skills else ""
+    multi = bool(shift.get("end_date") and shift["end_date"] != shift.get("date"))
+    end_time = ((message_date(shift["end_date"], agency) + " à ") if multi else "") + str(shift.get("end_time") or "")
     values = {
         "{prenom}": str(worker.get("first_name") or ""),
         "{nom}": str(worker.get("last_name") or ""),
         "{mission}": str(mission.get("name") or ""),
-        "{date}": str(shift.get("date") or ""),
+        "{creneau}": str(shift.get("label") or shift.get("mission_type") or "Créneau"),
+        "{competences}": competency_text,
+        "{statut_projet}": "en option" if mission.get("project_status") == "option" else "validé",
+        "{periode}": shift_period(shift, agency),
+        "{date}": message_date(shift.get("date"), agency),
         "{heure_debut}": str(shift.get("start_time") or ""),
-        "{heure_fin}": ((shift["end_date"] + " ") if shift.get("end_date") and shift["end_date"] != shift.get("date") else "") + str(shift.get("end_time") or ""),
+        "{heure_fin}": end_time,
         "{lieu}": str(mission.get("location") or ""),
         "{tarif}": str(shift.get("fixed_amount", 0) if shift.get("pay_type") == "fixed" else shift.get("rate_hourly", 0)),
         "{agence}": str(agency.get("agency_name") or "Votre agence"),
         "{lien}": url,
     }
     values["{remuneration}"] = compensation_label(shift)
-    # Single pass: user data containing braces must never become template code.
-    return PLACEHOLDER_RE.sub(lambda match: values.get(match.group(0), match.group(0)), template)
+    # Single pass: never interpret placeholders or URL patterns inside user data.
+    rendered = PLACEHOLDER_RE.sub(lambda match: values.get(match.group(0), match.group(0)), template)
+    if skills and "{competences}" not in template:
+        rendered += "\n" + competency_text.strip()
+    return rendered
 
 
 def build_invite_message(worker: dict, shift: dict, mission: dict, agency: dict, url: str) -> str:
@@ -170,7 +207,7 @@ async def _insert_notification(**doc):
     notification = {"id": new_id(), "channel": "whatsapp", "sent_at": iso(now_utc()), **doc}
     await db.notifications.insert_one(notification)
     notification.pop("_id", None)
-    if notification.get("status") == "sent" and notification.get("kind") in ("invite", "followup", "reminder"):
+    if notification.get("status") == "sent" and notification.get("kind") in ("invite", "followup", "reminder", "validation"):
         try:
             from activity_notifications import record_delivery
             await record_delivery(db, notification)
@@ -432,16 +469,21 @@ async def get_message_template(user=Depends(get_workspace_user)):
         template = DEFAULT_INVITE_TEMPLATE
     return {
         "template": template,
+        "date_format": (agency or {}).get("whatsapp_date_format", "fr"),
         "default_template": DEFAULT_INVITE_TEMPLATE,
         "can_edit": True,
         "max_chars": MESSAGE_TEMPLATE_MAX_CHARS,
         "max_lines": MESSAGE_TEMPLATE_MAX_LINES,
-        "required": ["{prenom}", "{mission}", "{date}", "{lien}"],
+        "required": ["{prenom}", "{mission}", "{lien}"],
         "variables": [
             {"token": "{prenom}", "label": "Prénom de l'intervenant", "required": True},
             {"token": "{nom}", "label": "Nom de l'intervenant", "required": False},
             {"token": "{mission}", "label": "Nom de la mission", "required": True},
-            {"token": "{date}", "label": "Date du shift", "required": True},
+            {"token": "{date}", "label": "Date du créneau (format choisi)", "required": False},
+            {"token": "{periode}", "label": "Période complète, 2 dates si plusieurs jours", "required": False},
+            {"token": "{creneau}", "label": "Nom du créneau", "required": False},
+            {"token": "{competences}", "label": "Compétences requises", "required": False},
+            {"token": "{statut_projet}", "label": "En option ou validé", "required": False},
             {"token": "{heure_debut}", "label": "Heure de début", "required": False},
             {"token": "{heure_fin}", "label": "Heure de fin", "required": False},
             {"token": "{lieu}", "label": "Lieu", "required": False},
@@ -635,7 +677,16 @@ def active_template(agency, kind):
 async def get_automations(user=Depends(get_workspace_user)):
     agency = await accounts(db).find_one({"id": user["id"]}, {"_id": 0}) or {}
     config = await get_message_template(user)
-    return {**config, "templates": {kind: active_template(agency, kind) for kind in DEFAULT_TEMPLATES}, "defaults": DEFAULT_TEMPLATES}
+    return {**config, "date_format": agency.get("whatsapp_date_format", "fr"), "templates": {kind: active_template(agency, kind) for kind in DEFAULT_TEMPLATES}, "defaults": DEFAULT_TEMPLATES}
+
+
+@router.put("/date-format")
+async def save_date_format(payload: dict, user=Depends(get_workspace_manager)):
+    date_format = payload.get("date_format")
+    if date_format not in ("fr", "iso"):
+        raise HTTPException(400, "Format de date invalide.")
+    await accounts(db).update_one({"id": user["id"]}, {"$set": {"whatsapp_date_format": date_format}})
+    return {"ok": True, "date_format": date_format}
 
 
 @router.put("/automations/{kind}")
