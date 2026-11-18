@@ -1634,9 +1634,10 @@ async def public_get(token: str):
             "pay_type": shift.get("pay_type", "hourly"), "fixed_amount": shift.get("fixed_amount", 0),
             "pay_basis": shift.get("pay_basis", "unspecified"),
             "description": shift.get("description", "") or mission.get("description", ""),
+            "label": shift.get("label", ""), "skill_required": shift.get("skill_required", ""),
         },
         "mission": {
-            "name": mission["name"], "location": mission["location"],
+            "name": mission["name"], "location": mission["location"], "project_status": mission.get("project_status", "validated"),
             "address": mission.get("address", ""), "status": mission.get("status", ""),
         },
         "worker": {"first_name": worker["first_name"], "last_name": worker["last_name"]},
