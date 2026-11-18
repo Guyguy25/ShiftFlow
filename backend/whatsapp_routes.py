@@ -193,8 +193,12 @@ def render_invite_template(template: str, worker: dict, shift: dict, mission: di
     values["{remuneration}"] = compensation_label(shift)
     # Single pass: never interpret placeholders or URL patterns inside user data.
     rendered = PLACEHOLDER_RE.sub(lambda match: values.get(match.group(0), match.group(0)), template)
+    if shift.get("label") and "{creneau}" not in template:
+        rendered += "\nPoste : " + str(shift["label"])
     if skills and "{competences}" not in template:
         rendered += "\n" + competency_text.strip()
+    if multi and "{periode}" not in template and not ("{date}" in template and "{heure_fin}" in template):
+        rendered += "\nPériode : " + shift_period(shift, agency)
     return rendered
 
 
