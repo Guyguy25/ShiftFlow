@@ -358,6 +358,8 @@ class MissionOperationsTest(TestCase):
         old = self.wa.render_invite_template("Bonjour {prenom} {mission} le {date} {lien}", worker, shift,
                                               {"name": "Salon"}, agency, "safe")
         self.assertIn("Compétences requises : Console numérique", old)
+        self.assertIn("Période : du ", old)
+        self.assertIn("Poste : Technicien son", old)
         iso_message = self.wa.render_invite_template(self.wa.DEFAULT_INVITE_TEMPLATE, worker, shift,
                                                       {"name": "Salon", "location": "Lille"},
                                                       {**agency, "whatsapp_date_format": "iso"}, "safe")
