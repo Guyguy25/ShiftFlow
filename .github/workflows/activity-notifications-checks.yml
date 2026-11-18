@@ -1,0 +1,27 @@
+name: Activity notifications and Resend checks
+on:
+  pull_request:
+    paths:
+      - 'backend/activity_notifications.py'
+      - 'backend/server.py'
+      - 'backend/whatsapp_routes.py'
+      - 'backend/tests/test_activity_notifications.py'
+      - '.github/workflows/activity-notifications-checks.yml'
+jobs:
+  notifications-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-test.txt
+      - name: Install dependencies
+        run: python -m pip install -r backend/requirements-test.txt
+      - name: Validate Python syntax
+        run: python -m py_compile backend/activity_notifications.py backend/server.py backend/whatsapp_routes.py
+      - name: Run notifications and existing integration checks
+        run: |
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_activity_notifications.py -v
+          PYTHONPATH=backend python -m unittest discover -s backend/tests -p test_whop_billing.py -v
