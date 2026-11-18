@@ -69,8 +69,6 @@ class ActivityTests(IsolatedAsyncioTestCase):
         self.assertEqual(await self.db.activity_events.count_documents({}), 1)
 
     async def test_resend_acceptance_is_tracked_without_exposing_secrets(self):
-        await n.publish(self.db, kind="refused", event_key="slot1",
-                        agency_id="org1", mission=self.m1)
         with patch.object(n, "send_one", new_callable=AsyncMock):
             await n.record_response(self.db, "refused", self.slot, self.m1)
         response = MagicMock()
