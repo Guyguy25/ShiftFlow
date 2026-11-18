@@ -22,6 +22,7 @@ KINDS = {
     "invite": ("Invitation envoyée", "Invitation envoyée à {worker} pour « {mission} »."),
     "followup": ("Relance envoyée", "Relance WhatsApp envoyée à {worker} pour « {mission} »."),
     "reminder": ("Rappel envoyé", "Rappel WhatsApp envoyé à {worker} pour « {mission} »."),
+    "validation": ("Projet validé", "Confirmation du projet « {mission} » envoyée à {worker}."),
 }
 EMAIL_KINDS = {"accepted", "refused", "cancelled"}
 
