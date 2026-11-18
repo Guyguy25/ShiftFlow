@@ -18,7 +18,11 @@ export function renderInvitationPreview(template, worker, shift, mission, agency
     lieu: mission.location, tarif: shift.pay_type === "fixed" ? shift.fixed_amount : shift.rate_hourly, remuneration: compensationLabel(shift),
     agence: agency.agency_name || "Votre agence", lien: "[Lien personnel généré lors de l’envoi]" };
   const rendered = template.replace(/\{tarif\}\s*€\s*\/\s*h\b/g, "{remuneration}").replace(/\{([^{}]+)\}/g, (token, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] ?? "") : token);
-  return skills && !template.includes("{competences}") ? rendered + "\n" + competence.trim() : rendered;
+  let complete = rendered;
+  if (shift.label && !template.includes("{creneau}")) complete += "\nPoste : " + shift.label;
+  if (skills && !template.includes("{competences}")) complete += "\n" + competence.trim();
+  if (multi && !template.includes("{periode}") && !(template.includes("{date}") && template.includes("{heure_fin}"))) complete += "\nPériode : " + period;
+  return complete;
 }
 
 export default function InvitationReview({ workers, mission, shift, saving, onConfirm, onCancel }) {
