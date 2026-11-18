@@ -588,7 +588,8 @@ class ShiftIn(BaseModel):
     fixed_amount: float = Field(default=0, ge=0, allow_inf_nan=False)
     pay_basis: Literal["gross", "net", "unspecified"] = "unspecified"
     mission_type: Literal["montage", "demontage", "montage_demontage", "technique", "autre"] = "montage"
-    skill_required: Optional[str] = ""
+    skill_required: Optional[str] = Field(default="", max_length=200)
+    label: str = Field(default="", max_length=80)
     description: Optional[str] = ""
 
     @model_validator(mode="after")
@@ -630,6 +631,7 @@ class MissionIn(BaseModel):
     description: Optional[str] = ""
     cascade_enabled: bool = True
     followup_hours: int = 2
+    project_status: Literal["option", "validated"] = "validated"
     shifts: List[ShiftIn] = Field(min_length=1)
     meta_consent: bool = False
 
@@ -641,6 +643,7 @@ class MissionUpdateIn(BaseModel):
     description: Optional[str] = ""
     cascade_enabled: bool = True
     followup_hours: int = 2
+    project_status: Literal["option", "validated"] = "validated"
 
 
 class SelectWorkersIn(BaseModel):
@@ -1336,6 +1339,7 @@ async def create_mission(payload: MissionIn, request: Request, user=Depends(get_
         "description": payload.description,
         "cascade_enabled": payload.cascade_enabled,
         "followup_hours": payload.followup_hours,
+        "project_status": payload.project_status,
         "status": "draft",
         "created_at": iso(mission_created_at),
     }
@@ -1742,7 +1746,8 @@ async def public_cancel(token: str):
 
 # ---------------- Duplication ----------------
 class ShiftDuplicateIn(BaseModel):
-    new_date: str
+    new_date: Optional[str] = None
+    label: Optional[str] = Field(default=None, max_length=80)
 
 
 @api.post("/missions/{mission_id}/duplicate")
@@ -1763,6 +1768,7 @@ async def duplicate_mission(mission_id: str, user=Depends(get_workspace_user)):
         "description": original.get("description", ""),
         "cascade_enabled": original.get("cascade_enabled", True),
         "followup_hours": original.get("followup_hours", 2),
+        "project_status": original.get("project_status", "validated"),
         "status": "draft",
         "created_at": iso(now_utc()),
     }
@@ -1795,7 +1801,7 @@ async def duplicate_mission(mission_id: str, user=Depends(get_workspace_user)):
             "pay_type": sh.get("pay_type", "hourly"), "fixed_amount": sh.get("fixed_amount", 0),
             "pay_basis": sh.get("pay_basis", "unspecified"),
             "mission_type": sh["mission_type"],
-            "skill_required": sh.get("skill_required", ""),
+            "skill_required": sh.get("skill_required", ""), "label": sh.get("label", ""),
             "description": sh.get("description", ""),
             "status": "draft",
             "confirmed_count": 0,
@@ -1818,10 +1824,10 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
         "id": new_id(),
         "mission_id": original["mission_id"],
         "agency_id": user["id"],
-        "date": payload.new_date,
+        "date": payload.new_date or original["date"],
         "start_time": original["start_time"],
         "end_time": original["end_time"],
-        "end_date": (datetime.fromisoformat(payload.new_date) + (datetime.fromisoformat(original["end_date"]) - datetime.fromisoformat(original["date"]))).date().isoformat() if original.get("end_date") else None,
+        "end_date": (datetime.fromisoformat(payload.new_date or original["date"]) + (datetime.fromisoformat(original["end_date"]) - datetime.fromisoformat(original["date"]))).date().isoformat() if original.get("end_date") else None,
         "break_minutes": original.get("break_minutes", 0),
         "people_needed": original["people_needed"],
         "rate_hourly": original["rate_hourly"],
@@ -1829,11 +1835,14 @@ async def duplicate_shift(shift_id: str, payload: ShiftDuplicateIn, user=Depends
         "pay_basis": original.get("pay_basis", "unspecified"),
         "mission_type": original["mission_type"],
         "skill_required": original.get("skill_required", ""),
+        "label": payload.label if payload.label is not None else ((original.get("label") or "Créneau") + " (copie)")[:80],
         "description": original.get("description", ""),
         "status": "draft",
         "confirmed_count": 0,
         "created_at": iso(now_utc()),
     }
+    # Revalidate the cloned calendar and pay data; no workers or invitation tokens are copied.
+    ShiftIn(**{key: clone[key] for key in ShiftIn.model_fields if key in clone})
     await db.shifts.insert_one(clone)
     clone.pop("_id", None)
     return clone
