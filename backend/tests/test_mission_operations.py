@@ -283,3 +283,93 @@ class MissionOperationsTest(TestCase):
         result = self.post("/missions/m/duplicate")
         self.assertEqual(result.status_code, 409, result.text)
         self.s.mission_billing.reserve.assert_not_awaited()
+
+    def test_shift_duplicate_same_day_copies_pay_but_not_workers(self):
+        original_slots = self.db.raw.mission_workers.count_documents({"shift_id": "s"})
+        self.db.raw.shifts.update_one({"id": "s"}, {"$set": {
+            "label": "Technicien son", "skill_required": "Technique son",
+            "pay_type": "fixed", "fixed_amount": 180, "pay_basis": "net"}})
+        result = self.post("/shifts/s/duplicate", json={"label": "Technicien lumière"})
+        self.assertEqual(result.status_code, 200, result.text)
+        clone = result.json()
+        self.assertEqual(clone["label"], "Technicien lumière")
+        self.assertEqual(clone["date"], self.day)
+        self.assertEqual(clone["start_time"], "10:00")
+        self.assertEqual(clone["end_time"], "18:00")
+        self.assertEqual(clone["fixed_amount"], 180)
+        self.assertEqual(clone["pay_basis"], "net")
+        self.assertEqual(clone["skill_required"], "Technique son")
+        self.assertEqual(self.db.raw.mission_workers.count_documents({"shift_id": clone["id"]}), 0)
+        self.assertEqual(self.db.raw.mission_workers.count_documents({"shift_id": "s"}), original_slots)
+
+    def test_option_to_validated_only_notifies_confirmed_technicians_once(self):
+        self.db.raw.missions.update_one({"id": "m"}, {"$set": {"project_status": "option"}})
+        response = self.client.patch("/api/missions/m/project-status", json={"project_status": "validated"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["notifications"]["sent"], 1)
+        self.assertIn("VALIDÉ", self.wa.send_whatsapp_text.call_args.args[2])
+        self.assertEqual(self.db.raw.missions.find_one({"id": "m"})["project_status"], "validated")
+        self.assertEqual(self.client.patch("/api/missions/m/project-status", json={"project_status": "validated"}).json()["changed"], False)
+        self.assertEqual(self.wa.send_whatsapp_text.await_count, 1)
+        self.assertEqual(self.client.patch("/api/missions/m/project-status", json={"project_status": "option"}).status_code, 200)
+        self.assertEqual(self.wa.send_whatsapp_text.await_count, 1)
+        self.assertEqual(self.client.patch("/api/missions/m/project-status", json={"project_status": "validated"}).json()["notifications"]["sent"], 1)
+
+    def test_project_validation_failed_notification_can_be_retried(self):
+        self.db.raw.missions.update_one({"id": "m"}, {"$set": {"project_status": "option"}})
+        self.wa.send_whatsapp_text.side_effect = RuntimeError("offline")
+        result = self.client.patch("/api/missions/m/project-status", json={"project_status": "validated"})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["notifications"]["failed"], 1)
+        self.wa.send_whatsapp_text.side_effect = None
+        self.assertEqual(self.post("/missions/m/retry-notifications").json()["notifications"]["sent"], 1)
+        self.assertEqual(self.post("/missions/m/retry-notifications").json()["notifications"]["sent"], 0)
+
+    def test_manual_confirm_respects_capacity_and_tenant_and_does_not_send(self):
+        response = self.post("/mission-workers/slot1/confirm-manually")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "confirmed")
+        self.assertEqual(self.db.raw.shifts.find_one({"id": "s"})["confirmed_count"], 2)
+        self.assertEqual(self.db.raw.mission_workers.find_one({"id": "slot1"})["response_reason"], "confirmed_manually")
+        self.assertEqual(self.post("/mission-workers/slot1/confirm-manually").json()["already_confirmed"], True)
+        self.assertEqual(self.post("/mission-workers/slot2/confirm-manually").status_code, 409)
+        self.wa.send_whatsapp_text.assert_not_awaited()
+        self.assertEqual(self.post("/mission-workers/slot3/confirm-manually").status_code, 409)
+
+    def test_manual_confirmation_foreign_organization_is_forbidden(self):
+        self.assertEqual(self.post("/mission-workers/slot1/confirm-manually", headers={"x-agency": "b"}).status_code, 404)
+        self.assertEqual(self.client.patch("/api/missions/m/project-status", json={"project_status": "option"}, headers={"x-agency": "b"}).status_code, 404)
+        self.assertEqual(self.db.raw.shifts.find_one({"id": "s"})["confirmed_count"], 1)
+        self.wa.send_whatsapp_text.assert_not_awaited()
+
+    def test_outbound_invite_has_french_multiday_dates_and_skills_even_with_old_template(self):
+        shift = {**self.shift, "label": "Technicien son", "skill_required": "Console numérique",
+                 "end_date": (datetime.strptime(self.day, "%Y-%m-%d") + timedelta(days=1)).date().isoformat()}
+        worker = {"first_name": "Paul"}
+        agency = {"agency_name": "Ideal Audio"}
+        message = self.wa.render_invite_template(self.wa.DEFAULT_INVITE_TEMPLATE, worker, shift,
+                                                  {"name": "Salon", "project_status": "option", "location": "Lille"}, agency, "safe")
+        self.assertIn("Technicien son", message)
+        self.assertIn("en option", message)
+        self.assertIn("Compétences requises : Console numérique", message)
+        self.assertIn("du " + self.day.split("-")[2] + "-" + self.day.split("-")[1] + "-" + self.day.split("-")[0], message)
+        self.assertIn(" au ", message)
+        self.assertIn("22:00" if shift["end_time"] == "22:00" else "18:00", message)
+        old = self.wa.render_invite_template("Bonjour {prenom} {mission} le {date} {lien}", worker, shift,
+                                              {"name": "Salon"}, agency, "safe")
+        self.assertIn("Compétences requises : Console numérique", old)
+        self.assertIn("Période : du ", old)
+        self.assertIn("Poste : Technicien son", old)
+        iso_message = self.wa.render_invite_template(self.wa.DEFAULT_INVITE_TEMPLATE, worker, shift,
+                                                      {"name": "Salon", "location": "Lille"},
+                                                      {**agency, "whatsapp_date_format": "iso"}, "safe")
+        self.assertIn(self.day, iso_message)
+        self.assertIn(shift["end_date"], iso_message)
+
+    def test_organization_date_format_is_saved_and_validated(self):
+        self.assertEqual(self.client.put("/api/whatsapp/date-format", json={"date_format": "fr"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/whatsapp/message-template").json()["date_format"], "fr")
+        self.assertEqual(self.client.put("/api/whatsapp/date-format", json={"date_format": "iso"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/whatsapp/automations").json()["date_format"], "iso")
+        self.assertEqual(self.client.put("/api/whatsapp/date-format", json={"date_format": "unknown"}).status_code, 400)
+

@@ -22,6 +22,7 @@ KINDS = {
     "invite": ("Invitation envoyée", "Invitation envoyée à {worker} pour « {mission} »."),
     "followup": ("Relance envoyée", "Relance WhatsApp envoyée à {worker} pour « {mission} »."),
     "reminder": ("Rappel envoyé", "Rappel WhatsApp envoyé à {worker} pour « {mission} »."),
+    "validation": ("Projet validé", "Confirmation du projet « {mission} » envoyée à {worker}."),
 }
 EMAIL_KINDS = {"accepted", "refused", "cancelled"}
 
@@ -89,7 +90,7 @@ async def record_response(db, kind, slot, mission, shift=None):
 
 async def record_delivery(db, notification):
     """Create inbox items only for real, successfully sent WhatsApp messages."""
-    if notification.get("status") != "sent" or notification.get("kind") not in {"invite", "followup", "reminder"}:
+    if notification.get("status") != "sent" or notification.get("kind") not in {"invite", "followup", "reminder", "validation"}:
         return None
     mission_id = notification.get("mission_id")
     worker_id = notification.get("worker_id")

@@ -5,11 +5,24 @@ import { CheckCheck, MessageCircle } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
-export function renderInvitationPreview(template, worker, shift, mission, agency) {
+export function renderInvitationPreview(template, worker, shift, mission, agency, dateFormat = "fr") {
+  const date = value => dateFormat === "iso" || !/^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : value.split("-").reverse().join("-");
+  const multi = shift.end_date && shift.end_date !== shift.date;
+  const period = multi ? `du ${date(shift.date)} à ${shift.start_time} au ${date(shift.end_date)} à ${shift.end_time}` : `le ${date(shift.date)} de ${shift.start_time} à ${shift.end_time}`;
+  const skills = (shift.skill_required || "").trim();
+  const competence = skills ? `Compétences requises : ${skills}.\n` : "";
   const values = { prenom: worker.first_name, nom: worker.last_name, mission: mission.name,
-    date: shift.date, heure_debut: shift.start_time, heure_fin: shift.end_time, lieu: mission.location,
-    tarif: shift.pay_type === "fixed" ? shift.fixed_amount : shift.rate_hourly, remuneration: compensationLabel(shift), agence: agency.agency_name || "Votre agence", lien: "[Lien personnel généré lors de l’envoi]" };
-  return template.replace(/\{tarif\}\s*€\s*\/\s*h\b/g, "{remuneration}").replace(/\{([^{}]+)\}/g, (token, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] ?? "") : token);
+    creneau: shift.label || shift.mission_type || "Créneau", statut_projet: mission.project_status === "option" ? "en option" : "validé",
+    competences: competence, periode: period,
+    date: date(shift.date), heure_debut: shift.start_time, heure_fin: multi ? date(shift.end_date) + " à " + shift.end_time : shift.end_time,
+    lieu: mission.location, tarif: shift.pay_type === "fixed" ? shift.fixed_amount : shift.rate_hourly, remuneration: compensationLabel(shift),
+    agence: agency.agency_name || "Votre agence", lien: "[Lien personnel généré lors de l’envoi]" };
+  const rendered = template.replace(/\{tarif\}\s*€\s*\/\s*h\b/g, "{remuneration}").replace(/\{([^{}]+)\}/g, (token, key) => Object.prototype.hasOwnProperty.call(values, key) ? String(values[key] ?? "") : token);
+  let complete = rendered;
+  if (shift.label && !template.includes("{creneau}")) complete += "\nPoste : " + shift.label;
+  if (skills && !template.includes("{competences}")) complete += "\n" + competence.trim();
+  if (multi && !template.includes("{periode}") && !(template.includes("{date}") && template.includes("{heure_fin}"))) complete += "\nPériode : " + period;
+  return complete;
 }
 
 export default function InvitationReview({ workers, mission, shift, saving, onConfirm, onCancel }) {
@@ -43,7 +56,7 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
     <p className="mt-3 text-sm text-gray-700">Après lancement, les demandes suivantes et rappels sont automatiques. Le lien de réponse sera généré lors du lancement ; vos intervenants n’ont pas besoin de compte.</p>
     {template !== null && <label className="mt-4 block text-sm font-medium">Modifier le message avant envoi
       <textarea aria-label="Message WhatsApp avant envoi" className="mt-2 w-full rounded-lg border p-3 font-mono text-sm" rows={7} value={template} disabled={saving} onChange={event => setTemplate(event.target.value)} />
-      <span className="block mt-1 text-xs text-gray-600">Conservez les variables obligatoires : {'{prenom}, {mission}, {date}, {lien}'}. Ce texte s’applique à cette sélection. Vos modèles restent dans Paramètres › Automatisations.</span>
+      <span className="block mt-1 text-xs text-gray-600">Conservez les variables obligatoires : {'{prenom}, {mission}, {lien}'}. Ce texte s’applique à cette sélection. Vos modèles restent dans Paramètres › Automatisations.</span>
     </label>}
     {error ? <div role="alert" className="mt-3 text-sm text-red-700"><p>{error}</p><button type="button" onClick={() => setAttempt(n => n + 1)} className="min-h-11 underline">Réessayer</button></div> : !template ? <p role="status" className="mt-3 text-sm">Chargement de l’aperçu…</p> : <>
       <div className="mt-5 overflow-hidden rounded-2xl border border-emerald-900/10 bg-white shadow-sm">
@@ -70,7 +83,7 @@ export default function InvitationReview({ workers, mission, shift, saving, onCo
 
           <div className="flex justify-end">
             <div className="relative max-w-[92%] rounded-2xl rounded-tr-sm bg-[#d9fdd3] px-3.5 py-3 shadow-sm sm:max-w-[82%]">
-              <p className="whitespace-pre-wrap break-words pr-12 text-[14px] leading-relaxed text-gray-900">{worker && renderInvitationPreview(template, worker, shift, mission, user || {})}</p>
+              <p className="whitespace-pre-wrap break-words pr-12 text-[14px] leading-relaxed text-gray-900">{worker && renderInvitationPreview(template, worker, shift, mission, user || {}, config?.date_format || "fr")}</p>
               <span className="absolute bottom-2 right-2.5 flex items-center gap-1 text-[10px] text-gray-500">
                 maintenant <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" aria-hidden="true" />
               </span>

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 const URL_LIKE_RE = /(?:https?:\/\/|www\.|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)/i;
 const PLACEHOLDER_RE = /\{[^{}]+\}/g;
-const DEFAULT_REQUIRED_TOKENS = ["{prenom}", "{mission}", "{date}", "{lien}"];
+const DEFAULT_REQUIRED_TOKENS = ["{prenom}", "{mission}", "{lien}"];
 
 
 export default function Automations() {
@@ -20,6 +20,8 @@ export default function Automations() {
   const [notifs, setNotifs] = useState([]);
   const [messageConfig, setMessageConfig] = useState(null);
   const [messageTemplate, setMessageTemplate] = useState("");
+  const [dateFormat, setDateFormat] = useState("fr");
+  const [dateSaving, setDateSaving] = useState(false);
   const [messageSaving, setMessageSaving] = useState(false);
   const messageRef = useRef(null);
   const [automationKind, setAutomationKind] = useState("invite");
@@ -30,6 +32,7 @@ export default function Automations() {
       setAutomationConfig(r.data);
       setMessageConfig(r.data);
       setMessageTemplate(r.data.template || "");
+      setDateFormat(r.data.date_format || "fr");
     }).catch(() => toast.error("Impossible de charger les modèles. Réessayez en rechargeant cette page."));
     reloadNotifs();
   }, []);
@@ -65,13 +68,13 @@ export default function Automations() {
   const preview = useMemo(() => {
     const example = {
       "{prenom}": "Camille", "{nom}": "Martin", "{mission}": "Montage Festival",
-      "{date}": "12 novembre 2026", "{heure_debut}": "08:00",
+      "{date}": dateFormat === "iso" ? "2026-12-03" : "03-12-2026", "{periode}": dateFormat === "iso" ? "du 2026-12-03 à 10:00 au 2026-12-04 à 22:00" : "du 03-12-2026 à 10:00 au 04-12-2026 à 22:00", "{creneau}": "Technicien son", "{competences}": "Compétences requises : technique son.\n", "{statut_projet}": "en option", "{heure_debut}": "08:00",
       "{heure_fin}": "18:00", "{lieu}": "Lille",
       "{remuneration}": "150 € net", "{tarif}": "150 € net",
       "{agence}": "Votre organisation", "{lien}": "[lien sécurisé ShiftFlow]"
     };
     return (messageTemplate || "").replace(PLACEHOLDER_RE, token => example[token] || token);
-  }, [messageTemplate]);
+  }, [messageTemplate, dateFormat]);
 
   const insertToken = (token) => {
     const textarea = messageRef.current;
@@ -104,6 +107,20 @@ export default function Automations() {
     } finally { setMessageSaving(false); }
   };
 
+  const changeDateFormat = async next => {
+    if (!canManage || dateSaving || next === dateFormat) return;
+    const previous = dateFormat;
+    setDateFormat(next); setDateSaving(true);
+    try {
+      const { data } = await api.put("/whatsapp/date-format", { date_format: next });
+      setDateFormat(data.date_format);
+      toast.success("Format de date enregistré pour votre organisation");
+    } catch (err) {
+      setDateFormat(previous);
+      toast.error(formatApiError(err.response?.data?.detail) || "Impossible d'enregistrer le format.");
+    } finally { setDateSaving(false); }
+  };
+
   const resetMessageTemplate = async () => {
     setMessageSaving(true);
     try {
@@ -132,11 +149,12 @@ export default function Automations() {
     ["cancellation", "Annulation"],
     ["removal", "Retrait d’un intervenant"],
     ["change", "Modification de créneau"],
+    ["validation", "Projet validé"],
   ];
 
   const notificationName = kind => ({
     invite: "Invitation", followup: "Relance", reminder: "Rappel avant mission",
-    cancellation: "Annulation", removal: "Retrait", change: "Changement de créneau"
+    cancellation: "Annulation", removal: "Retrait", change: "Changement de créneau", validation: "Projet validé"
   })[kind] || "Message WhatsApp";
 
   return <div data-testid="automations-page" className="max-w-6xl">
@@ -164,6 +182,14 @@ export default function Automations() {
         <select id="message-kind" aria-label="Type de message" className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={automationKind} disabled={!canManage || messageSaving || !automationConfig} onChange={event => changeKind(event.target.value)}>
           {kinds.map(([key,label]) => <option key={key} value={key}>{label}</option>)}
         </select>
+        <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+          <label htmlFor="whatsapp-date-format" className="block text-sm font-semibold text-gray-900">Format des dates dans les messages</label>
+          <p className="mt-1 text-xs text-gray-500">Appliqué à votre organisation pour les prochains WhatsApp. Les créneaux sur plusieurs jours affichent automatiquement les deux dates.</p>
+          <select id="whatsapp-date-format" data-testid="whatsapp-date-format" value={dateFormat} disabled={!canManage || dateSaving} onChange={event => changeDateFormat(event.target.value)} className="mt-2 h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+            <option value="fr">JJ-MM-AAAA (03-12-2026)</option>
+            <option value="iso">AAAA-MM-JJ (2026-12-03)</option>
+          </select>
+        </div>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
           <label htmlFor="automation-template" className="text-sm font-semibold text-gray-900">Votre message</label>
           <span className={`text-xs ${messageTemplate.length > maxChars || messageValidation.lines > maxLines ? "text-red-600" : "text-gray-500"}`}>{messageTemplate.length}/{maxChars} caractères · {messageValidation.lines}/{maxLines} lignes</span>

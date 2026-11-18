@@ -267,10 +267,13 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
   const slotAction = async (slot, action) => {
     if (busy) return;
     if (action === "remove" && !window.confirm("Retirer cet intervenant confirmé et le prévenir par WhatsApp ?")) return;
+    if (action === "confirm-manually" && !window.confirm("Confirmer cet intervenant sans réponse WhatsApp ? Assurez-vous de son accord avant de valider.")) return;
     setBusy(true);
     try {
       const { data } = await api.post(`/mission-workers/${slot.id}/${action}`);
-      reportDelivery(data, action === "remove" ? "Intervenant retiré" : "Relance traitée"); onReload();
+      if (action === "confirm-manually") toast.success("Intervenant confirmé manuellement");
+      else reportDelivery(data, action === "remove" ? "Intervenant retiré" : "Relance traitée");
+      onReload();
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Action impossible"); }
     finally { setBusy(false); }
   };
@@ -292,23 +295,26 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
     onReload();
   };
   const duplicateShift = async () => {
-    const suggested = shift.date;
-    const nd = window.prompt("Nouvelle date pour la copie du shift (YYYY-MM-DD) ?", suggested);
-    if (!nd) return;
+    if (busy) return;
+    const label = window.prompt("Nom du nouveau créneau (mêmes dates, horaires et cachet) :", (shift.label || "Créneau") + " (copie)");
+    if (label === null) return;
+    setBusy(true);
     try {
-      await api.post(`/shifts/${shift.id}/duplicate`, { new_date: nd });
-      toast.success("Shift dupliqué");
+      await api.post(`/shifts/${shift.id}/duplicate`, { label: label.trim().slice(0, 80) || "Nouveau créneau" });
+      toast.success("Créneau dupliqué. Sélectionnez une nouvelle équipe pour ce poste.");
       onReload();
-    } catch (e) { toast.error("Erreur de duplication"); }
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Duplication impossible"); }
+    finally { setBusy(false); }
   };
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl sm:rounded-xl overflow-hidden" data-testid={`shift-card-${shift.id}`}>
       <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">{TYPE_LABEL[shift.mission_type]}</div>
+          <div className="text-sm font-bold text-blue-900" data-testid={`shift-label-${shift.id}`}>{shift.label || TYPE_LABEL[shift.mission_type]}</div>
+          <div className="text-[11px] text-gray-500">{TYPE_LABEL[shift.mission_type]}</div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-700">
-            <div className="flex items-center gap-1.5 font-medium"><CalendarClock className="w-4 h-4 text-gray-400"/>{shift.date.split("-").reverse().join("/")}</div>
+            <div className="flex items-center gap-1.5 font-medium"><CalendarClock className="w-4 h-4 text-gray-400"/>{shift.date.split("-").reverse().join("/")}{shift.end_date && shift.end_date !== shift.date ? " → " + shift.end_date.split("-").reverse().join("/") : ""}</div>
             <div>{shift.start_time} → {shift.end_time}</div>
             <div className="flex items-center gap-1.5"><Users className="w-4 h-4 text-gray-400"/>{shift.confirmed_count}/{shift.people_needed}</div>
 
@@ -362,11 +368,13 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
                   {invitationStatusLabel(s.status)}
                 </span>
                 {s.status === "contacted" && <span className="text-xs text-gray-500">En attente de réponse</span>}
+                {s.response_reason === "confirmed_manually" && <span className="text-xs text-blue-700">Confirmé manuellement</span>}
                 <details className="w-full text-xs text-gray-500">
                   <summary className="cursor-pointer py-2">Actions pour {s.worker?.first_name || "cet intervenant"}</summary>
                   <div className="flex flex-wrap gap-2 pb-2">
                     <button onClick={()=>copyLink(s.token)} data-testid={`copy-link-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 flex items-center gap-1 text-gray-700"><Copy className="w-3 h-3"/> Copier le lien</button>
                     {mission.status !== "cancelled" && shift.status !== "cancelled" && ["contacted", "no_answer"].includes(s.status) && !filled && <button disabled={busy} onClick={() => slotAction(s, "followup")} className="min-h-11 px-3 rounded-lg border">Relancer par WhatsApp</button>}
+                    {mission.status !== "cancelled" && shift.status !== "cancelled" && canManage && !filled && ["pending", "contacted", "no_answer"].includes(s.status) && <button type="button" data-testid={`confirm-manually-${s.id}`} disabled={busy} onClick={() => slotAction(s, "confirm-manually")} className="min-h-11 rounded-lg border border-blue-200 px-3 font-semibold text-blue-700">Confirmer manuellement</button>}
                     {mission.status !== "cancelled" && shift.status !== "cancelled" && s.status === "confirmed" && <button disabled={busy} onClick={() => slotAction(s, "remove")} className="min-h-11 px-3 rounded-lg border text-red-700">Retirer et notifier</button>}
                     {mission.status !== "cancelled" && s.status === "contacted" && <button onClick={()=>markNoAnswer(s.id)} data-testid={`no-answer-${s.id}`} className="min-h-11 px-3 rounded-lg border border-gray-200 text-gray-700">Marquer sans réponse</button>}
                   </div>
@@ -409,6 +417,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
         <summary className="cursor-pointer min-h-11 py-3">Détails du créneau</summary>
         <p data-testid={`shift-estimate-${shift.id}`}>Budget estimé : {shift.estimated_cost ?? 0} €</p>
         <p data-testid={`shift-rate-${shift.id}`}>Tarif intervenant : {compensationLabel(shift)}</p>
+        {shift.skill_required && <p className="mt-1">Compétences requises : {shift.skill_required}</p>}
         {mission.status !== "cancelled" && shift.status !== "cancelled" && <div className="flex gap-3"><button disabled={busy} onClick={() => setEditing(true)} className="min-h-11 text-blue-700">Modifier ce créneau</button><button disabled={busy || !canManage} title={!canManage ? "Action réservée aux administrateurs" : undefined} onClick={deleteShift} className="min-h-11 text-red-700">Supprimer et notifier</button></div>}
         <button onClick={duplicateShift} data-testid={`duplicate-shift-${shift.id}`} className="min-h-11 mt-2 inline-flex items-center gap-2 text-gray-600"><CopyPlus size={16}/> Dupliquer ce créneau</button>
       </details>
@@ -479,6 +488,19 @@ export default function MissionDetail() {
     catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Archivage impossible"); }
     finally { setMissionBusy(false); }
   };
+  const updateProjectStatus = async next => {
+    if (missionBusy || next === (data.project_status || "validated")) return;
+    if (next === "validated" && !window.confirm("Valider ce projet ? Les techniciens déjà confirmés recevront un message WhatsApp d'actualisation.")) return;
+    setMissionBusy(true);
+    try {
+      const { data: result } = await api.patch(`/missions/${id}/project-status`, { project_status: next });
+      if (result.notifications?.failed) toast.error("Projet mis à jour, mais certains messages n'ont pas été envoyés. Utilisez Réessayer les notifications.");
+      else toast.success(next === "validated" ? "Projet validé et notifications traitées" : "Projet passé en option");
+      await load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Modification du projet impossible"); }
+    finally { setMissionBusy(false); }
+  };
+
   const duplicateMission = async () => {
     try {
       const { data } = await api.post(`/missions/${id}/duplicate`);
@@ -500,6 +522,13 @@ export default function MissionDetail() {
       <Toaster position="top-right" richColors/>
       <p className="text-xs uppercase tracking-widest text-blue-700 font-bold">Mission</p>
       <h1 className="mt-2 text-[28px] sm:text-3xl font-display font-bold leading-tight break-words" data-testid="mission-title">{m.name}</h1>
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4" data-testid="mission-project-status">
+        <p className="text-sm font-semibold text-gray-900">État du projet <span className="font-normal text-gray-500">· distinct du recrutement</span></p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {[["option", "En option"], ["validated", "Validé"]].map(([value, label]) => <button key={value} type="button" data-testid={"set-project-" + value} disabled={missionBusy || !canManage || m.status === "cancelled" || m.archived} aria-pressed={(m.project_status || "validated") === value} onClick={() => updateProjectStatus(value)} className={"min-h-11 rounded-lg border px-4 text-sm font-semibold disabled:opacity-60 " + ((m.project_status || "validated") === value ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100")}>{label}</button>)}
+        </div>
+        {m.project_status === "option" && <p className="mt-2 text-xs text-amber-800">Le projet reste en option. Le passage à « Validé » informera les techniciens confirmés.</p>}
+      </div>
       {location.state?.inviteResult && <section role="status" data-testid="first-invitation-result" className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:p-5">
         <div className="flex items-start gap-3"><CheckCircle2 size={24} className="shrink-0 text-blue-700" aria-hidden="true"/><div><h2 className="font-bold text-blue-950">{Number(location.state.inviteResult.sent || 0) > 0 ? "Vos premières demandes sont lancées !" : "Votre sélection est enregistrée"}</h2><p className="mt-1 text-sm leading-relaxed text-blue-900">{Number(location.state.inviteResult.sent || 0) > 0 ? `${location.state.inviteResult.sent} invitation(s) envoyée(s). ShiftFlow suit maintenant les réponses et peut contacter les suivants selon votre cascade.` : "Vérifiez les notifications ci-dessous avant de considérer vos demandes comme envoyées."}</p>{Number(location.state.inviteResult.failed || 0) > 0 && <p className="mt-2 text-sm font-semibold text-amber-800">{location.state.inviteResult.failed} notification(s) ont échoué. Reconnectez WhatsApp et relancez-les si nécessaire.</p>}<p className="mt-2 text-xs text-blue-800">Une invitation envoyée ne signifie pas encore qu’un intervenant a confirmé.</p></div></div>
       </section>}

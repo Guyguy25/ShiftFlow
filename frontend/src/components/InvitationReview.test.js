@@ -176,3 +176,20 @@ test("demo cannot proceed with an empty mission name", async () => {
   });
   expect(host.querySelector('[data-testid="demo-next"]').disabled).toBe(true);
 });
+
+
+test("preview shows skills, slot name, option and both days in French or ISO", () => {
+  const multiday = { ...shift, label: "Technicien son", skill_required: "Régie son",
+    date: "2026-12-03", end_date: "2026-12-04", start_time: "10:00", end_time: "22:00" };
+  const tpl = "{prenom} {mission} {creneau} {statut_projet} {periode} {competences} {lien}";
+  const message = renderInvitationPreview(tpl, workers[0], multiday,
+    { ...mission, project_status: "option" }, {}, "fr");
+  expect(message).toContain("du 03-12-2026 à 10:00 au 04-12-2026 à 22:00");
+  expect(message).toContain("Régie son");
+  expect(message).toContain("Technicien son");
+  expect(message).toContain("en option");
+  expect(renderInvitationPreview(tpl, workers[0], multiday, mission, {}, "iso"))
+    .toContain("du 2026-12-03 à 10:00 au 2026-12-04 à 22:00");
+  expect(renderInvitationPreview("{prenom} {mission} {date} {lien}", workers[0], multiday, mission, {}))
+    .toContain("Compétences requises : Régie son");
+});

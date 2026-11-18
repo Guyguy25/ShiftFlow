@@ -2,7 +2,7 @@ import { compensationLabel } from "../lib/compensation";
 import { counted } from "../lib/french";
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2, Pencil } from "lucide-react";
+import { Plus, Trash2, Pencil, CopyPlus } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 import { trackActivation } from "../lib/activationTracking";
 import { useAuth } from "../context/AuthContext";
@@ -20,7 +20,7 @@ const TYPES = [
 const emptyShift = () => ({
   date: "", start_time: "", end_time: "",
   people_needed: 4, rate_hourly: 15, pay_type: "hourly", fixed_amount: 0, pay_basis: "unspecified",
-  mission_type: "montage", skill_required: "", description: "",
+  mission_type: "montage", skill_required: "", label: "", description: "",
 });
 
 export default function MissionCreate() {
@@ -40,7 +40,7 @@ export default function MissionCreate() {
   useEffect(() => { trackActivation("mission_form_opened"); }, []);
   const [mission, setMission] = useState(savedDraft?.mission || {
     name: "", location: "", address: "", description: "",
-    cascade_enabled: true, followup_hours: 2,
+    cascade_enabled: true, followup_hours: 2, project_status: "validated",
   });
   const [shifts, setShifts] = useState(Array.isArray(savedDraft?.shifts) && savedDraft.shifts.length ? savedDraft.shifts : [emptyShift()]);
   const [error, setError] = useState("");
@@ -54,6 +54,7 @@ export default function MissionCreate() {
   const setM = (k, v) => setMission({ ...mission, [k]: v });
   const setS = (i, k, v) => setShifts(prev => prev.map((s, idx) => idx === i ? { ...s, [k]: v } : s));
   const addShift = () => setShifts(prev => [...prev, emptyShift()]);
+  const duplicateShift = index => setShifts(prev => [...prev.slice(0, index + 1), { ...prev[index], label: ((prev[index].label || "Créneau") + " (copie)").slice(0, 80) }, ...prev.slice(index + 1)]);
   const removeShift = (i) => setShifts(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
 
   const submit = async (e) => {
@@ -123,6 +124,13 @@ export default function MissionCreate() {
                   <input required id="mc-location" data-testid="mc-location" data-onboarding={mission.name.trim() && !mission.location.trim() ? "location" : undefined} className={inputCls} value={mission.location} onChange={(e)=>setM("location", e.target.value)} placeholder="Lille Grand Palais"/>
             </div>
           </div>
+          <fieldset className="rounded-xl border border-blue-100 bg-blue-50/40 p-3" aria-label="État du projet">
+            <legend className="text-sm font-semibold text-gray-900">État du projet</legend>
+            <p className="mb-2 text-xs text-gray-600">L'état commercial est indépendant des réponses des intervenants.</p>
+            <div className="flex flex-wrap gap-2">
+              {[["option","En option"],["validated","Validé"]].map(([value,label]) => <button key={value} type="button" data-testid={"mc-project-" + value} aria-pressed={(mission.project_status || "validated") === value} onClick={() => setM("project_status", value)} className={"min-h-11 rounded-lg border px-4 text-sm font-semibold " + ((mission.project_status || "validated") === value ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 bg-white text-gray-700")}>{label}</button>)}
+            </div>
+          </fieldset>
           <details><summary className="cursor-pointer text-sm text-blue-700 py-2">Ajouter une adresse ou des précisions (facultatif)</summary>
             <label className="block mt-3 text-sm">Adresse<input data-testid="mc-address" className={inputCls} value={mission.address} onChange={e => setM("address", e.target.value)} /></label>
             <label className="block mt-3 text-sm">Description<textarea data-testid="mc-desc" className={inputCls} value={mission.description} onChange={e => setM("description", e.target.value)} /></label>
@@ -143,11 +151,14 @@ export default function MissionCreate() {
             <div key={i} className="rounded-2xl border border-gray-200 bg-white p-3 sm:p-5 space-y-4 shadow-sm" data-testid={`mc-shift-${i}`}>
               <div className="flex items-center justify-between">
                 <div className="text-xs uppercase tracking-widest text-blue-700 font-bold">Créneau {i + 1}</div>
+                <div className="flex items-center gap-1">
+                <button type="button" onClick={() => duplicateShift(i)} data-testid={`mc-duplicate-shift-${i}`} aria-label={"Dupliquer le créneau " + (i + 1)} title="Dupliquer horaires et cachet, sans intervenants" className="flex h-10 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"><CopyPlus size={16}/> Dupliquer</button>
                 {shifts.length > 1 && (
                   <button type="button" onClick={()=>removeShift(i)} data-testid={`mc-remove-shift-${i}`} aria-label={"Supprimer le créneau " + (i + 1)} className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-red-50 text-red-600">
                     <Trash2 className="w-4 h-4"/>
                   </button>
                 )}
+                </div>
               </div>
               <ShiftFields value={s} idPrefix={"mc-shift-" + i} minDate={todayStr} onChange={(name, value) => setS(i, name, value)} />
             </div>
@@ -159,7 +170,7 @@ export default function MissionCreate() {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-xl font-semibold break-words">{mission.name}</h2>
-              <p className="mt-1 text-gray-600 break-words">{mission.location}{mission.address && ` · ${mission.address}`}</p>
+              <p className="mt-1 text-gray-600 break-words">{mission.location}{mission.address && ` · ${mission.address}`} · {(mission.project_status || "validated") === "option" ? "En option" : "Validé"}</p>
             </div>
             <button
               type="button"
@@ -172,7 +183,7 @@ export default function MissionCreate() {
               Modifier
             </button>
           </div>
-          {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>Créneau {i + 1} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {counted(s.people_needed, "personne")} · {compensationLabel(s)}</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
+          {shifts.map((s, i) => <div key={i} className="border-t pt-3 text-sm leading-relaxed"><strong>{s.label?.trim() || `Créneau ${i + 1}`} · {s.date.split("-").reverse().join("/")}</strong><p>{s.start_time} – {s.end_time} · {counted(s.people_needed, "personne")} · {compensationLabel(s)}</p><p>{TYPES.find(t => t.v === s.mission_type)?.l}{s.skill_required && ` · ${s.skill_required}`}</p>{s.description && <p>{s.description}</p>}</div>)}
           <label className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl sm:rounded-md px-4 py-3">
             <input type="checkbox" data-testid="mc-cascade" checked={mission.cascade_enabled} onChange={(e)=>setM("cascade_enabled", e.target.checked)} className="w-4 h-4 accent-blue-600"/>
             <div>
