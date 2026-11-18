@@ -170,6 +170,12 @@ async def _insert_notification(**doc):
     notification = {"id": new_id(), "channel": "whatsapp", "sent_at": iso(now_utc()), **doc}
     await db.notifications.insert_one(notification)
     notification.pop("_id", None)
+    if notification.get("status") == "sent" and notification.get("kind") in ("invite", "followup", "reminder"):
+        try:
+            from activity_notifications import record_delivery
+            await record_delivery(db, notification)
+        except Exception:
+            server_module.logger.exception("Could not record WhatsApp notification activity")
     return notification
 
 
