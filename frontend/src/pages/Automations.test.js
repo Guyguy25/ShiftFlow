@@ -76,3 +76,13 @@ test("the relance shortcut opens the relevant message model without sending mess
   expect(host.querySelector("textarea").value).toBe(followup);
   expect(api.put).not.toHaveBeenCalled();
 });
+
+
+test("date display preference is editable and the message template remains available", async () => {
+  await act(async () => root.render(<Automations />));
+  const dateSelect = host.querySelector('[data-testid="whatsapp-date-format"]');
+  expect(dateSelect.value).toBe("fr");
+  await setValue(dateSelect, "iso");
+  expect(api.put).toHaveBeenCalledWith("/whatsapp/date-format", { date_format: "iso" });
+  expect(host.querySelector('select[aria-label="Type de message"]').value).toBe("invite");
+});
