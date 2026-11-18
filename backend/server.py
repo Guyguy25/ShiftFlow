@@ -643,7 +643,6 @@ class MissionUpdateIn(BaseModel):
     description: Optional[str] = ""
     cascade_enabled: bool = True
     followup_hours: int = 2
-    project_status: Literal["option", "validated"] = "validated"
 
 
 class SelectWorkersIn(BaseModel):
