@@ -29,6 +29,7 @@ import subscription_billing
 import organizations
 import workspace_search
 import return_feedback
+import activity_notifications
 from activation_diagnostics import InteractionIn, ReasonIn, REASON_LABELS, safe_detail
 from return_visits import record_visit, visit_summary, retention_summary
 
@@ -72,7 +73,7 @@ app = FastAPI(title="ShiftFlow API")
 @app.middleware("http")
 async def hours_privacy_headers(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments") or request.url.path.startswith("/api/organization") or request.url.path.startswith("/api/whop"):
+    if request.url.path.startswith("/api/public/hours") or request.url.path.startswith("/api/hours") or request.url.path.startswith("/api/payments") or request.url.path.startswith("/api/organization") or request.url.path.startswith("/api/whop") or request.url.path.startswith("/api/activity-notifications"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -1589,6 +1590,26 @@ async def mark_no_answer(slot_id: str, user=Depends(get_workspace_user)):
     return {"ok": True}
 
 
+# ---------------- In-app notifications ----------------
+@api.get("/activity-notifications")
+async def activity_inbox(limit: int = Query(default=40, ge=1, le=50),
+                         user=Depends(get_workspace_user)):
+    return await activity_notifications.inbox(db, user["id"], user["actor_id"], limit)
+
+
+@api.post("/activity-notifications/read")
+async def activity_read(user=Depends(get_workspace_user)):
+    return await activity_notifications.mark_read(db, user["id"], user["actor_id"])
+
+
+async def notify_worker_response(kind, slot, mission, shift):
+    # Notifications and email must never make a confirmed worker answer fail.
+    try:
+        await activity_notifications.record_response(db, kind, slot, mission, shift)
+    except Exception:
+        logger.exception("Could not record %s mission activity", kind)
+
+
 # ---------------- Public (token) ----------------
 @api.get("/public/mission/{token}")
 async def public_get(token: str):
@@ -1650,6 +1671,7 @@ async def public_accept(token: str):
         agency = await accounts(db).find_one({"id": mission["agency_id"]}, {"_id": 0})
     if agency:
         await record_activation_event(agency, "first_invite_accepted", metadata={"mission_id": slot["mission_id"], "slot_id": slot["id"]})
+    await notify_worker_response("accepted", slot, mission, shift)
     await update_shift_and_mission_status(slot["shift_id"])
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
@@ -1674,6 +1696,7 @@ async def public_refuse(token: str, payload: ConfirmIn):
     )
     if not result.modified_count:
         raise HTTPException(409, "Cette invitation a changé. Rechargez la page.")
+    await notify_worker_response("refused", slot, mission, shift)
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
     return {"ok": True, "status": "refused"}
@@ -1686,11 +1709,17 @@ async def public_cancel(token: str):
         raise HTTPException(status_code=404, detail="Lien invalide")
     if slot["status"] != "confirmed":
         raise HTTPException(status_code=400, detail="Vous n'êtes pas confirmé sur cette mission")
-    await db.mission_workers.update_one(
-        {"id": slot["id"]},
+    updated = await db.mission_workers.update_one(
+        {"id": slot["id"], "status": "confirmed"},
         {"$set": {"status": "cancelled", "responded_at": iso(now_utc()),
                   "response_reason": "Annulation intervenant"}}
     )
+    if not updated.modified_count:
+        raise HTTPException(409, "Cette confirmation a déjà changé. Rechargez la page.")
+    original_mission = await db.missions.find_one({"id": slot["mission_id"]}, {"_id": 0})
+    original_shift = await db.shifts.find_one({"id": slot["shift_id"]}, {"_id": 0})
+    if original_mission:
+        await notify_worker_response("cancelled", slot, original_mission, original_shift)
     await cascade_next_for_shift(slot["shift_id"])
     await update_shift_and_mission_status(slot["shift_id"])
     # Owner alert if <24h before shift
@@ -2010,7 +2039,13 @@ async def cron_reminders(request: Request):
         hours = await run_timesheets()
     except Exception:
         logger.exception("Timesheet cron failed")
-    return {"ok": True, "sent": sent, "emails_sent": emails_sent, "hours": hours}
+    notification_emails_sent = 0
+    try:
+        notification_emails_sent = await activity_notifications.retry_pending(db)
+    except Exception:
+        logger.exception("Notification email retry failed")
+    return {"ok": True, "sent": sent, "emails_sent": emails_sent,
+            "notification_emails_sent": notification_emails_sent, "hours": hours}
 
 
 def _unsubscribe_user_id(token: str) -> str:

@@ -1,5 +1,6 @@
 import { peekPageData, readPageData } from "../lib/pageData";
 import WorkspaceSearch from "./WorkspaceSearch";
+import NotificationBell from "./NotificationBell";
 import { workspacePath, unscopedPath } from "../lib/workspacePaths";
 import WorkspaceSelector from "./WorkspaceSelector";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -165,6 +166,7 @@ export default function Layout({ children }) {
           <div className="hidden min-w-0 lg:block"><p className="text-[11px] font-medium text-gray-400">Espace de travail</p><p className="truncate text-sm font-semibold text-gray-900">{pageTitle}</p></div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-4">
             <WorkspaceSearch organizationId={user?.organization?.id}/>
+            <NotificationBell userId={user?.id} organizationId={user?.organization?.id}/>
             <span className="hidden h-7 w-px bg-gray-200 sm:block" aria-hidden="true"/>
             <ProfileMenu user={user} quota={quota} onLogout={handleLogout} compact />
           </div>
