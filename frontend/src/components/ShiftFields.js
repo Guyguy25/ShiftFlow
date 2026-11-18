@@ -51,6 +51,10 @@ export default function ShiftFields({ value, onChange, idPrefix = "shift", minDa
   const groupLabel = (title, Icon) => <div className="mb-4 flex items-center gap-2"><Icon className="h-4 w-4 text-blue-600" aria-hidden="true" /><h3 className="font-display text-base font-bold text-gray-950">{title}</h3></div>;
 
   return <div className="space-y-4">
+    <label className="block rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-sm font-medium text-gray-800" htmlFor={idPrefix + "-label"}>Nom du créneau <span className="text-xs font-normal text-gray-500">(facultatif)</span>
+      <input id={idPrefix + "-label"} data-testid={idPrefix + "-label"} type="text" maxLength={80} value={value.label || ""} onChange={event => onChange("label", event.target.value)} className={fieldClass} placeholder="Ex. : Technicien son, Technicien lumière" />
+      <span className="mt-2 block text-xs font-normal text-gray-500">Ce nom aide à identifier chaque équipe et apparaît dans les invitations WhatsApp.</span>
+    </label>
     <section className={cardClass} aria-label="Date et horaires">
       {groupLabel("Quand ?", CalendarDays)}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
