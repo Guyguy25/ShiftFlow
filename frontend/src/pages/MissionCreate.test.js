@@ -68,3 +68,37 @@ test("visual choices preserve exact crew, fixed gross pay and type in the missio
     })]
   }));
 });
+
+
+test("a duplicate créneau keeps hours and pay but can be renamed separately", async () => {
+  await start();
+  await fill("mc-shift-0-date", "2099-10-01");
+  await fill("mc-shift-0-start", "08:00");
+  await fill("mc-shift-0-end", "20:00");
+  await fill("mc-shift-0-label", "Technicien son");
+  await act(async () => host.querySelector('[data-testid="mc-duplicate-shift-0"]').click());
+  expect(host.querySelectorAll('[data-testid^="mc-shift-"]').length).toBeGreaterThan(2);
+  expect(host.querySelector('[data-testid="mc-shift-1-date"]').value).toBe("2099-10-01");
+  expect(host.querySelector('[data-testid="mc-shift-1-end"]').value).toBe("20:00");
+  expect(host.querySelector('[data-testid="mc-shift-1-label"]').value).toBe("Technicien son (copie)");
+  await fill("mc-shift-1-label", "Technicien lumière");
+  await submit(); await submit();
+  expect(api.post).toHaveBeenCalledWith("/missions", expect.objectContaining({
+    shifts: [
+      expect.objectContaining({ label: "Technicien son" }),
+      expect.objectContaining({ label: "Technicien lumière", start_time: "08:00", end_time: "20:00" }),
+    ],
+  }));
+});
+
+test("project option state is independent of mission creation status", async () => {
+  await fill("mc-name", "Concert en option");
+  await fill("mc-location", "Lille");
+  await act(async () => host.querySelector('[data-testid="mc-project-option"]').click());
+  await submit();
+  await fill("mc-shift-0-date", "2099-10-01");
+  await fill("mc-shift-0-start", "08:00");
+  await fill("mc-shift-0-end", "12:00");
+  await submit(); await submit();
+  expect(api.post).toHaveBeenCalledWith("/missions", expect.objectContaining({ project_status: "option" }));
+});
