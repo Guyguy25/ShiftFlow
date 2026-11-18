@@ -2,6 +2,8 @@ from workspace_accounts import accounts
 """Tenant-owned mission changes and retryable WhatsApp lifecycle notifications."""
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from typing import Literal
 import server as s
 from server import get_workspace_manager, db, get_workspace_user, ShiftIn
 import whatsapp_routes as wa
