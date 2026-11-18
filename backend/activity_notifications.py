@@ -176,7 +176,7 @@ async def send_one(db, event_id):
         return False
 
 
-async def retry_pending(db, limit=20):
+async def retry_pending(db, limit=5):
     """Executed by the existing authenticated cron, never by public clients."""
     now = stamp()
     stale = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
