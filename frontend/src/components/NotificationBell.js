@@ -24,6 +24,7 @@ export default function NotificationBell({ userId, organizationId }) {
   const navigate = useNavigate();
   const outer = useRef(null);
   const trigger = useRef(null);
+  const activeWorkspace = useRef("");
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -33,22 +34,25 @@ export default function NotificationBell({ userId, organizationId }) {
   const load = useCallback(async (showSpinner = false) => {
     if (!userId || !organizationId) return;
     if (showSpinner) setLoading(true);
+    const requestedWorkspace = userId + ":" + organizationId;
     try {
       const { data } = await api.get("/activity-notifications", {
         params: { limit: 40 },
         headers: { "X-Organization-ID": organizationId },
       });
+      if (activeWorkspace.current !== requestedWorkspace) return;
       setItems(Array.isArray(data?.items) ? data.items : []);
       setUnread(Math.max(0, Number(data?.unread || 0)));
       setError("");
     } catch {
-      if (showSpinner) setError("Impossible de charger vos notifications.");
+      if (showSpinner && activeWorkspace.current === requestedWorkspace) setError("Impossible de charger vos notifications.");
     } finally {
-      if (showSpinner) setLoading(false);
+      if (showSpinner && activeWorkspace.current === requestedWorkspace) setLoading(false);
     }
   }, [userId, organizationId]);
 
   useEffect(() => {
+    activeWorkspace.current = userId + ":" + organizationId;
     setOpen(false);
     setItems([]);
     setUnread(0);
