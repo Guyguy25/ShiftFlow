@@ -368,7 +368,7 @@ export function ShiftCard({ mission, shift, workers, onReload, autoExpand = fals
                   {invitationStatusLabel(s.status)}
                 </span>
                 {s.status === "contacted" && <span className="text-xs text-gray-500">En attente de réponse</span>}
-                {s.response_reason === "confirmed_manually" && <span className="text-xs text-blue-700">Confirmé manuellement</span>
+                {s.response_reason === "confirmed_manually" && <span className="text-xs text-blue-700">Confirmé manuellement</span>}
                 <details className="w-full text-xs text-gray-500">
                   <summary className="cursor-pointer py-2">Actions pour {s.worker?.first_name || "cet intervenant"}</summary>
                   <div className="flex flex-wrap gap-2 pb-2">
