@@ -288,7 +288,7 @@ async def send_invite_whatsapp(slot: dict, shift: dict, mission: dict, worker: d
 async def send_owner_alert_whatsapp(agency: dict, mission: dict, shift: dict, worker: dict, missing: int) -> dict:
     body = (
         f"Alerte ShiftFlow : {worker['first_name']} {worker['last_name']} vient d'annuler la mission "
-        f"« {mission['name']} » du {shift['date']} à {shift['start_time']}. "
+        f"« {mission['name']} » {shift_period(shift, agency)}. "
         f"Il manque {missing} personne{'s' if missing > 1 else ''}."
     )
     to = server_module.normalize_phone(agency.get("phone", ""))
@@ -314,7 +314,7 @@ async def send_reminder_whatsapp(slot: dict, shift: dict, mission: dict, agency:
     url = f"{server_module.FRONTEND_URL}/m/{slot['token']}" if server_module.FRONTEND_URL else f"/m/{slot['token']}"
     body = (
         f"Rappel {agency.get('agency_name', '')} : vous êtes confirmé pour « {mission['name']} » "
-        f"le {shift['date']} de {shift['start_time']} à {shift['end_time']} à {mission['location']}. "
+        f"— {shift.get('label') or 'Créneau'} {shift_period(shift, agency)} à {mission['location']}. "
         f"Détails : {url}"
     )
     to = server_module.normalize_phone(worker.get("phone", ""))
