@@ -68,7 +68,7 @@ export default function Automations() {
   const preview = useMemo(() => {
     const example = {
       "{prenom}": "Camille", "{nom}": "Martin", "{mission}": "Montage Festival",
-      "{date}": dateFormat === "iso" ? "2026-12-03" : "03-12-2026", "{periode}": dateFormat === "iso" ? "du 2026-12-03 à 10:00 au 2026-12-04 à 22:00" : "du 03-12-2026 à 10:00 au 04-12-2026 à 22:00", "{creneau}": "Technicien son", "{competences}": "Compétences requises : technique son.\\n", "{statut_projet}": "en option", "{heure_debut}": "08:00",
+      "{date}": dateFormat === "iso" ? "2026-12-03" : "03-12-2026", "{periode}": dateFormat === "iso" ? "du 2026-12-03 à 10:00 au 2026-12-04 à 22:00" : "du 03-12-2026 à 10:00 au 04-12-2026 à 22:00", "{creneau}": "Technicien son", "{competences}": "Compétences requises : technique son.\n", "{statut_projet}": "en option", "{heure_debut}": "08:00",
       "{heure_fin}": "18:00", "{lieu}": "Lille",
       "{remuneration}": "150 € net", "{tarif}": "150 € net",
       "{agence}": "Votre organisation", "{lien}": "[lien sécurisé ShiftFlow]"
@@ -178,6 +178,10 @@ export default function Automations() {
           <div><h2 className="font-display text-lg font-bold text-gray-950">Personnaliser un message</h2><p className="mt-1 text-xs sm:text-sm text-gray-500">Les modèles sont partagés dans votre organisation et s'appliquent aux prochains envois.</p></div>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-600"><MessageCircle size={19}/></span>
         </div>
+        <label className="mt-5 block text-sm font-semibold text-gray-900" htmlFor="message-kind">Type de message</label>
+        <select id="message-kind" aria-label="Type de message" className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={automationKind} disabled={!canManage || messageSaving || !automationConfig} onChange={event => changeKind(event.target.value)}>
+          {kinds.map(([key,label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
         <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
           <label htmlFor="whatsapp-date-format" className="block text-sm font-semibold text-gray-900">Format des dates dans les messages</label>
           <p className="mt-1 text-xs text-gray-500">Appliqué à votre organisation pour les prochains WhatsApp. Les créneaux sur plusieurs jours affichent automatiquement les deux dates.</p>
@@ -186,10 +190,6 @@ export default function Automations() {
             <option value="iso">AAAA-MM-JJ (2026-12-03)</option>
           </select>
         </div>
-        <label className="mt-5 block text-sm font-semibold text-gray-900" htmlFor="message-kind">Type de message</label>
-        <select id="message-kind" aria-label="Type de message" className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" value={automationKind} disabled={!canManage || messageSaving || !automationConfig} onChange={event => changeKind(event.target.value)}>
-          {kinds.map(([key,label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
           <label htmlFor="automation-template" className="text-sm font-semibold text-gray-900">Votre message</label>
           <span className={`text-xs ${messageTemplate.length > maxChars || messageValidation.lines > maxLines ? "text-red-600" : "text-gray-500"}`}>{messageTemplate.length}/{maxChars} caractères · {messageValidation.lines}/{maxLines} lignes</span>
